@@ -2,6 +2,9 @@ package uz.greenwhite.gateway.oauth2.model;
 
 import java.io.Serializable;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record Token(String accessToken,
                     long expiresIn,
                     String tokenType,

@@ -51,12 +51,7 @@ public class RequestConsumer {
         this.kafkaProperties = kafkaProperties;
     }
 
-    @KafkaListener(
-            id = "requestConsumer",
-            topics = "${gateway.kafka.topics.request-new}",
-            groupId = "${spring.kafka.consumer.group-id}",
-            containerFactory = "requestConsumerFactory"
-    )
+    @KafkaListener(id = "requestConsumer", topics = "${gateway.kafka.topics.request-new}", groupId = "${spring.kafka.consumer.group-id}", containerFactory = "requestConsumerFactory")
     public void consumeRequest(ConsumerRecord<String, RequestMessage> record, Acknowledgment ack) {
         String key = record.key();
         RequestMessage message = record.value();
@@ -174,7 +169,8 @@ public class RequestConsumer {
                     .errorSource("KAFKA")
                     .httpStatus(response.getHttpStatus())
                     .attemptCount(1)
-                    .url(request.getMethod() + " " + request.getBaseUrl() + (request.getUri() != null ? request.getUri() : ""))
+                    .url(request.getMethod() + " " + request.getBaseUrl()
+                            + (request.getUri() != null ? request.getUri() : ""))
                     .failedAt(java.time.LocalDateTime.now())
                     .build();
 
@@ -216,9 +212,9 @@ public class RequestConsumer {
     }
 
     private void handlePermanentFailure(String key, RequestMessage message,
-                                        int httpStatus, String errorMessage, ErrorSource source) {
-        log.error("E4: Request failed permanently: {} - status={}, error={}, source={}",
-                key, httpStatus, errorMessage, source);
+            int httpStatus, String errorMessage, ErrorSource source) {
+        log.error("E4: Request failed permanently: {} - status={}, error={}, source={}, body={}",
+                key, httpStatus, errorMessage, source, message.getBody());
 
         ResponseMessage errorResponse = ResponseMessage.builder()
                 .companyId(message.getCompanyId())
@@ -232,7 +228,7 @@ public class RequestConsumer {
         int attemptCount = requestStateService.getAttemptCount(key);
         DlqMessage dlqMessage = DlqMessage.from(
                 message, errorMessage, source.name(), httpStatus, attemptCount,
-                kafkaProperties.getTopics().getRequestNew()  // ← dynamic topic
+                kafkaProperties.getTopics().getRequestNew() // ← dynamic topic
         );
         requestProducer.sendToDlq(dlqMessage);
 
@@ -244,7 +240,8 @@ public class RequestConsumer {
      * Check if exception is timeout-related
      */
     private boolean isTimeoutException(Exception e) {
-        if (e == null) return false;
+        if (e == null)
+            return false;
 
         String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
         return e instanceof java.util.concurrent.TimeoutException

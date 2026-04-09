@@ -49,30 +49,82 @@ public class TelegramNotificationService implements NotificationService {
 
     private String formatMessage(DlqMessage msg) {
         StringBuilder sb = new StringBuilder();
-        sb.append("🔴 <b>DLQ ALERT</b>\n\n");
+        sb.append("🔴 <b>ОПОВЕЩЕНИЕ DLQ</b>\n\n");
         sb.append("━━━━━━━━━━━━━━━━━━━━━\n");
-        sb.append("📌 <b>Company:</b> ").append(msg.getCompanyId());
-        sb.append(" | <b>Request:</b> ").append(msg.getRequestId()).append("\n");
+        sb.append("📌 <b>Компания:</b> ").append(msg.getCompanyId());
+        sb.append(" | <b>Запрос:</b> ").append(msg.getRequestId()).append("\n");
 
         if (msg.getUrl() != null) {
             sb.append("🔗 <b>URL:</b> <code>").append(escapeHtml(msg.getUrl())).append("</code>\n");
         }
 
-        sb.append("❌ <b>Reason:</b> [").append(msg.getErrorSource()).append("] ");
-        sb.append(escapeHtml(truncate(msg.getFailureReason(), 200))).append("\n");
+        sb.append("❌ <b>Причина:</b> [").append(translateErrorSource(msg.getErrorSource())).append("] ");
+        sb.append(escapeHtml(truncate(translateFailureReason(msg.getFailureReason()), 200))).append("\n");
 
         if (msg.getHttpStatus() > 0) {
-            sb.append("📡 <b>HTTP Status:</b> ").append(msg.getHttpStatus()).append("\n");
+            sb.append("📡 <b>HTTP Статус:</b> ").append(msg.getHttpStatus()).append("\n");
         }
 
-        sb.append("🔄 <b>Attempts:</b> ").append(msg.getAttemptCount()).append("\n");
+        sb.append("🔄 <b>Попыток:</b> ").append(msg.getAttemptCount()).append("\n");
 
         if (msg.getFailedAt() != null) {
-            sb.append("🕐 <b>Time:</b> ").append(msg.getFailedAt().format(FORMATTER)).append("\n");
+            sb.append("🕐 <b>Время:</b> ").append(msg.getFailedAt().format(FORMATTER)).append("\n");
         }
 
         sb.append("━━━━━━━━━━━━━━━━━━━━━");
         return sb.toString();
+    }
+
+    /**
+     * Translates errorSource code to Russian label
+     */
+    private String translateErrorSource(String errorSource) {
+        if (errorSource == null) return "НЕИЗВЕСТНО";
+        return switch (errorSource) {
+            case "HTTP"   -> "Ошибка внешнего API";
+            case "SYSTEM" -> "Внутренняя системная ошибка";
+            case "KAFKA"  -> "Ошибка Kafka";
+            default       -> errorSource;
+        };
+    }
+
+    /**
+     * Translates known failureReason patterns to Russian.
+     * Unknown/external messages are passed through as-is.
+     */
+    private String translateFailureReason(String reason) {
+        if (reason == null) return "Неизвестная ошибка";
+
+        // Validation failed
+        if (reason.startsWith("Validation failed:")) {
+            return reason.replace("Validation failed:", "Ошибка валидации:");
+        }
+
+        // Response too large for Kafka
+        if (reason.startsWith("Response too large for Kafka:")) {
+            return reason.replace("Response too large for Kafka:", "Ответ слишком большой для Kafka:");
+        }
+
+        // Failed to send to Kafka after N attempts
+        if (reason.startsWith("Failed to send to Kafka after")) {
+            return reason.replaceAll(
+                    "Failed to send to Kafka after (\\d+) attempts",
+                    "Не удалось отправить в Kafka после $1 попыток"
+            );
+        }
+
+        // Timeout-related messages
+        if (reason.toLowerCase().contains("timeout") || reason.toLowerCase().contains("timed out")) {
+            return "Превышено время ожидания: " + reason;
+        }
+
+        // Interrupted during retry
+        if (reason.startsWith("Interrupted during retry wait")) {
+            return "Прервано во время ожидания повтора";
+        }
+
+        // External API errors or unknown — keep as-is
+        return reason;
     }
 
     private void sendMessage(String text) {
@@ -94,15 +146,18 @@ public class TelegramNotificationService implements NotificationService {
     }
 
     private String escapeHtml(String text) {
-        if (text == null) return "";
+        if (text == null)
+            return "";
         return text.replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;");
     }
 
     private String truncate(String text, int maxLength) {
-        if (text == null) return "";
-        if (text.length() <= maxLength) return text;
+        if (text == null)
+            return "";
+        if (text.length() <= maxLength)
+            return text;
         return text.substring(0, maxLength) + "...";
     }
 }
