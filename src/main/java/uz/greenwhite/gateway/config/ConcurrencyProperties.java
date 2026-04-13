@@ -54,6 +54,18 @@ public class ConcurrencyProperties {
      */
     private int topicPartitions = 10;
 
+    /**
+     * Multiplier for HTTP thread pool max size relative to maxConcurrency.
+     * Max pool size = maxConcurrency * threadPoolMultiplier.
+     */
+    private int threadPoolMultiplier = 2;
+
+    /**
+     * Queue capacity for the HTTP thread pool — tasks wait here when
+     * all threads are busy before the rejection policy kicks in.
+     */
+    private int threadPoolQueueCapacity = 50;
+
     @PostConstruct
     public void validate() {
         if (minConcurrency < 1) {

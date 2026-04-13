@@ -10,6 +10,7 @@ import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
+import reactor.netty.resources.ConnectionProvider;
 
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
@@ -22,7 +23,14 @@ public class HttpClientConfig {
 
     @Bean
     public WebClient webClient() {
-        HttpClient httpClient = HttpClient.create()
+        ConnectionProvider connectionProvider = ConnectionProvider.builder("gateway-http-pool")
+                .maxConnections(httpProperties.getMaxConnections())
+                .maxIdleTime(Duration.ofMillis(httpProperties.getMaxIdleTimeMs()))
+                .maxLifeTime(Duration.ofMillis(httpProperties.getMaxLifeTimeMs()))
+                .pendingAcquireTimeout(Duration.ofMillis(httpProperties.getPendingAcquireTimeoutMs()))
+                .build();
+
+        HttpClient httpClient = HttpClient.create(connectionProvider)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, httpProperties.getConnectTimeoutMs())
                 .responseTimeout(Duration.ofMillis(httpProperties.getReadTimeoutMs()))
                 .doOnConnected(conn -> conn

@@ -31,10 +31,11 @@ public class ThreadPoolConfig {
         executor.setCorePoolSize(concurrencyProperties.getMinConcurrency());
 
         // Max — scales up under load
-        executor.setMaxPoolSize(concurrencyProperties.getMaxConcurrency() * 2);
+        executor.setMaxPoolSize(concurrencyProperties.getMaxConcurrency()
+                * concurrencyProperties.getThreadPoolMultiplier());
 
         // Queue — tasks wait here when max pool is full
-        executor.setQueueCapacity(50);
+        executor.setQueueCapacity(concurrencyProperties.getThreadPoolQueueCapacity());
 
         // Idle threads are terminated after 60s
         executor.setKeepAliveSeconds(60);
