@@ -18,6 +18,7 @@ import uz.greenwhite.gateway.oauth2.OAuth2ProviderService;
 import uz.greenwhite.gateway.oauth2.model.Token;
 import uz.greenwhite.gateway.config.HttpProperties;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -120,13 +121,17 @@ public class HttpRequestService {
 
         int timeoutMs = httpProperties.getTimeoutForUrl(request.getBaseUrl());
 
+        byte[] bodyBytes = request.getBody() != null
+                ? request.getBody().getBytes(StandardCharsets.UTF_8)
+                : new byte[0];
+
         return webClient
                 .method(method)
                 .uri(fullUrl)
-                .headers(h -> applyHeaders(h, headers))
-                .bodyValue(request.getBody() != null ? request.getBody() : "")
+                .headers(h -> applyHeaders(h, headers, request.getContentType()))
+                .bodyValue(bodyBytes)
                 .retrieve()
-                .toEntity(String.class)
+                .toEntity(byte[].class)
                 .timeout(java.time.Duration.ofMillis(timeoutMs))
                 .map(entity -> {
                     long duration = System.nanoTime() - startTime;
@@ -199,13 +204,23 @@ public class HttpRequestService {
     }
 
     /**
-     * Apply custom headers to the HTTP request.
-     * Custom headers are added first, then Content-Type default is set if missing.
+     * Apply custom headers to the HTTP request and decide on Content-Type.
+     * Precedence: caller-supplied request content-type → header already present
+     * on the HTTP headers → default {@code application/json}.
      */
-    private void applyHeaders(HttpHeaders httpHeaders, Map<String, String> customHeaders) {
+    private void applyHeaders(HttpHeaders httpHeaders, Map<String, String> customHeaders, String requestContentType) {
         // Add custom headers first
         if (customHeaders != null) {
             customHeaders.forEach(httpHeaders::add);
+        }
+
+        if (requestContentType != null && !requestContentType.isBlank()) {
+            try {
+                httpHeaders.setContentType(MediaType.parseMediaType(requestContentType));
+                return;
+            } catch (Exception e) {
+                log.warn("Unparseable request content-type '{}', falling back to default", requestContentType);
+            }
         }
 
         // Set default Content-Type only if not provided
@@ -225,6 +240,8 @@ public class HttpRequestService {
                 .errorMessage("Circuit breaker [" + cbName + "] is OPEN: external API unavailable")
                 .errorSource("CIRCUIT_BREAKER")
                 .processedAt(LocalDateTime.now())
+                .callbackUrl(request.getCallbackUrl())
+                .source(request.getSource())
                 .build();
     }
 
@@ -239,6 +256,8 @@ public class HttpRequestService {
                 .errorMessage("OAuth2 authentication failed: " + errorMessage)
                 .errorSource("OAUTH2")
                 .processedAt(LocalDateTime.now())
+                .callbackUrl(request.getCallbackUrl())
+                .source(request.getSource())
                 .build();
     }
 
@@ -246,7 +265,7 @@ public class HttpRequestService {
      * Build success response from HTTP entity
      */
     private ResponseMessage buildSuccessResponse(RequestMessage request, int status,
-                                                 String contentType, String body) {
+                                                 String contentType, byte[] body) {
         return ResponseMessage.builder()
                 .companyId(request.getCompanyId())
                 .requestId(request.getRequestId())
@@ -254,6 +273,8 @@ public class HttpRequestService {
                 .contentType(contentType)
                 .body(body)
                 .processedAt(LocalDateTime.now())
+                .callbackUrl(request.getCallbackUrl())
+                .source(request.getSource())
                 .build();
     }
 
@@ -276,6 +297,8 @@ public class HttpRequestService {
                 .errorMessage(errorMessage)
                 .errorSource("HTTP")
                 .processedAt(LocalDateTime.now())
+                .callbackUrl(request.getCallbackUrl())
+                .source(request.getSource())
                 .build();
     }
 

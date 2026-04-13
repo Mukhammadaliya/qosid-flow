@@ -31,4 +31,9 @@ public class RequestState implements Serializable {
     // Timestamps
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    // Routing / storage (new fields)
+    private String source;        // "ORACLE" | "API"
+    private String callbackUrl;   // nullable
+    private boolean hasResult;    // true if response body is stored in RocksDB
 }

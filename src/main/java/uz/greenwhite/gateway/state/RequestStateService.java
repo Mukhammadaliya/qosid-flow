@@ -81,6 +81,20 @@ public class RequestStateService {
     }
 
     /**
+     * Flip the {@code hasResult} flag on the stored state — set true once a
+     * response body has been written to RocksDB and is available via
+     * {@code /qosid/api/v1/requests/{id}/result}.
+     */
+    public void updateHasResult(String compositeId, boolean hasResult) {
+        getState(compositeId).ifPresent(state -> {
+            state.setHasResult(hasResult);
+            state.setUpdatedAt(LocalDateTime.now());
+            saveState(state);
+            log.debug("hasResult updated: {} -> {}", compositeId, hasResult);
+        });
+    }
+
+    /**
      * Mark as failed
      */
     public void markFailed(String compositeId, String error, ErrorSource source) {

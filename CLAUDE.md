@@ -1,6 +1,6 @@
 # Request Gateway Service (qosid-flow)
 
-Java 21 + Spring Boot 3.3.0 microservice that pulls HTTP requests from Oracle/Biruni, routes them through Kafka for load balancing, sends to external APIs with Circuit Breaker + OAuth2 + retry, and saves responses back. Package: `uz.greenwhite.gateway`.
+Java 21 + Spring Boot 3.3.0 microservice that pulls HTTP requests from Oracle/Biruni **or accepts them via REST** (`/qosid/queue/**`), routes them through Kafka for load balancing, sends to external APIs with Circuit Breaker + OAuth2 + retry, stores response bodies in RocksDB (7-day retention), fires per-request callbacks, and saves Oracle-source responses back to Biruni. Package: `uz.greenwhite.gateway`.
 
 ## AI Context Documentation
 
@@ -20,9 +20,20 @@ Read these files for full project understanding:
 2. **Never remove idempotency logic** — causes duplicate processing (`RequestConsumer.java`)
 3. **Never bypass Circuit Breaker** — causes cascading failures (`HttpRequestService.java`)
 4. **Never remove Integer.MAX_VALUE safety net** — causes infinite retries when Redis is down (`RequestStateService.java`)
-5. **Never remove retry logic in ResponseConsumer** — causes response data loss (`ResponseConsumer.java`)
+5. **Never remove retry logic in ResponseConsumer, or drop the `isOracle` source guard in its branches** — causes response data loss or cross-source pollution (`ResponseConsumer.java`)
 
 Full safety rules: `@ai-context/SAFETY-RULES.md`
+
+## REST API Endpoints
+
+| Method          | Path                                             | Purpose                                                                                  |
+|-----------------|--------------------------------------------------|------------------------------------------------------------------------------------------|
+| POST/GET/PUT/DELETE/PATCH | `/qosid/queue/**`                       | Transparent proxy — auth gate → queue to Kafka → `202 ACCEPTED` with polling URL. `BiruniUpload: param\|alone` header activates multipart upload to MinIO/R2. `X-Callback-Url` header requests a callback when done. |
+| GET             | `/qosid/api/v1/requests/{id}/status`             | Status + inline result (when small & JSON/text) or `resultUrl` pointer.                  |
+| GET             | `/qosid/api/v1/requests/{id}/result`             | Full response body from RocksDB, original `Content-Type` + HTTP status.                  |
+| POST            | `/qosid/api/v1/callback`                         | Inbound callback receiver (currently logs + 200).                                        |
+
+Pluggable auth: implement `AuthorizationProvider` — the default `NoOpAuthorizationProvider` steps aside. See `@ai-context/EXTENSION-GUIDE.md` Recipe 0.
 
 ## Quick Commands
 
@@ -37,7 +48,16 @@ docker-compose down                   # Stop infrastructure
 ## Key Architecture
 
 ```
-Oracle/Biruni → [E1: Pull] → [E2: Kafka Produce] → [E3: Consumer + Redis Lock] → [E4: HTTP + CB] → [E5: Save to Oracle]
-                                                                                         ↓ failure
-                                                                                   [DLQ → Telegram Alert]
+Oracle/Biruni → [E1: Pull] ──┐
+                             │
+HTTP (/qosid/queue/**) ──────┤→ [Kafka] → [Consumer + Redis Lock] → [HTTP + CB] → [ResponseConsumer]
+  (ProxyController + auth +  │                                                           │
+   BiruniUpload multipart +   │                                   ┌───────────────────────┼──────────────────┐
+   fileReferences → S3)       │                                   ↓                       ↓                  ↓
+                              │                         Save to Oracle             RocksDB (7d)         Callback
+                              │                         (source=ORACLE only)       (always, if body)    (if callbackUrl)
+                              │                                   ↓ failure
+                              └─────────────────────────────────→ DLQ → Telegram Alert
 ```
+
+Status / result reads: `GET /qosid/api/v1/requests/{id}/{status,result}` read from Redis + RocksDB. Inline threshold `gateway.response.threshold-size` (default 1024 bytes).

@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 import uz.greenwhite.gateway.util.StringToMapDeserializer;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Data
@@ -58,6 +59,20 @@ public class RequestMessage {
     private Long sourceId;
 
     private LocalDateTime createdAt;
+
+    private String source;              // "ORACLE" | "API"
+
+    @JsonProperty("callback_url")
+    private String callbackUrl;         // X-Callback-Url header'dan (nullable)
+
+    @JsonProperty("file_references")
+    private List<String> fileReferences; // S3'ga yuklangan fayllar SHA ro'yxati (nullable)
+
+    @JsonProperty("client_ip")
+    private String clientIp;            // Statistika uchun
+
+    @JsonProperty("content_type")
+    private String contentType;         // Original content-type
 
     public String getCompositeId() {
         return companyId + ":" + requestId;

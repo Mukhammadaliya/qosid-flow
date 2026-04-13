@@ -22,7 +22,7 @@ public class ResponseMessage {
     // HTTP Response
     private int httpStatus;
     private String contentType;
-    private String body;
+    private byte[] body;
 
     // Error (if failed)
     private String errorMessage;
@@ -31,6 +31,11 @@ public class ResponseMessage {
 
     // Timestamps
     private LocalDateTime processedAt;
+
+    // Routing / storage (new fields)
+    private String callbackUrl;    // forwarded from RequestMessage (nullable)
+    private String rocksDbKey;     // RocksDB key for the response body
+    private String source;         // "ORACLE" | "API"
 
     /**
      * Composite ID for Kafka key

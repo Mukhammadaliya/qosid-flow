@@ -42,6 +42,26 @@ In `RequestStateService`, `getAttemptCount()` and `incrementAttempt()` return `I
 
 `CallerRunsPolicy` provides natural backpressure: when the HTTP thread pool queue is full, the caller thread (Kafka consumer) processes the request itself, naturally slowing down consumption. Replacing with `AbortPolicy` or `DiscardPolicy` causes request loss or exceptions.
 
+### 10. Never remove source-based routing in `ResponseConsumer.consumeResponse`
+
+The branch `if (isOracle) { saveWithRetry(...) } else { ... }` is what stops API-source requests from polluting Oracle/Biruni. Removing the guard re-introduces upstream writes for API-source responses — the target Biruni endpoint will reject the foreign `companyId=0` rows and the consumer will churn retries until DLQ. The same guard is also in the catch block — if you remove it there, a transient RocksDB or Redis error on an API-source record will trigger an unintended Oracle write.
+
+### 11. Never disable `@EnableRetry` or remove `@Recover` from `CallbackSender`
+
+`@EnableRetry` on `GatewayApplication` is what makes `@Retryable` active — without it, `sendCallback` silently becomes a single-attempt call (no retries, no backoff). The `@Recover` method is what stops exhausted retries from propagating out of the Kafka consumer; remove it and a bad callback URL kills message acknowledgment, which then stalls the partition.
+
+### 12. Never remove the `@PreDestroy` close on `RocksDBConfig`
+
+`RocksDB.close()` must run on shutdown to flush memtables and release file locks. Without it, repeated restarts can corrupt the on-disk database (LOCK file left behind, WAL not flushed) — the next startup will fail with `IOError: lock` and manual recovery is required.
+
+### 13. Never bypass `ContentTypeValidator` for uploaded files
+
+`FileService.uploadFiles` calls `contentTypeValidator.validate(...)` per file. This is the sole guard against clients uploading arbitrary MIME types to MinIO / R2. Removing the call turns the service into an open file store — security exposure, storage cost, and potential abuse.
+
+### 14. Never widen `RocksDBProperties.responseRetentionDays` without also reviewing the cleanup cron
+
+`ResponseStorageService.cleanupExpiredResponses` evicts entries older than `retentionDays * 86_400_000 ms`. Increasing retention without a disk-capacity review will fill the volume silently — RocksDB writes will eventually start failing and the `/result` endpoint will return 404s intermittently.
+
 ---
 
 ## Protected Zones
@@ -51,11 +71,16 @@ These files contain production-critical logic. Before modifying any of them, run
 | File | Critical Logic | Risk if Broken |
 |------|---------------|----------------|
 | `RequestConsumer.java` | Idempotency check + distributed lock + manual ack + async HTTP delegation | Duplicate processing, message loss, thread pool exhaustion |
-| `ResponseConsumer.java` | Retry logic + Oracle save + manual ack + error response fallback | Response data loss, Oracle inconsistency |
-| `HttpRequestService.java` | Circuit Breaker + OAuth2 token injection + per-endpoint timeouts | Cascading failures, auth failures, timeout mismatches |
+| `ResponseConsumer.java` | Retry logic + Oracle save + manual ack + source-based routing + RocksDB + callback trigger | Response data loss, Oracle inconsistency, cross-source pollution |
+| `HttpRequestService.java` | Circuit Breaker + OAuth2 token injection + per-endpoint timeouts + callbackUrl/source propagation | Cascading failures, auth failures, timeout mismatches, lost callbacks |
 | `RequestStateService.java` | Redis state CRUD + distributed lock (tryLock/releaseLock) + Integer.MAX_VALUE safety | Duplicate processing, infinite retries, state corruption |
 | `KafkaConfig.java` | Topic creation + consumer factories + MANUAL ack mode + error handlers | Message loss, consumer misconfiguration, missing topics |
 | `OAuth2TokenRedisCache.java` | Distributed token lock + cache with TTL + fallback on Redis failure | Token race conditions, auth failures, Redis lock leaks |
+| `CallbackSender.java` | `@Retryable` (3 attempts, 1s backoff) + `@Recover` swallow | Lost callbacks, consumer stalls on bad URL |
+| `RocksDBConfig.java` | Singleton DB instance + `@PreDestroy` close | On-disk corruption across restarts |
+| `ResponseStorageService.java` | Scheduled retention cleanup + body/metadata dual-write | Disk exhaustion, orphaned metadata |
+| `ProxyController.java` | Auth gate + URL prefix strip + BiruniUpload parsing + `source="API"` tagging | Bypass of auth, cross-source mix-up, unvalidated uploads |
+| `ContentTypeValidator.java` | MIME whitelist enforcement | Open file store, security exposure |
 
 ## Required Checklist
 

@@ -5,16 +5,21 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import uz.greenwhite.gateway.api.model.CallbackPayload;
+import uz.greenwhite.gateway.callback.CallbackSender;
 import uz.greenwhite.gateway.kafka.producer.RequestProducer;
 import uz.greenwhite.gateway.model.RequestState;
 import uz.greenwhite.gateway.model.kafka.DlqMessage;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import uz.greenwhite.gateway.notification.NotificationService;
 import uz.greenwhite.gateway.state.RequestStateService;
+import uz.greenwhite.gateway.storage.ResponseMetadata;
+import uz.greenwhite.gateway.storage.ResponseStorageService;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Test controller for manual testing.
@@ -30,6 +35,8 @@ public class TestController {
     private final RequestProducer requestProducer;
     private final RequestStateService requestStateService;
     private final NotificationService notificationService;
+    private final ResponseStorageService responseStorageService;
+    private final CallbackSender callbackSender;
 
     /**
      * Send test request to Kafka
@@ -156,6 +163,94 @@ public class TestController {
         response.put("compositeId", dlqMessage.getCompositeId());
         response.put("notification_enabled", notificationService.isEnabled());
         response.put("message", "DLQ message sent");
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Emulate an inbound API request by enqueuing a synthetic {@code source="API"}
+     * message. Useful for exercising the ResponseConsumer's API-branch routing
+     * without going through ProxyController's multipart/header plumbing.
+     *
+     * Example: POST http://localhost:8090/api/test/proxy
+     */
+    @PostMapping("/proxy")
+    public ResponseEntity<Map<String, Object>> sendTestProxyRequest() {
+        UUID uuid = UUID.randomUUID();
+        long requestId = uuid.getMostSignificantBits() & Long.MAX_VALUE;
+
+        RequestMessage request = RequestMessage.builder()
+                .companyId(0L)
+                .requestId(requestId)
+                .source("API")
+                .baseUrl("https://httpbin.org")
+                .uri("/post")
+                .method("POST")
+                .headers(Map.of("X-Test-Header", "api-proxy-test"))
+                .body("{\"test\": \"api-proxy\", \"uuid\": \"" + uuid + "\"}")
+                .clientIp("127.0.0.1")
+                .contentType("application/json")
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        requestProducer.sendRequest(request);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "sent");
+        response.put("compositeId", request.getCompositeId());
+        response.put("source", "API");
+        response.put("message", "API-source test request sent to Kafka");
+        log.info("Test API proxy request sent: {}", request.getCompositeId());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Inspect RocksDB for a stored response. Returns metadata only (body is kept
+     * binary and served via {@code /qosid/api/v1/requests/{id}/result}).
+     *
+     * Example: GET http://localhost:8090/api/test/rocksdb/0:123456789
+     */
+    @GetMapping("/rocksdb/{id}")
+    public ResponseEntity<Object> getRocksdbMetadata(@PathVariable String id) {
+        ResponseMetadata meta = responseStorageService.getResponseMetadata(id);
+        if (meta == null) {
+            return ResponseEntity.ok(Map.of(
+                    "status", "not_found",
+                    "compositeId", id
+            ));
+        }
+        return ResponseEntity.ok(meta);
+    }
+
+    /**
+     * Send a test callback through the retrying CallbackSender. Handy for
+     * verifying that the callback URL is reachable from this environment.
+     *
+     * Example: POST http://localhost:8090/api/test/callback?url=http://localhost:9000/hook
+     */
+    @PostMapping("/callback")
+    public ResponseEntity<Map<String, Object>> sendTestCallback(@RequestParam String url) {
+        CallbackPayload payload = CallbackPayload.builder()
+                .requestId("test:" + UUID.randomUUID())
+                .status("COMPLETED")
+                .httpStatus(200)
+                .contentType("application/json")
+                .result(Map.of("test", "payload", "timestamp", LocalDateTime.now().toString()))
+                .build();
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("url", url);
+        response.put("requestId", payload.getRequestId());
+        try {
+            callbackSender.sendCallback(url, payload);
+            response.put("status", "sent");
+            response.put("message", "Callback delivered (or all retries exhausted — check logs)");
+        } catch (Exception e) {
+            // @Recover swallows after 3 attempts, so this is mainly for synchronous
+            // validation errors (malformed URL, etc.).
+            response.put("status", "failed");
+            response.put("error", e.getMessage());
+            log.warn("Test callback failed synchronously: {}", e.getMessage());
+        }
         return ResponseEntity.ok(response);
     }
 }

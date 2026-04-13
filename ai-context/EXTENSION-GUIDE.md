@@ -2,6 +2,52 @@
 
 Step-by-step recipes for adding new features to the gateway. Follow these patterns exactly to maintain consistency with the existing codebase.
 
+## Recipe 0: Add a Custom `AuthorizationProvider`
+
+**When:** You want to gate the REST proxy (`POST/GET/... /qosid/queue/**`) with a bespoke auth scheme — API-key header, JWT, IP allowlist, etc.
+
+**How it works:** `ProxyController` calls `authorizationProvider.authorize(AuthContext)` on every inbound request. The default `NoOpAuthorizationProvider` allows everything. Your custom bean displaces it automatically because of `@ConditionalOnMissingBean(AuthorizationProvider.class)` on the default.
+
+**File to create** — `auth/ApiKeyAuthorizationProvider.java` (name is up to you):
+
+```java
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class ApiKeyAuthorizationProvider implements AuthorizationProvider {
+
+    @Value("${gateway.auth.api-key:}")
+    private String expectedApiKey;
+
+    @Override
+    public AuthResult authorize(AuthContext context) {
+        String presented = context.getHeaders().get("X-Api-Key");
+        if (presented == null || presented.isBlank()) {
+            return AuthResult.denied("Missing X-Api-Key header", 401);
+        }
+        if (!expectedApiKey.equals(presented)) {
+            return AuthResult.denied("Invalid API key", 403);
+        }
+        return AuthResult.allowed();
+    }
+}
+```
+
+**What you DON'T have to do:**
+
+- Don't register a bean name — `@Component` on any `AuthorizationProvider` implementation is enough; `NoOpAuthorizationProvider` steps aside because of `@ConditionalOnMissingBean`.
+- Don't touch `ProxyController` — it already throws `AuthorizationDeniedException(reason, httpStatus)` when `AuthResult.allowed == false`, and `GlobalExceptionHandler` translates that to the right HTTP status with a uniform `ErrorResponse` body.
+- Don't wire Spring Security in. The framework is deliberately off the classpath; the project uses its own `AuthenticationException` (also mapped to 401 by the handler).
+
+**What to pay attention to:**
+
+- **Header case**: servlet headers are case-insensitive on lookup but the `AuthContext.headers` map preserves whatever case the client sent. Use `context.getHeaders().entrySet().stream().filter(...)` if you need case-insensitive matching.
+- **Client IP**: `context.getClientIp()` already resolves `X-Forwarded-For` (leftmost) / `X-Real-IP` / remote addr — don't re-parse `X-Forwarded-For` yourself.
+- **Status code**: pass a specific HTTP code on denial (`AuthResult.denied(reason, 401)`). Without it the default is 403, which is wrong for a missing-credential case.
+- **Multiple implementations**: if you register more than one `AuthorizationProvider` bean Spring will fail with a "multiple beans" error — either `@Primary` one of them or combine the logic into a single composite provider.
+
+---
+
 ## Recipe 1: Add a New Kafka Consumer
 
 **When:** You need to consume messages from a new Kafka topic.

@@ -20,6 +20,26 @@ public class HttpProperties {
     private int readTimeoutMs;
     private int writeTimeoutMs;
 
+    /**
+     * Maximum number of concurrent connections in the Reactor Netty pool.
+     */
+    private int maxConnections = 500;
+
+    /**
+     * Maximum idle time (ms) before an idle connection is evicted.
+     */
+    private long maxIdleTimeMs = 60_000;
+
+    /**
+     * Maximum total lifetime (ms) of a connection regardless of usage.
+     */
+    private long maxLifeTimeMs = 300_000;
+
+    /**
+     * Maximum time (ms) a request will wait for a free connection from the pool.
+     */
+    private long pendingAcquireTimeoutMs = 45_000;
+
     @PostConstruct
     public void validate() {
         if (connectTimeoutMs <= 0) {
@@ -32,8 +52,10 @@ public class HttpProperties {
             throw new IllegalArgumentException("gateway.http.write-timeout-ms must be > 0");
         }
 
-        log.info("HTTP client config: connect={}ms, read={}ms, write={}ms",
-                connectTimeoutMs, readTimeoutMs, writeTimeoutMs);
+        log.info("HTTP client config: connect={}ms, read={}ms, write={}ms, " +
+                        "pool[maxConn={}, idle={}ms, life={}ms, acquire={}ms]",
+                connectTimeoutMs, readTimeoutMs, writeTimeoutMs,
+                maxConnections, maxIdleTimeMs, maxLifeTimeMs, pendingAcquireTimeoutMs);
     }
 
     /**

@@ -12,6 +12,13 @@ spring:
   application:
     name: request-gateway-service
 
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 52MB
+      file-size-threshold: 128KB
+      resolve-lazily: true
+
   kafka:
     bootstrap-servers: ${gateway.kafka.bootstrap-servers}
     consumer:
@@ -46,6 +53,17 @@ spring:
 server:
   port: ${SERVER_PORT:8090}
   shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,application/javascript,application/json
+    min-response-size: 2KB
+  tomcat:
+    accept-count: ${TOMCAT_ACCEPT_COUNT:1000}
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:10000}
+    connection-timeout: ${TOMCAT_CONNECTION_TIMEOUT:20s}
+    max-http-form-post-size: 2MB
+    threads:
+      max: ${TOMCAT_MAX_THREADS:2000}
 
 # ============================================================
 # ACTUATOR & MONITORING
@@ -97,6 +115,10 @@ gateway:
     read-timeout-ms: ${HTTP_READ_TIMEOUT:30000}
     write-timeout-ms: ${HTTP_WRITE_TIMEOUT:30000}
     endpoint-timeouts: {}
+    max-connections: ${HTTP_MAX_CONNECTIONS:500}
+    max-idle-time-ms: ${HTTP_MAX_IDLE_TIME:60000}
+    max-life-time-ms: ${HTTP_MAX_LIFE_TIME:300000}
+    pending-acquire-timeout-ms: ${HTTP_PENDING_ACQUIRE:45000}
 
   # --- Retry ---
   retry:
@@ -114,6 +136,77 @@ gateway:
     scale-step: ${CONCURRENCY_SCALE_STEP:2}
     scale-cooldown-ms: ${CONCURRENCY_COOLDOWN:30000}
     topic-partitions: ${KAFKA_PARTITIONS:10}
+    thread-pool-multiplier: ${THREAD_POOL_MULTIPLIER:2}
+    thread-pool-queue-capacity: ${THREAD_POOL_QUEUE:50}
+
+  # --- Target (external API base URL) ---
+  target:
+    base-url: ${TARGET_BASE_URL:http://localhost:8081/b}
+
+  # --- Proxy (REST API entry point) ---
+  proxy:
+    prefix: /qosid/queue
+    context-path: /qosid
+
+  # --- Response handling ---
+  response:
+    threshold-size: ${RESPONSE_THRESHOLD_SIZE:1024}
+
+  # --- RocksDB (response body storage) ---
+  rocksdb:
+    path: ${ROCKSDB_PATH:./data/rocksdb}
+    response-retention-days: ${ROCKSDB_RETENTION_DAYS:7}
+    cleanup-cron: "0 0 0 * * *"
+
+  # --- S3 (MinIO + Cloudflare R2) ---
+  s3:
+    minio:
+      enabled: ${MINIO_ENABLED:false}
+      endpoint: ${MINIO_ENDPOINT:}
+      access-key: ${MINIO_ACCESS_KEY:}
+      secret-key: ${MINIO_SECRET_KEY:}
+      bucket: ${MINIO_BUCKET:gateway-files}
+    cloudflare-r2:
+      enabled: ${R2_ENABLED:false}
+      endpoint: ${R2_ENDPOINT:}
+      access-key: ${R2_ACCESS_KEY:}
+      secret-key: ${R2_SECRET_KEY:}
+      temp-bucket: ${R2_TEMP_BUCKET:}
+      permanent-bucket: ${R2_PERMANENT_BUCKET:}
+      link-expiration-hours: ${R2_LINK_EXPIRY:24}
+
+  # --- Security (allowed content types) ---
+  security:
+    content-types:
+      - application/json
+      - application/javascript
+      - application/x-www-form-urlencoded
+      - text/plain
+      - multipart/form-data
+      - image/jpeg
+      - image/png
+      - image/gif
+      - image/webp
+      - image/svg+xml
+      - image/tiff
+      - image/bmp
+      - image/x-icon
+      - image/heic
+      - image/heif
+      - audio/mpeg
+      - audio/wav
+      - audio/ogg
+      - audio/midi
+      - audio/x-m4a
+      - audio/webm
+      - audio/aac
+      - video/mp4
+      - video/mpeg
+      - video/webm
+      - video/quicktime
+      - video/x-msvideo
+      - video/x-matroska
+      - video/3gpp
 
   # --- Telegram Notifications ---
   telegram:

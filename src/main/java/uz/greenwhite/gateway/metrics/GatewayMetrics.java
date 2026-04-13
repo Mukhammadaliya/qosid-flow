@@ -64,6 +64,24 @@ public class GatewayMetrics {
     // ==================== End-to-End ====================
     private final Timer requestE2eTimer;
 
+    // ==================== API Layer (Proxy + Status) ====================
+    private final Counter apiRequestReceived;
+    private final Counter apiRequestSuccess;
+    private final Counter apiRequestError;
+    private final Timer apiRequestTimer;
+
+    // ==================== RocksDB Response Storage ====================
+    private final Counter rocksdbSaveSuccess;
+    private final Counter rocksdbSaveError;
+
+    // ==================== Callback ====================
+    private final Counter callbackSent;
+    private final Counter callbackFailed;
+
+    // ==================== File Upload (S3) ====================
+    private final Counter fileUploadSuccess;
+    private final Counter fileUploadError;
+
     public GatewayMetrics(MeterRegistry registry) {
         this.registry = registry;
 
@@ -211,7 +229,61 @@ public class GatewayMetrics {
                 .description("End-to-end request processing time (Oracle Pull → Oracle Save)")
                 .register(registry);
 
-        log.info("Gateway pipeline metrics registered (E1-E5 + DLQ + E2E)");
+        // ==================== API Layer ====================
+
+        this.apiRequestReceived = Counter.builder("gateway.api.request.received")
+                .description("Inbound API requests received by ProxyController")
+                .register(registry);
+
+        this.apiRequestSuccess = Counter.builder("gateway.api.request.total")
+                .description("Inbound API requests enqueued successfully")
+                .tag("result", "success")
+                .register(registry);
+
+        this.apiRequestError = Counter.builder("gateway.api.request.total")
+                .description("Inbound API request failures (auth, enqueue, validation)")
+                .tag("result", "error")
+                .register(registry);
+
+        this.apiRequestTimer = Timer.builder("gateway.api.request.duration")
+                .description("ProxyController end-to-end handling time")
+                .register(registry);
+
+        // ==================== RocksDB ====================
+
+        this.rocksdbSaveSuccess = Counter.builder("gateway.rocksdb.save.total")
+                .description("RocksDB response saves succeeded")
+                .tag("result", "success")
+                .register(registry);
+
+        this.rocksdbSaveError = Counter.builder("gateway.rocksdb.save.total")
+                .description("RocksDB response save errors")
+                .tag("result", "error")
+                .register(registry);
+
+        // ==================== Callback ====================
+
+        this.callbackSent = Counter.builder("gateway.callback.sent")
+                .description("Callbacks delivered (2xx response)")
+                .register(registry);
+
+        this.callbackFailed = Counter.builder("gateway.callback.failed")
+                .description("Callbacks failed after all retry attempts")
+                .register(registry);
+
+        // ==================== File Upload ====================
+
+        this.fileUploadSuccess = Counter.builder("gateway.file.upload.total")
+                .description("Files uploaded to S3 successfully")
+                .tag("result", "success")
+                .register(registry);
+
+        this.fileUploadError = Counter.builder("gateway.file.upload.total")
+                .description("S3 file upload errors")
+                .tag("result", "error")
+                .register(registry);
+
+        log.info("Gateway pipeline metrics registered (E1-E5 + DLQ + E2E + API + RocksDB + Callback + Upload)");
     }
 
     // ==================== Convenience Methods ====================

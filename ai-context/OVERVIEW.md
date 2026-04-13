@@ -19,11 +19,11 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 
 ## What This Is NOT
 
-- **Not a REST API** — this service does not expose REST endpoints for external consumers (only dev test endpoints and actuator)
 - **Not a UI application** — purely backend service, no frontend
 - **Not a monolith** — single-purpose microservice focused on request gateway processing
 - **Not a CRUD app** — does not manage entities; it orchestrates HTTP request delivery with resilience
-- **Not a proxy** — it pulls requests from a database, not from incoming HTTP traffic
+
+> Historically this service was pull-only (Oracle → Kafka). As of the feature-parity upgrade it additionally accepts inbound HTTP via the REST API Layer — see the components below.
 
 ## Tech Stack
 
@@ -34,15 +34,30 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 | Spring Kafka | Kafka producer/consumer | (Spring Boot managed) |
 | Spring Data Redis | State management, caching, distributed locks | (Spring Boot managed) |
 | Spring WebFlux | Reactive HTTP client (WebClient) | (Spring Boot managed) |
+| Spring Retry | @Retryable callback dispatch | (Spring Boot managed) |
 | Resilience4j | Circuit Breaker pattern | 2.2.0 |
 | Micrometer + Prometheus | Metrics collection and export | (Spring Boot managed) |
 | Oracle JDBC | Database connectivity (via Biruni REST) | 23.4.0.24.05 |
+| RocksDB | Local disk-backed response body storage | 9.7.3 |
+| MinIO SDK | S3-compatible file upload (local / self-hosted) | 8.5.12 |
+| AWS SDK (S3) | Cloudflare R2 file upload | 2.27.24 |
 | Lombok | Boilerplate reduction | (Spring Boot managed) |
 | Jackson | JSON serialization | (Spring Boot managed) |
 | RedPanda | Kafka-compatible broker (local dev) | 24.1.1 |
 | Redis | State, locks, OAuth2 token cache | 7.2 |
 | Grafana | Monitoring dashboards | 10.4.1 |
 | AlertManager | Alert routing | 0.28.0 |
+
+## Added Components (Feature-Parity Upgrade)
+
+| Component | Package | Purpose |
+|-----------|---------|---------|
+| REST API Layer | `api/` | Transparent proxy `POST/GET/PUT/DELETE/PATCH /qosid/queue/**`; status/result endpoints at `/qosid/api/v1/requests/{id}/{status,result}`; callback receiver at `/qosid/api/v1/callback`. |
+| Authorization Framework | `auth/` | Pluggable `AuthorizationProvider` SPI, default `NoOpAuthorizationProvider`. |
+| Exception Handling | `exception/` | `@RestControllerAdvice` producing uniform `ErrorResponse` JSON for all API errors. |
+| RocksDB Storage | `storage/` | Disk-backed response bodies keyed by `compositeId`, 7-day retention via `@Scheduled` cleanup cron. |
+| Callback System | `callback/` | `@Retryable` HTTP POST sender with `@Recover` (3 attempts, 1s backoff). |
+| File Upload | `file/` + `file/s3/` | Multipart handling with SHA-256 dedup; MinIO + Cloudflare R2 clients. |
 
 ## Key Ports
 
@@ -64,8 +79,13 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 ```
 qosid-flow/
   src/main/java/uz/greenwhite/gateway/   # Application source code
+    api/             # REST API layer (ProxyController, StatusController, CallbackController)
+    auth/            # Pluggable authorization SPI
+    callback/        # Outbound callback dispatch with retry
     config/          # Configuration classes (*Properties.java, *Config.java)
     controller/      # Dev-only test endpoints
+    exception/       # GlobalExceptionHandler + typed exceptions
+    file/            # Multipart parsing, content-type validation, S3 clients
     health/          # Custom health indicators
     http/            # HTTP client with Circuit Breaker + OAuth2
     kafka/           # Kafka consumers and producers
@@ -76,6 +96,7 @@ qosid-flow/
     oracle/          # Oracle/Biruni client (pull/save)
     source/          # Data source interfaces
     state/           # Redis state management
+    storage/         # RocksDB response body storage
     concurrency/     # Dynamic concurrency scaling
     validation/      # Request validation
   src/main/resources/

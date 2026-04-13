@@ -47,6 +47,10 @@ Complete reference for all configuration parameters. Every property has a defaul
 | `gateway.http.read-timeout-ms` | int | `30000` | `HTTP_READ_TIMEOUT` | HTTP read timeout (ms) |
 | `gateway.http.write-timeout-ms` | int | `30000` | `HTTP_WRITE_TIMEOUT` | HTTP write timeout (ms) |
 | `gateway.http.endpoint-timeouts` | Map | `{}` | — | Per-domain timeout overrides (domain -> ms) |
+| `gateway.http.max-connections` | int | `500` | `HTTP_MAX_CONNECTIONS` | Reactor Netty pool max concurrent connections |
+| `gateway.http.max-idle-time-ms` | long | `60000` | `HTTP_MAX_IDLE_TIME` | Idle connection eviction threshold |
+| `gateway.http.max-life-time-ms` | long | `300000` | `HTTP_MAX_LIFE_TIME` | Max total connection lifetime |
+| `gateway.http.pending-acquire-timeout-ms` | long | `45000` | `HTTP_PENDING_ACQUIRE` | Max wait for a free connection from the pool |
 
 **Per-endpoint timeout example:**
 ```yaml
@@ -81,6 +85,8 @@ gateway:
 | `gateway.concurrency.scale-step` | int | `2` | — | Threads to add/remove per step |
 | `gateway.concurrency.scale-cooldown-ms` | long | `30000` | — | Minimum time between scaling events |
 | `gateway.concurrency.topic-partitions` | int | `10` | `KAFKA_PARTITIONS` | Kafka partitions per topic |
+| `gateway.concurrency.thread-pool-multiplier` | int | `2` | `THREAD_POOL_MULTIPLIER` | HTTP thread pool max = `maxConcurrency * multiplier` |
+| `gateway.concurrency.thread-pool-queue-capacity` | int | `50` | `THREAD_POOL_QUEUE` | HTTP thread pool queue size before rejection |
 
 ## gateway.telegram.* — Telegram Notifications
 
@@ -124,6 +130,67 @@ gateway:
 | `slow-call-duration-threshold` | Duration | `10s` | Threshold for slow call detection |
 | `slow-call-rate-threshold` | int | `50` | Slow call percentage to trigger OPEN (%) |
 
+## gateway.target.* — Upstream Base URL
+
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `gateway.target.base-url` | String | `http://localhost:8081/b` | `TARGET_BASE_URL` | Base URL used by API-source requests when no explicit upstream is supplied. |
+
+## gateway.proxy.* — REST Proxy Layout
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `gateway.proxy.prefix` | String | `/qosid/queue` | URI prefix stripped when forwarding the proxied request. |
+| `gateway.proxy.context-path` | String | `/qosid` | Application context path (informational). |
+
+## gateway.response.* — Response Inlining
+
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `gateway.response.threshold-size` | int | `1024` | `RESPONSE_THRESHOLD_SIZE` | Max body length (bytes) inlined on `/status`; larger bodies surface as `resultUrl`. Same threshold drives callback inlining. |
+
+## gateway.rocksdb.* — Response Body Storage
+
+**Properties class:** `RocksDBProperties.java`
+
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `gateway.rocksdb.path` | String | `./data/rocksdb` | `ROCKSDB_PATH` | Filesystem path for the RocksDB database (auto-created). |
+| `gateway.rocksdb.response-retention-days` | int | `7` | `ROCKSDB_RETENTION_DAYS` | Age after which a stored response is evicted by the cleanup job. |
+| `gateway.rocksdb.cleanup-cron` | String | `0 0 0 * * *` | — | Spring cron expression for `ResponseStorageService.cleanupExpiredResponses`. |
+
+## gateway.s3.* — File Upload Backends
+
+**Properties class:** `FileProperties.java`
+
+### MinIO (`gateway.s3.minio.*`)
+
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `gateway.s3.minio.enabled` | boolean | `false` | `MINIO_ENABLED` | Gate: client bean registered only when true. |
+| `gateway.s3.minio.endpoint` | String | — | `MINIO_ENDPOINT` | MinIO server URL. |
+| `gateway.s3.minio.access-key` | String | — | `MINIO_ACCESS_KEY` | |
+| `gateway.s3.minio.secret-key` | String | — | `MINIO_SECRET_KEY` | |
+| `gateway.s3.minio.bucket` | String | `gateway-files` | `MINIO_BUCKET` | Target bucket (must exist at startup). |
+
+### Cloudflare R2 (`gateway.s3.cloudflare-r2.*`)
+
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `gateway.s3.cloudflare-r2.enabled` | boolean | `false` | `R2_ENABLED` | Gate: client bean registered only when true. |
+| `gateway.s3.cloudflare-r2.endpoint` | String | — | `R2_ENDPOINT` | R2 endpoint URL. |
+| `gateway.s3.cloudflare-r2.access-key` | String | — | `R2_ACCESS_KEY` | |
+| `gateway.s3.cloudflare-r2.secret-key` | String | — | `R2_SECRET_KEY` | |
+| `gateway.s3.cloudflare-r2.temp-bucket` | String | — | `R2_TEMP_BUCKET` | Temp-upload bucket. |
+| `gateway.s3.cloudflare-r2.permanent-bucket` | String | — | `R2_PERMANENT_BUCKET` | Permanent-upload bucket. |
+| `gateway.s3.cloudflare-r2.link-expiration-hours` | int | `24` | `R2_LINK_EXPIRY` | Presigned GET URL lifetime (hours). |
+
+## gateway.security.* — Content-Type Allowlist
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `gateway.security.content-types` | List\<String\> | JSON/text/image/audio/video MIME list (see `application.yml`) | Whitelist enforced by `ContentTypeValidator`. Requests / uploads with other types are rejected with 400. |
+
 ## Server & Management
 
 | Property | Type | Default | Env Var | Description |
@@ -131,6 +198,13 @@ gateway:
 | `server.port` | int | `8090` | `SERVER_PORT` | Application HTTP port |
 | `management.server.port` | int | `8091` | `MANAGEMENT_PORT` | Actuator/metrics port |
 | `spring.lifecycle.timeout-per-shutdown-phase` | Duration | `30s` | — | Graceful shutdown timeout |
+| `server.compression.enabled` | boolean | `true` | — | GZIP compression for JSON/text responses. |
+| `server.tomcat.accept-count` | int | `1000` | `TOMCAT_ACCEPT_COUNT` | Accept queue size. |
+| `server.tomcat.max-connections` | int | `10000` | `TOMCAT_MAX_CONNECTIONS` | Max concurrent connections. |
+| `server.tomcat.connection-timeout` | Duration | `20s` | `TOMCAT_CONNECTION_TIMEOUT` | Idle connection timeout. |
+| `server.tomcat.threads.max` | int | `2000` | `TOMCAT_MAX_THREADS` | Max worker threads. |
+| `spring.servlet.multipart.max-file-size` | String | `50MB` | — | Max individual file upload size. |
+| `spring.servlet.multipart.max-request-size` | String | `52MB` | — | Max total multipart request size. |
 
 ## Mandatory Environment Variables for Production
 

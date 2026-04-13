@@ -9,26 +9,41 @@ Oracle/Biruni                    (RedPanda)                  External APIs
      |   E1: Pull     E2: Produce  |   E3: Consume   E4: HTTP   |   E5: Save
      |   (5s poll)    (async)       |   (+ Redis)     (+ CB)     |   (+ retry)
      +-------->  RequestPuller -----+----> gateway.request.new   |
-                                    |         |                   |
+              source="ORACLE"       |         |                   |
                                     |    RequestConsumer -------->+
-                                    |         |                   |
-                                    |    (idempotency check)      |
-                                    |    (distributed lock)       |
-                                    |         |                   |
-                                    |    HttpRequestService ----->+  (Circuit Breaker)
-                                    |         |                   |  (OAuth2 if needed)
-                                    |         v                   |
+ HTTP clients                       |         |                   |
+     |                              |    (idempotency check)      |
+     +-->  /qosid/queue/**          |    (distributed lock)       |
+          ProxyController ----------+    HttpRequestService ----->+  (Circuit Breaker)
+              source="API"          |         |                   |  (OAuth2 if needed)
+              (auth + multipart)    |         v                   |
                                     |    gateway.request.response |
                                     |         |                   |
-                                    |    ResponseConsumer --------+----> Oracle/Biruni
-                                    |                             |     (save response)
+                                    |    ResponseConsumer --------+
+                                    |         |                   |
+                                    |    +--> RocksDB (always if body)
+                                    |    +--> Callback (if callbackUrl)
+                                    |    +--> Oracle/Biruni (only if source="ORACLE")
                                     |                             |
                              (on failure, after retries)          |
                                     |                             |
                               gateway.request.dlq                 |
                                     |                             |
                               DlqConsumer --> Telegram Alert      |
+
+ HTTP clients (status/result lookup)
+     |
+     +-->  /qosid/api/v1/requests/{id}/status  StatusController
+     +-->  /qosid/api/v1/requests/{id}/result  StatusController
+     +-->  /qosid/api/v1/callback              CallbackController
 ```
+
+The pipeline now has **two entry points** that both feed `gateway.request.new`:
+
+- **E1 Oracle pull** — original polling loop, tags `RequestMessage.source="ORACLE"`.
+- **E0 REST proxy** — `ProxyController` at `/qosid/queue/**`, tags `source="API"`. Runs `AuthorizationProvider.authorize(...)` first, optionally parses multipart via `BiruniUpload` header (uploading files to MinIO/R2 and rewriting `"\u0000<index>"` placeholders with SHAs), then enqueues via `RequestProducer.sendRequest`.
+
+**ResponseConsumer source routing:** body is always written to RocksDB (when non-null) and callbacks are always fired (when `callbackUrl` present). Only `ORACLE`-source responses flow through the original Biruni save step — `API`-source responses stop at RocksDB + Redis + callback.
 
 ## Stage Breakdown
 

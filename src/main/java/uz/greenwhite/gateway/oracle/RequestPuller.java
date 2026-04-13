@@ -77,6 +77,9 @@ public class RequestPuller {
         for (RequestMessage request : requests) {
             String compositeId = request.getCompositeId();
 
+            // Tag the origin so downstream stages can route ORACLE vs API
+            request.setSource("ORACLE");
+
             try {
                 // Validate before sending to Kafka
                 List<String> validationErrors = requestValidator.validate(request);
