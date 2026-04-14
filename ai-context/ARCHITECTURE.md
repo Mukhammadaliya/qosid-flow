@@ -1,6 +1,52 @@
 # Architecture
 
-## Pipeline Diagram
+## How It Works (To'liq flow)
+
+```
+Main Server (HAProxy)
+     |
+     |  /qosid/queue/** prefixli request keldi
+     |
+     v
+ProxyController (qosid-flow)
+     |  Auth tekshirish
+     |  BiruniUpload bo'lsa → fayllarni S3 ga yuklash
+     |  RequestMessage yaratish (source="API")
+     |
+     v
+Kafka (gateway.request.new topic)
+     |  Navbatga qo'yildi
+     |
+     v
+RequestConsumer
+     |  Navbatdan o'qish
+     |  Idempotency check (Redis)
+     |  Distributed lock (Redis)
+     |
+     v
+HttpRequestService
+     |  Circuit Breaker tekshirish
+     |  OAuth2 token olish (kerak bo'lsa)
+     |  Main app ga HTTP request yuborish
+     |
+     v
+Main App (tashqi API)
+     |  Requestni qayta ishlash
+     |  Javob qaytarish
+     |
+     v
+ResponseConsumer
+     |  Javobni RocksDB ga saqlash (7 kun retention)
+     |  Callback yuborish (agar X-Callback-Url berilgan bo'lsa)
+     |  Redis state yangilash → COMPLETED
+     |
+     v
+Client javobni oladi:
+     GET /qosid/api/v1/requests/{id}/status  → inline result yoki resultUrl
+     GET /qosid/api/v1/requests/{id}/result  → to'liq response body (RocksDB dan)
+```
+
+## Pipeline Diagram (texnik)
 
 ```
                                    KAFKA
@@ -38,7 +84,7 @@ Oracle/Biruni                    (RedPanda)                  External APIs
      +-->  /qosid/api/v1/callback              CallbackController
 ```
 
-The pipeline now has **two entry points** that both feed `gateway.request.new`:
+The pipeline has **two entry points** that both feed `gateway.request.new`:
 
 - **E1 Oracle pull** — original polling loop, tags `RequestMessage.source="ORACLE"`.
 - **E0 REST proxy** — `ProxyController` at `/qosid/queue/**`, tags `source="API"`. Runs `AuthorizationProvider.authorize(...)` first, optionally parses multipart via `BiruniUpload` header (uploading files to MinIO/R2 and rewriting `"\u0000<index>"` placeholders with SHAs), then enqueues via `RequestProducer.sendRequest`.
@@ -193,10 +239,13 @@ ResponseSaveRequest (Oracle save payload)
 ### Thread Pool & Backpressure
 
 - **HTTP Executor:** Separate thread pool for HTTP requests (`httpRequestExecutor`)
-- **Core Size:** `minConcurrency` (default 3)
-- **Max Size:** `maxConcurrency * 2` (default 30)
+- **Core Size:** `minConcurrency` (default 10)
+- **Max Size:** `maxConcurrency * threadPoolMultiplier` (default 30)
 - **Queue:** 50 tasks
-- **Rejection Policy:** `CallerRunsPolicy` — when queue full, caller thread runs the task (natural backpressure)
+- **Rejection Policy:** `RejectWithLogging` — when queue full, throws `RejectedExecutionException`. RequestConsumer catches it and re-queues the message to Kafka without incrementing attempt count. Consumer thread stays free.
+- **Non-blocking:** RequestConsumer uses `.subscribe()` instead of `.block()` — threads are freed immediately after dispatching HTTP request.
+- **Message Expiry:** Messages older than `gateway.retry.max-message-age-ms` (default 5 min) are failed immediately to prevent infinite re-queue loops.
+- **CB-aware retry:** Circuit Breaker and OAuth2 errors are NOT retried — they cause immediate failure to prevent cascading loops.
 
 ## Request Status Lifecycle
 
