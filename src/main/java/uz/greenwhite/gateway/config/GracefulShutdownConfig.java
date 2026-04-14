@@ -14,26 +14,30 @@ import java.util.concurrent.TimeUnit;
 public class GracefulShutdownConfig {
 
     private final KafkaListenerEndpointRegistry kafkaRegistry;
-    private final ThreadPoolTaskExecutor httpExecutor;
+    private final ThreadPoolTaskExecutor oracleHttpExecutor;
+    private final ThreadPoolTaskExecutor apiHttpExecutor;
 
     public GracefulShutdownConfig(
             KafkaListenerEndpointRegistry kafkaRegistry,
-            @Qualifier("httpRequestExecutor") ThreadPoolTaskExecutor httpExecutor) {
+            @Qualifier("oracleHttpExecutor") ThreadPoolTaskExecutor oracleHttpExecutor,
+            @Qualifier("apiHttpExecutor") ThreadPoolTaskExecutor apiHttpExecutor) {
         this.kafkaRegistry = kafkaRegistry;
-        this.httpExecutor = httpExecutor;
+        this.oracleHttpExecutor = oracleHttpExecutor;
+        this.apiHttpExecutor = apiHttpExecutor;
     }
 
     @PreDestroy
     public void onShutdown() {
-        log.info("🛑 Graceful shutdown started...");
+        log.info("Graceful shutdown started...");
 
-        // 1. Kafka consumerlarni to'xtatish — yangi message qabul qilmaydi
+        // 1. Stop Kafka consumers — no new messages
         stopKafkaConsumers();
 
-        // 2. HTTP thread poolni to'xtatish — in-flight requestlar tugashini kutish
-        shutdownHttpExecutor();
+        // 2. Shutdown both HTTP executors — wait for in-flight requests
+        shutdownExecutor("oracle", oracleHttpExecutor);
+        shutdownExecutor("api", apiHttpExecutor);
 
-        log.info("✅ Graceful shutdown completed");
+        log.info("Graceful shutdown completed");
     }
 
     private void stopKafkaConsumers() {
@@ -49,24 +53,24 @@ public class GracefulShutdownConfig {
         }
     }
 
-    private void shutdownHttpExecutor() {
-        log.info("Shutting down HTTP executor. Active tasks: {}, Queue size: {}",
-                httpExecutor.getActiveCount(),
-                httpExecutor.getThreadPoolExecutor().getQueue().size());
+    private void shutdownExecutor(String name, ThreadPoolTaskExecutor executor) {
+        log.info("Shutting down {} HTTP executor. Active: {}, Queue: {}",
+                name, executor.getActiveCount(),
+                executor.getThreadPoolExecutor().getQueue().size());
 
-        httpExecutor.getThreadPoolExecutor().shutdown();
+        executor.getThreadPoolExecutor().shutdown();
 
         try {
-            if (!httpExecutor.getThreadPoolExecutor().awaitTermination(25, TimeUnit.SECONDS)) {
-                log.warn("⚠ HTTP executor did not terminate in 25s, forcing shutdown. " +
-                        "Remaining active: {}", httpExecutor.getActiveCount());
-                httpExecutor.getThreadPoolExecutor().shutdownNow();
+            if (!executor.getThreadPoolExecutor().awaitTermination(25, TimeUnit.SECONDS)) {
+                log.warn("{} HTTP executor did not terminate in 25s, forcing shutdown. Active: {}",
+                        name, executor.getActiveCount());
+                executor.getThreadPoolExecutor().shutdownNow();
             } else {
-                log.info("HTTP executor terminated gracefully");
+                log.info("{} HTTP executor terminated gracefully", name);
             }
         } catch (InterruptedException e) {
-            log.warn("Shutdown interrupted, forcing...");
-            httpExecutor.getThreadPoolExecutor().shutdownNow();
+            log.warn("{} shutdown interrupted, forcing...", name);
+            executor.getThreadPoolExecutor().shutdownNow();
             Thread.currentThread().interrupt();
         }
     }
