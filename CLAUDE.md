@@ -17,12 +17,22 @@ Read these files for full project understanding:
 ## Critical Safety Rules (Top 5)
 
 1. **Never change Kafka MANUAL ack to AUTO** — causes message loss (`KafkaConfig.java`)
-2. **Never remove idempotency logic** — causes duplicate processing (`RequestConsumer.java`)
+2. **Never remove idempotency logic** — causes duplicate processing (`OracleRequestConsumer.java`, `ApiRequestConsumer.java`)
 3. **Never bypass Circuit Breaker** — causes cascading failures (`HttpRequestService.java`)
 4. **Never remove Integer.MAX_VALUE safety net** — causes infinite retries when Redis is down (`RequestStateService.java`)
-5. **Never remove retry logic in ResponseConsumer, or drop the `isOracle` source guard in its branches** — causes response data loss or cross-source pollution (`ResponseConsumer.java`)
+5. **Never merge Oracle and API consumer logic** — causes cascading failures between flows (`kafka/consumer/oracle/`, `kafka/consumer/api/`)
 
 Full safety rules: `@ai-context/SAFETY-RULES.md`
+
+## Documentation Maintenance Rule
+
+**Har bir kod o'zgarishidan keyin** quyidagi doc fayllarni tekshirib, aktualizatsiya qiling:
+- Class nomi o'zgarsa → `ARCHITECTURE.md`, `SAFETY-RULES.md`, `CONVENTIONS.md`, `DOMAIN-GLOSSARY.md`, `EXTENSION-GUIDE.md`
+- Config o'zgarsa → `CONFIGURATION.md`, `application.yml`
+- Topic/consumer o'zgarsa → `ARCHITECTURE.md`, `CONFIGURATION.md`, `DOMAIN-GLOSSARY.md`
+- Safety rule o'zgarsa → `SAFETY-RULES.md`, `CLAUDE.md` (Top 5)
+
+**Ghost code tekshirish:** O'chirilgan yoki nomlantirilgan class/method/config'ni barcha `.java` va `ai-context/` fayllardan grep qilib, eski reference qolmaganini tasdiqlang.
 
 ## REST API Endpoints
 

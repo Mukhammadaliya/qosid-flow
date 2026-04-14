@@ -14,6 +14,7 @@ import uz.greenwhite.gateway.auth.AuthResult;
 import uz.greenwhite.gateway.auth.AuthorizationProvider;
 import uz.greenwhite.gateway.exception.AuthorizationDeniedException;
 import uz.greenwhite.gateway.exception.RequestValidationException;
+import uz.greenwhite.gateway.config.ApiProperties;
 import uz.greenwhite.gateway.config.ProxyProperties;
 import uz.greenwhite.gateway.file.FileService;
 import uz.greenwhite.gateway.file.ServletFileUploadEntity;
@@ -56,6 +57,7 @@ public class ProxyController {
     private final RequestProducer requestProducer;
     private final FileService fileService;
     private final ProxyProperties proxyProperties;
+    private final ApiProperties apiProperties;
 
     @RequestMapping(
             value = "/**",
@@ -111,6 +113,7 @@ public class ProxyController {
                 .companyId(API_COMPANY_ID)
                 .requestId(requestId)
                 .source("API")
+                .baseUrl(apiProperties.getBaseUrl())
                 .uri(targetUri)
                 .method(request.getMethod())
                 .headers(headers)
@@ -126,7 +129,7 @@ public class ProxyController {
 
         // 6. Dispatch to Kafka, blocking up to 10s for the broker to ack
         try {
-            requestProducer.sendRequest(message).get(10, TimeUnit.SECONDS);
+            requestProducer.sendApiRequest(message).get(10, TimeUnit.SECONDS);
         } catch (Exception e) {
             log.error("Failed to enqueue API request {}: {}", compositeId, e.getMessage(), e);
             throw new RuntimeException("Failed to enqueue request: " + e.getMessage(), e);

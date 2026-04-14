@@ -35,7 +35,7 @@ Base package: `uz.greenwhite.gateway`
 | Type | Pattern | Examples |
 |------|---------|----------|
 | Service class | `*Service.java` | `HttpRequestService`, `RequestStateService`, `OAuth2ProviderService` |
-| Consumer | `*Consumer.java` | `RequestConsumer`, `ResponseConsumer`, `DlqConsumer` |
+| Consumer | `*Consumer.java` | `OracleRequestConsumer`, `ApiRequestConsumer`, `OracleResponseConsumer`, `ApiResponseConsumer` |
 | Producer | `*Producer.java` | `RequestProducer` |
 | Configuration | `*Config.java` | `KafkaConfig`, `RedisConfig`, `HttpClientConfig` |
 | Properties | `*Properties.java` | `KafkaProperties`, `HttpProperties`, `RetryProperties` |
@@ -119,12 +119,12 @@ public class MyService {
 }
 ```
 
-**Exception:** When `@Qualifier` is needed (e.g., `RequestConsumer` with `httpRequestExecutor`), use explicit constructor:
+**Exception:** When `@Qualifier` is needed (e.g., consumers with `oracleHttpExecutor`/`apiHttpExecutor`), use explicit constructor:
 ```java
 public class MyService {
     private final ThreadPoolTaskExecutor executor;
 
-    public MyService(@Qualifier("httpRequestExecutor") ThreadPoolTaskExecutor executor) {
+    public MyService(@Qualifier("apiHttpExecutor") ThreadPoolTaskExecutor executor) {
         this.executor = executor;
     }
 }
@@ -175,7 +175,7 @@ try {
 
 2. **Domain-specific exceptions:** Create specific exception types (e.g., `OAuth2TokenException`)
 
-3. **Catch-all only in top-level consumers:** `RequestConsumer` and `ResponseConsumer` catch `Exception` at the top level to ensure Kafka ack and prevent consumer death
+3. **Catch-all only in top-level consumers:** `Oracle/ApiRequestConsumer` and `Oracle/ApiResponseConsumer` catch `Exception` at the top level to ensure Kafka ack and prevent consumer death
 
 ## Metrics
 

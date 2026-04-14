@@ -57,7 +57,9 @@ public class DynamicConcurrencyManager {
             log.info("Initial concurrency detected for [{}]: {}", listenerId, actual);
         }
 
-        int desired = properties.calculateDesiredConcurrency(currentLag);
+        int minConcurrency = resolveMin(listenerId);
+        int maxConcurrency = resolveMax(listenerId);
+        int desired = calculateDesiredConcurrency(currentLag, minConcurrency, maxConcurrency);
 
         // -1 means no change needed (lag is in neutral zone)
         if (desired == -1) {
@@ -91,8 +93,8 @@ public class DynamicConcurrencyManager {
         }
 
         // Enforce min/max bounds
-        newConcurrency = Math.max(properties.getMinConcurrency(), newConcurrency);
-        newConcurrency = Math.min(properties.getMaxConcurrency(), newConcurrency);
+        newConcurrency = Math.max(minConcurrency, newConcurrency);
+        newConcurrency = Math.min(maxConcurrency, newConcurrency);
 
         if (newConcurrency == current) {
             return;
@@ -121,6 +123,25 @@ public class DynamicConcurrencyManager {
         } catch (Exception e) {
             log.error("Failed to adjust concurrency for [{}]: {}", listenerId, e.getMessage(), e);
         }
+    }
+
+    private int resolveMin(String listenerId) {
+        return listenerId.startsWith("api") ? properties.getApiMin() : properties.getOracleMin();
+    }
+
+    private int resolveMax(String listenerId) {
+        return listenerId.startsWith("api") ? properties.getApiMax() : properties.getOracleMax();
+    }
+
+    private int calculateDesiredConcurrency(long currentLag, int min, int max) {
+        if (currentLag <= properties.getScaleDownThreshold()) return min;
+        if (currentLag > properties.getScaleUpThreshold()) {
+            double ratio = Math.min(1.0,
+                    (double) (currentLag - properties.getScaleUpThreshold()) / (properties.getScaleUpThreshold() * 3));
+            int desired = min + (int) Math.ceil((max - min) * ratio);
+            return Math.min(desired, max);
+        }
+        return -1; // neutral zone
     }
 
     /**

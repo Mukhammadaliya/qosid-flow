@@ -6,7 +6,7 @@ Critical rules that prevent AI tools from breaking production systems. Read this
 
 These actions will break production reliability. Never do them regardless of context.
 
-### 1. Never remove or simplify idempotency logic in `RequestConsumer.java`
+### 1. Never remove or simplify idempotency logic in `OracleRequestConsumer.java` / `ApiRequestConsumer.java`
 
 The dual-check pattern (`isCompleted` + `tryLock`) prevents duplicate request processing during Kafka rebalances and multi-instance deployments. Removing either check causes duplicate HTTP requests to external APIs.
 
@@ -26,11 +26,11 @@ Manual acknowledgment ensures messages are only acknowledged after successful pr
 
 The Circuit Breaker protects external APIs from being overwhelmed during outages. Bypassing it causes cascading failures: the gateway floods a failing API, which makes recovery slower for both systems.
 
-### 6. Never remove retry logic in `ResponseConsumer.java`
+### 6. Never remove retry logic in `OracleResponseConsumer.java`
 
 The `saveWithRetry()` method handles transient Oracle/Biruni failures. Without it, a single network glitch causes permanent data loss — the HTTP response is lost and never saved to Oracle.
 
-### 7. Never alter DLQ flow in `DlqConsumer.java` / `RequestProducer.java`
+### 7. Never alter DLQ flow in `OracleDlqConsumer.java` / `ApiDlqConsumer.java` / `RequestProducer.java`
 
 The Dead Letter Queue is the last safety net for failed messages. Altering the flow (e.g., auto-replay, filtering) can cause infinite retry loops or silent message loss.
 
@@ -38,13 +38,13 @@ The Dead Letter Queue is the last safety net for failed messages. Altering the f
 
 In `RequestStateService`, `getAttemptCount()` and `incrementAttempt()` return `Integer.MAX_VALUE` when Redis is unavailable. This ensures retry logic always thinks max retries are exceeded, preventing infinite retry loops when Redis is down.
 
-### 9. Never replace `CallerRunsPolicy` in `ThreadPoolConfig.java`
+### 9. Never replace `RejectWithLogging` in `ThreadPoolConfig.java`
 
-`CallerRunsPolicy` provides natural backpressure: when the HTTP thread pool queue is full, the caller thread (Kafka consumer) processes the request itself, naturally slowing down consumption. Replacing with `AbortPolicy` or `DiscardPolicy` causes request loss or exceptions.
+`RejectWithLogging` throws `RejectedExecutionException` when the HTTP thread pool is full. The consumer catches this and re-queues the message to Kafka. Never replace with `CallerRunsPolicy` (blocks consumer thread, caused 4.5M retry production incident) or `DiscardPolicy` (silently drops requests).
 
-### 10. Never remove source-based routing in `ResponseConsumer.consumeResponse`
+### 10. Never merge Oracle and API consumer logic into a single class
 
-The branch `if (isOracle) { saveWithRetry(...) } else { ... }` is what stops API-source requests from polluting Oracle/Biruni. Removing the guard re-introduces upstream writes for API-source responses — the target Biruni endpoint will reject the foreign `companyId=0` rows and the consumer will churn retries until DLQ. The same guard is also in the catch block — if you remove it there, a transient RocksDB or Redis error on an API-source record will trigger an unintended Oracle write.
+Oracle and API flows use separate topics, consumers, and thread pools by design. `OracleResponseConsumer` saves to Biruni; `ApiResponseConsumer` does NOT. Merging them re-introduces the coupling that caused cascading failures — one flow's outage would stall the other.
 
 ### 11. Never disable `@EnableRetry` or remove `@Recover` from `CallbackSender`
 
@@ -70,8 +70,9 @@ These files contain production-critical logic. Before modifying any of them, run
 
 | File | Critical Logic | Risk if Broken |
 |------|---------------|----------------|
-| `RequestConsumer.java` | Idempotency check + distributed lock + manual ack + async HTTP delegation | Duplicate processing, message loss, thread pool exhaustion |
-| `ResponseConsumer.java` | Retry logic + Oracle save + manual ack + source-based routing + RocksDB + callback trigger | Response data loss, Oracle inconsistency, cross-source pollution |
+| `OracleRequestConsumer.java`, `ApiRequestConsumer.java` | Idempotency check + distributed lock + manual ack + async HTTP delegation | Duplicate processing, message loss, thread pool exhaustion |
+| `OracleResponseConsumer.java` | Retry logic + Oracle save + manual ack + RocksDB | Response data loss, Oracle inconsistency |
+| `ApiResponseConsumer.java` | RocksDB + callback trigger + manual ack | Response data loss, lost callbacks |
 | `HttpRequestService.java` | Circuit Breaker + OAuth2 token injection + per-endpoint timeouts + callbackUrl/source propagation | Cascading failures, auth failures, timeout mismatches, lost callbacks |
 | `RequestStateService.java` | Redis state CRUD + distributed lock (tryLock/releaseLock) + Integer.MAX_VALUE safety | Duplicate processing, infinite retries, state corruption |
 | `KafkaConfig.java` | Topic creation + consumer factories + MANUAL ack mode + error handlers | Message loss, consumer misconfiguration, missing topics |

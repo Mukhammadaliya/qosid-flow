@@ -10,9 +10,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 import uz.greenwhite.gateway.concurrency.ConcurrencyMonitorService;
 import uz.greenwhite.gateway.concurrency.DynamicConcurrencyManager;
-
-import static uz.greenwhite.gateway.concurrency.ConcurrencyMonitorService.REQUEST_LISTENER_ID;
-import static uz.greenwhite.gateway.concurrency.ConcurrencyMonitorService.RESPONSE_LISTENER_ID;
+import uz.greenwhite.gateway.config.KafkaProperties;
 
 @Slf4j
 @Component("gateway")
@@ -20,18 +18,24 @@ public class SystemHealthIndicator implements HealthIndicator {
 
     private final ConcurrencyMonitorService monitorService;
     private final DynamicConcurrencyManager concurrencyManager;
-    private final ThreadPoolTaskExecutor httpExecutor;
+    private final ThreadPoolTaskExecutor oracleHttpExecutor;
+    private final ThreadPoolTaskExecutor apiHttpExecutor;
     private final CircuitBreakerRegistry circuitBreakerRegistry;
+    private final KafkaProperties kafkaProperties;
 
     public SystemHealthIndicator(
             ConcurrencyMonitorService monitorService,
             DynamicConcurrencyManager concurrencyManager,
-            @Qualifier("httpRequestExecutor") ThreadPoolTaskExecutor httpExecutor,
-            CircuitBreakerRegistry circuitBreakerRegistry) {
+            @Qualifier("oracleHttpExecutor") ThreadPoolTaskExecutor oracleHttpExecutor,
+            @Qualifier("apiHttpExecutor") ThreadPoolTaskExecutor apiHttpExecutor,
+            CircuitBreakerRegistry circuitBreakerRegistry,
+            KafkaProperties kafkaProperties) {
         this.monitorService = monitorService;
         this.concurrencyManager = concurrencyManager;
-        this.httpExecutor = httpExecutor;
+        this.oracleHttpExecutor = oracleHttpExecutor;
+        this.apiHttpExecutor = apiHttpExecutor;
         this.circuitBreakerRegistry = circuitBreakerRegistry;
+        this.kafkaProperties = kafkaProperties;
     }
 
     @Override
@@ -44,19 +48,32 @@ public class SystemHealthIndicator implements HealthIndicator {
         Health.Builder builder = circuitBreakerOpen ? Health.down() : Health.up();
 
         return builder
-                // Kafka Consumer
-                .withDetail("kafka.requestConsumer.concurrency",
-                        concurrencyManager.getCurrentConcurrency(REQUEST_LISTENER_ID))
-                .withDetail("kafka.requestConsumer.lag",
-                        monitorService.getLastKnownLag("bmb.request.new"))
-                .withDetail("kafka.responseConsumer.concurrency",
-                        concurrencyManager.getCurrentConcurrency(RESPONSE_LISTENER_ID))
-                .withDetail("kafka.responseConsumer.lag",
-                        monitorService.getLastKnownLag("bmb.request.response"))
-                // HTTP Thread Pool
-                .withDetail("http.pool.active", httpExecutor.getActiveCount())
-                .withDetail("http.pool.size", httpExecutor.getThreadPoolExecutor().getPoolSize())
-                .withDetail("http.pool.queue", httpExecutor.getThreadPoolExecutor().getQueue().size())
+                // Oracle Kafka Consumer
+                .withDetail("kafka.oracleRequestConsumer.concurrency",
+                        concurrencyManager.getCurrentConcurrency("oracleRequestConsumer"))
+                .withDetail("kafka.oracleRequestConsumer.lag",
+                        monitorService.getLastKnownLag(kafkaProperties.getTopics().getOracleRequest()))
+                .withDetail("kafka.oracleResponseConsumer.concurrency",
+                        concurrencyManager.getCurrentConcurrency("oracleResponseConsumer"))
+                .withDetail("kafka.oracleResponseConsumer.lag",
+                        monitorService.getLastKnownLag(kafkaProperties.getTopics().getOracleResponse()))
+                // API Kafka Consumer
+                .withDetail("kafka.apiRequestConsumer.concurrency",
+                        concurrencyManager.getCurrentConcurrency("apiRequestConsumer"))
+                .withDetail("kafka.apiRequestConsumer.lag",
+                        monitorService.getLastKnownLag(kafkaProperties.getTopics().getApiRequest()))
+                .withDetail("kafka.apiResponseConsumer.concurrency",
+                        concurrencyManager.getCurrentConcurrency("apiResponseConsumer"))
+                .withDetail("kafka.apiResponseConsumer.lag",
+                        monitorService.getLastKnownLag(kafkaProperties.getTopics().getApiResponse()))
+                // Oracle HTTP Thread Pool
+                .withDetail("http.oracle.pool.active", oracleHttpExecutor.getActiveCount())
+                .withDetail("http.oracle.pool.size", oracleHttpExecutor.getThreadPoolExecutor().getPoolSize())
+                .withDetail("http.oracle.pool.queue", oracleHttpExecutor.getThreadPoolExecutor().getQueue().size())
+                // API HTTP Thread Pool
+                .withDetail("http.api.pool.active", apiHttpExecutor.getActiveCount())
+                .withDetail("http.api.pool.size", apiHttpExecutor.getThreadPoolExecutor().getPoolSize())
+                .withDetail("http.api.pool.queue", apiHttpExecutor.getThreadPoolExecutor().getQueue().size())
                 // Circuit Breaker
                 .withDetail("circuitBreaker.state", cb.getState().name())
                 .withDetail("circuitBreaker.failureRate", cbMetrics.getFailureRate() + "%")

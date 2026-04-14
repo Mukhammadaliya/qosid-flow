@@ -29,31 +29,23 @@ public class ConcurrencyMonitorService {
     private final ConcurrencyProperties properties;
     private final KafkaProperties kafkaProperties;
 
-    /**
-     * Listener IDs — must match @KafkaListener(id = "...") values
-     */
-    public static final String REQUEST_LISTENER_ID = "requestConsumer";
-    public static final String RESPONSE_LISTENER_ID = "responseConsumer";
-
     private final Map<String, Long> lagMap = new ConcurrentHashMap<>();
 
     @PostConstruct
     public void init() {
-        log.info("ConcurrencyMonitor started: group={}, topics=[{}, {}], interval={}ms",
+        log.info("ConcurrencyMonitor started: group={}, interval={}ms, " +
+                        "oracle=[{}, {}], api=[{}, {}]",
                 kafkaProperties.getGroupId(),
-                kafkaProperties.getTopics().getRequestNew(),
-                kafkaProperties.getTopics().getRequestResponse(),
-                properties.getMonitorIntervalMs());
+                properties.getMonitorIntervalMs(),
+                kafkaProperties.getTopics().getOracleRequest(),
+                kafkaProperties.getTopics().getOracleResponse(),
+                kafkaProperties.getTopics().getApiRequest(),
+                kafkaProperties.getTopics().getApiResponse());
     }
 
-    /**
-     * Periodically check lag for all consumers and adjust concurrency.
-     * Runs every N milliseconds as configured by monitor-interval-ms.
-     */
     @Scheduled(fixedDelayString = "${gateway.concurrency.monitor-interval-ms:10000}")
     public void monitorAndScale() {
         try {
-            // 1. Get all committed offsets for consumer group (single call)
             Map<TopicPartition, OffsetAndMetadata> allCommittedOffsets = getCommittedOffsets();
 
             if (allCommittedOffsets == null || allCommittedOffsets.isEmpty()) {
@@ -61,23 +53,33 @@ public class ConcurrencyMonitorService {
                 return;
             }
 
-            // 2. Request topic lag → scale RequestConsumer
-            String requestTopic = kafkaProperties.getTopics().getRequestNew();
-            long requestLag = calculateLagForTopic(requestTopic, allCommittedOffsets);
-            lagMap.put(requestTopic, requestLag);
-            log.debug("Consumer lag [{}]: {} messages", requestTopic, requestLag);
-            concurrencyManager.adjustConcurrency(REQUEST_LISTENER_ID, requestLag);
+            // Oracle request consumer
+            monitorTopic(kafkaProperties.getTopics().getOracleRequest(),
+                    "oracleRequestConsumer", allCommittedOffsets);
 
-            // 3. Response topic lag → scale ResponseConsumer
-            String responseTopic = kafkaProperties.getTopics().getRequestResponse();
-            long responseLag = calculateLagForTopic(responseTopic, allCommittedOffsets);
-            lagMap.put(responseTopic, responseLag);
-            log.debug("Consumer lag [{}]: {} messages", responseTopic, responseLag);
-            concurrencyManager.adjustConcurrency(RESPONSE_LISTENER_ID, responseLag);
+            // Oracle response consumer
+            monitorTopic(kafkaProperties.getTopics().getOracleResponse(),
+                    "oracleResponseConsumer", allCommittedOffsets);
+
+            // API request consumer
+            monitorTopic(kafkaProperties.getTopics().getApiRequest(),
+                    "apiRequestConsumer", allCommittedOffsets);
+
+            // API response consumer
+            monitorTopic(kafkaProperties.getTopics().getApiResponse(),
+                    "apiResponseConsumer", allCommittedOffsets);
 
         } catch (Exception e) {
             log.error("Error monitoring consumer lag: {}", e.getMessage(), e);
         }
+    }
+
+    private void monitorTopic(String topic, String listenerId,
+                              Map<TopicPartition, OffsetAndMetadata> allCommittedOffsets) throws Exception {
+        long lag = calculateLagForTopic(topic, allCommittedOffsets);
+        lagMap.put(topic, lag);
+        log.debug("Consumer lag [{}]: {} messages", topic, lag);
+        concurrencyManager.adjustConcurrency(listenerId, lag);
     }
 
     /**

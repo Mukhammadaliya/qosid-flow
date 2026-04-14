@@ -9,9 +9,6 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 import uz.greenwhite.gateway.config.KafkaProperties;
 
-import static uz.greenwhite.gateway.concurrency.ConcurrencyMonitorService.REQUEST_LISTENER_ID;
-import static uz.greenwhite.gateway.concurrency.ConcurrencyMonitorService.RESPONSE_LISTENER_ID;
-
 @Slf4j
 @Component
 public class ConcurrencyMetrics {
@@ -19,69 +16,81 @@ public class ConcurrencyMetrics {
     private final MeterRegistry meterRegistry;
     private final DynamicConcurrencyManager concurrencyManager;
     private final ConcurrencyMonitorService monitorService;
-    private final ThreadPoolTaskExecutor httpExecutor;
+    private final ThreadPoolTaskExecutor oracleHttpExecutor;
+    private final ThreadPoolTaskExecutor apiHttpExecutor;
     private final KafkaProperties kafkaProperties;
 
     public ConcurrencyMetrics(
             MeterRegistry meterRegistry,
             DynamicConcurrencyManager concurrencyManager,
             ConcurrencyMonitorService monitorService,
-            @Qualifier("httpRequestExecutor") ThreadPoolTaskExecutor httpExecutor,
+            @Qualifier("oracleHttpExecutor") ThreadPoolTaskExecutor oracleHttpExecutor,
+            @Qualifier("apiHttpExecutor") ThreadPoolTaskExecutor apiHttpExecutor,
             KafkaProperties kafkaProperties) {
         this.meterRegistry = meterRegistry;
         this.concurrencyManager = concurrencyManager;
         this.monitorService = monitorService;
-        this.httpExecutor = httpExecutor;
+        this.oracleHttpExecutor = oracleHttpExecutor;
+        this.apiHttpExecutor = apiHttpExecutor;
         this.kafkaProperties = kafkaProperties;
     }
 
     @PostConstruct
     public void registerMetrics() {
 
-        // ==================== REQUEST CONSUMER METRICS ====================
+        // ==================== ORACLE CONSUMER METRICS ====================
 
-        Gauge.builder("gateway.kafka.consumer.concurrency",
-                        () -> concurrencyManager.getCurrentConcurrency(REQUEST_LISTENER_ID))
-                .description("Current Kafka consumer concurrency level")
-                .tag("listener", REQUEST_LISTENER_ID)
-                .register(meterRegistry);
+        registerConsumerMetrics("oracleRequestConsumer",
+                kafkaProperties.getTopics().getOracleRequest(), "oracle-request");
 
-        Gauge.builder("gateway.kafka.consumer.lag",
-                        () -> monitorService.getLastKnownLag(kafkaProperties.getTopics().getRequestNew()))
-                .description("Current Kafka consumer lag")
-                .tag("topic", "request-new")
-                .tag("listener", REQUEST_LISTENER_ID)
-                .register(meterRegistry);
+        registerConsumerMetrics("oracleResponseConsumer",
+                kafkaProperties.getTopics().getOracleResponse(), "oracle-response");
 
-        // ==================== RESPONSE CONSUMER METRICS ====================
+        // ==================== API CONSUMER METRICS ====================
 
-        Gauge.builder("gateway.kafka.consumer.concurrency",
-                        () -> concurrencyManager.getCurrentConcurrency(RESPONSE_LISTENER_ID))
-                .description("Current Kafka consumer concurrency level")
-                .tag("listener", RESPONSE_LISTENER_ID)
-                .register(meterRegistry);
+        registerConsumerMetrics("apiRequestConsumer",
+                kafkaProperties.getTopics().getApiRequest(), "api-request");
 
-        Gauge.builder("gateway.kafka.consumer.lag",
-                        () -> monitorService.getLastKnownLag(kafkaProperties.getTopics().getRequestResponse()))
-                .description("Current Kafka consumer lag")
-                .tag("topic", "request-response")
-                .tag("listener", RESPONSE_LISTENER_ID)
-                .register(meterRegistry);
+        registerConsumerMetrics("apiResponseConsumer",
+                kafkaProperties.getTopics().getApiResponse(), "api-response");
 
         // ==================== HTTP THREAD POOL METRICS ====================
 
-        Gauge.builder("gateway.http.pool.active", httpExecutor::getActiveCount)
+        registerPoolMetrics("oracle", oracleHttpExecutor);
+        registerPoolMetrics("api", apiHttpExecutor);
+
+        log.info("Concurrency metrics registered (oracle + api)");
+    }
+
+    private void registerConsumerMetrics(String listenerId, String topic, String topicTag) {
+        Gauge.builder("gateway.kafka.consumer.concurrency",
+                        () -> concurrencyManager.getCurrentConcurrency(listenerId))
+                .description("Current Kafka consumer concurrency level")
+                .tag("listener", listenerId)
+                .register(meterRegistry);
+
+        Gauge.builder("gateway.kafka.consumer.lag",
+                        () -> monitorService.getLastKnownLag(topic))
+                .description("Current Kafka consumer lag")
+                .tag("topic", topicTag)
+                .tag("listener", listenerId)
+                .register(meterRegistry);
+    }
+
+    private void registerPoolMetrics(String flow, ThreadPoolTaskExecutor executor) {
+        Gauge.builder("gateway.http.pool.active", executor::getActiveCount)
                 .description("Active HTTP request threads")
+                .tag("flow", flow)
                 .register(meterRegistry);
 
-        Gauge.builder("gateway.http.pool.size", httpExecutor::getPoolSize)
+        Gauge.builder("gateway.http.pool.size", executor::getPoolSize)
                 .description("Current HTTP thread pool size")
+                .tag("flow", flow)
                 .register(meterRegistry);
 
-        Gauge.builder("gateway.http.pool.queue", () -> httpExecutor.getThreadPoolExecutor().getQueue().size())
+        Gauge.builder("gateway.http.pool.queue", () -> executor.getThreadPoolExecutor().getQueue().size())
                 .description("HTTP thread pool queue size")
+                .tag("flow", flow)
                 .register(meterRegistry);
-
-        log.info("Concurrency metrics registered");
     }
 }

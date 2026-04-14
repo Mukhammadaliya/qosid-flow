@@ -24,9 +24,12 @@ Complete reference for all configuration parameters. Every property has a defaul
 |----------|------|---------|---------|-------------|
 | `gateway.kafka.bootstrap-servers` | String | `localhost:19092` | `KAFKA_BOOTSTRAP_SERVERS` | Kafka broker address |
 | `gateway.kafka.group-id` | String | `gateway-service-group` | `KAFKA_GROUP_ID` | Consumer group ID |
-| `gateway.kafka.topics.request-new` | String | `gateway.request.new` | `KAFKA_TOPIC_REQUEST` | Topic for new requests |
-| `gateway.kafka.topics.request-response` | String | `gateway.request.response` | `KAFKA_TOPIC_RESPONSE` | Topic for responses |
-| `gateway.kafka.topics.request-dlq` | String | `gateway.request.dlq` | `KAFKA_TOPIC_DLQ` | Dead Letter Queue topic |
+| `gateway.kafka.topics.oracle-request` | String | `gateway.oracle.request` | `KAFKA_TOPIC_ORACLE_REQUEST` | Oracle request topic |
+| `gateway.kafka.topics.oracle-response` | String | `gateway.oracle.response` | `KAFKA_TOPIC_ORACLE_RESPONSE` | Oracle response topic |
+| `gateway.kafka.topics.oracle-dlq` | String | `gateway.oracle.dlq` | `KAFKA_TOPIC_ORACLE_DLQ` | Oracle Dead Letter Queue |
+| `gateway.kafka.topics.api-request` | String | `gateway.api.request` | `KAFKA_TOPIC_API_REQUEST` | API proxy request topic |
+| `gateway.kafka.topics.api-response` | String | `gateway.api.response` | `KAFKA_TOPIC_API_RESPONSE` | API proxy response topic |
+| `gateway.kafka.topics.api-dlq` | String | `gateway.api.dlq` | `KAFKA_TOPIC_API_DLQ` | API proxy Dead Letter Queue |
 
 ## gateway.polling.* — Request Puller
 
@@ -70,23 +73,30 @@ gateway:
 | `gateway.retry.max-attempts` | int | `3` | `RETRY_MAX_ATTEMPTS` | Maximum retry attempts |
 | `gateway.retry.interval-ms` | long | `3000` | `RETRY_INTERVAL_MS` | Interval between retries (ms) |
 | `gateway.retry.retryable-statuses` | String | `408,429,500,502,503,504` | `RETRY_STATUSES` | HTTP statuses that trigger retry |
+| `gateway.retry.max-message-age-ms` | long | `300000` | `RETRY_MAX_MESSAGE_AGE` | Max message age (ms) before expiry. Default 5 min. |
 
 ## gateway.concurrency.* — Dynamic Scaling
 
 **Properties class:** `ConcurrencyProperties.java`
 
+Oracle and API flows have **independent** concurrency and thread pool settings:
+
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
-| `gateway.concurrency.min-concurrency` | int | `3` | `CONCURRENCY_MIN` | Minimum consumer threads |
-| `gateway.concurrency.max-concurrency` | int | `15` | `CONCURRENCY_MAX` | Maximum consumer threads |
+| `gateway.concurrency.oracle-min` | int | `5` | `ORACLE_CONCURRENCY_MIN` | Oracle consumer min threads |
+| `gateway.concurrency.oracle-max` | int | `10` | `ORACLE_CONCURRENCY_MAX` | Oracle consumer max threads |
+| `gateway.concurrency.api-min` | int | `5` | `API_CONCURRENCY_MIN` | API consumer min threads |
+| `gateway.concurrency.api-max` | int | `10` | `API_CONCURRENCY_MAX` | API consumer max threads |
 | `gateway.concurrency.monitor-interval-ms` | long | `10000` | `CONCURRENCY_MONITOR_INTERVAL` | Lag check interval (ms) |
 | `gateway.concurrency.scale-up-threshold` | long | `50` | `CONCURRENCY_SCALE_UP` | Scale up when lag exceeds this |
 | `gateway.concurrency.scale-down-threshold` | long | `10` | `CONCURRENCY_SCALE_DOWN` | Scale down when lag below this |
 | `gateway.concurrency.scale-step` | int | `2` | — | Threads to add/remove per step |
 | `gateway.concurrency.scale-cooldown-ms` | long | `30000` | — | Minimum time between scaling events |
 | `gateway.concurrency.topic-partitions` | int | `10` | `KAFKA_PARTITIONS` | Kafka partitions per topic |
-| `gateway.concurrency.thread-pool-multiplier` | int | `2` | `THREAD_POOL_MULTIPLIER` | HTTP thread pool max = `maxConcurrency * multiplier` |
+| `gateway.concurrency.thread-pool-multiplier` | int | `2` | `THREAD_POOL_MULTIPLIER` | HTTP thread pool max = `oracleMax/apiMax * multiplier` |
 | `gateway.concurrency.thread-pool-queue-capacity` | int | `50` | `THREAD_POOL_QUEUE` | HTTP thread pool queue size before rejection |
+
+**Thread pools:** `oracleHttpExecutor` (oracle-min/max) and `apiHttpExecutor` (api-min/max) — mustaqil.
 
 ## gateway.telegram.* — Telegram Notifications
 
@@ -129,6 +139,14 @@ gateway:
 | `permitted-number-of-calls-in-half-open-state` | int | `3` | Test calls in HALF_OPEN |
 | `slow-call-duration-threshold` | Duration | `10s` | Threshold for slow call detection |
 | `slow-call-rate-threshold` | int | `50` | Slow call percentage to trigger OPEN (%) |
+
+## gateway.api.* — API Proxy Target
+
+**Properties class:** `ApiProperties.java`
+
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `gateway.api.base-url` | String | `http://localhost:8081/b` | `API_BASE_URL` | Main app base URL. API proxy requests are forwarded to this URL + stripped URI path. |
 
 ## gateway.proxy.* — REST Proxy Layout
 

@@ -14,22 +14,8 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "gateway.kafka")
 public class KafkaProperties {
 
-    /**
-     * Kafka bootstrap servers
-     * yml: gateway.kafka.bootstrap-servers
-     */
     private String bootstrapServers;
-
-    /**
-     * Consumer group ID
-     * yml: gateway.kafka.group-id
-     */
     private String groupId;
-
-    /**
-     * Topic nomlari
-     * yml: gateway.kafka.topics.*
-     */
     private Topics topics = new Topics();
 
     @PostConstruct
@@ -40,26 +26,37 @@ public class KafkaProperties {
         if (groupId == null || groupId.isBlank()) {
             throw new IllegalArgumentException("gateway.kafka.group-id must be configured");
         }
-        if (topics.requestNew == null || topics.requestNew.isBlank()) {
-            throw new IllegalArgumentException("gateway.kafka.topics.request-new must be configured");
-        }
-        if (topics.requestResponse == null || topics.requestResponse.isBlank()) {
-            throw new IllegalArgumentException("gateway.kafka.topics.request-response must be configured");
-        }
-        if (topics.requestDlq == null || topics.requestDlq.isBlank()) {
-            throw new IllegalArgumentException("gateway.kafka.topics.request-dlq must be configured");
-        }
+        topics.validate();
 
-        log.info("Kafka config: servers={}, groupId={}, topics=[{}, {}, {}]",
+        log.info("Kafka config: servers={}, groupId={}, oracle=[{}, {}, {}], api=[{}, {}, {}]",
                 bootstrapServers, groupId,
-                topics.requestNew, topics.requestResponse, topics.requestDlq);
+                topics.oracleRequest, topics.oracleResponse, topics.oracleDlq,
+                topics.apiRequest, topics.apiResponse, topics.apiDlq);
     }
 
     @Getter
     @Setter
     public static class Topics {
-        private String requestNew;
-        private String requestResponse;
-        private String requestDlq;
+        private String oracleRequest;
+        private String oracleResponse;
+        private String oracleDlq;
+        private String apiRequest;
+        private String apiResponse;
+        private String apiDlq;
+
+        void validate() {
+            requireNonBlank(oracleRequest, "gateway.kafka.topics.oracle-request");
+            requireNonBlank(oracleResponse, "gateway.kafka.topics.oracle-response");
+            requireNonBlank(oracleDlq, "gateway.kafka.topics.oracle-dlq");
+            requireNonBlank(apiRequest, "gateway.kafka.topics.api-request");
+            requireNonBlank(apiResponse, "gateway.kafka.topics.api-response");
+            requireNonBlank(apiDlq, "gateway.kafka.topics.api-dlq");
+        }
+
+        private void requireNonBlank(String value, String name) {
+            if (value == null || value.isBlank()) {
+                throw new IllegalArgumentException(name + " must be configured");
+            }
+        }
     }
 }

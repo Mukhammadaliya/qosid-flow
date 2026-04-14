@@ -118,7 +118,7 @@ public class RequestPuller {
                 // ===== E2: Kafka Produce with Timer =====
                 Timer.Sample kafkaSample = Timer.start(metrics.getRegistry());
 
-                requestProducer.sendRequest(request).get(10, TimeUnit.SECONDS);
+                requestProducer.sendOracleRequest(request).get(10, TimeUnit.SECONDS);
 
                 kafkaSample.stop(metrics.getKafkaProduceTimer());
                 metrics.getKafkaProduceSuccess().increment();
@@ -157,9 +157,9 @@ public class RequestPuller {
             DlqMessage dlqMessage = DlqMessage.from(
                     request, errorMessage, "KAFKA", 0,
                     retryProperties.getMaxAttempts(),
-                    kafkaProperties.getTopics().getRequestNew()  // ← dynamic topic
+                    kafkaProperties.getTopics().getOracleRequest()
             );
-            requestProducer.sendToDlq(dlqMessage);
+            requestProducer.sendToOracleDlq(dlqMessage);
             metrics.getDlqSent().increment();
             log.info("Request sent to DLQ: {}", request.getCompositeId());
         } catch (Exception e) {

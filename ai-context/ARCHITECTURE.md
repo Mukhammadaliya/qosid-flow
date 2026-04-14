@@ -56,7 +56,7 @@ Oracle/Biruni                    (RedPanda)                  External APIs
      |   (5s poll)    (async)       |   (+ Redis)     (+ CB)     |   (+ retry)
      +-------->  RequestPuller -----+----> gateway.request.new   |
               source="ORACLE"       |         |                   |
-                                    |    RequestConsumer -------->+
+                                    |    Oracle/ApiRequestConsumer ->+
  HTTP clients                       |         |                   |
      |                              |    (idempotency check)      |
      +-->  /qosid/queue/**          |    (distributed lock)       |
@@ -65,7 +65,7 @@ Oracle/Biruni                    (RedPanda)                  External APIs
               (auth + multipart)    |         v                   |
                                     |    gateway.request.response |
                                     |         |                   |
-                                    |    ResponseConsumer --------+
+                                    |    Oracle/ApiResponseConsumer +
                                     |         |                   |
                                     |    +--> RocksDB (always if body)
                                     |    +--> Callback (if callbackUrl)
@@ -75,7 +75,7 @@ Oracle/Biruni                    (RedPanda)                  External APIs
                                     |                             |
                               gateway.request.dlq                 |
                                     |                             |
-                              DlqConsumer --> Telegram Alert      |
+                              Oracle/ApiDlqConsumer --> Telegram      |
 
  HTTP clients (status/result lookup)
      |
@@ -89,7 +89,7 @@ The pipeline has **two entry points** that both feed `gateway.request.new`:
 - **E1 Oracle pull** — original polling loop, tags `RequestMessage.source="ORACLE"`.
 - **E0 REST proxy** — `ProxyController` at `/qosid/queue/**`, tags `source="API"`. Runs `AuthorizationProvider.authorize(...)` first, optionally parses multipart via `BiruniUpload` header (uploading files to MinIO/R2 and rewriting `"\u0000<index>"` placeholders with SHAs), then enqueues via `RequestProducer.sendRequest`.
 
-**ResponseConsumer source routing:** body is always written to RocksDB (when non-null) and callbacks are always fired (when `callbackUrl` present). Only `ORACLE`-source responses flow through the original Biruni save step — `API`-source responses stop at RocksDB + Redis + callback.
+**Response routing by consumer:** `OracleResponseConsumer` saves to Biruni + RocksDB. `ApiResponseConsumer` saves to RocksDB + fires callback. No source-based `if/else` — routing is done at the topic level.
 
 ## Stage Breakdown
 
@@ -109,55 +109,58 @@ The pipeline has **two entry points** that both feed `gateway.request.new`:
 
 | Aspect | Detail |
 |--------|--------|
-| **Input** | `RequestMessage` from E1 |
-| **Output** | Message sent to `gateway.request.new` Kafka topic |
+| **Input** | `RequestMessage` from E1 or E0 |
+| **Output** | Oracle → `gateway.oracle.request`, API → `gateway.api.request` |
 | **Key** | `compositeId` (companyId:requestId) for partition affinity |
-| **Retry** | 3 attempts, 3s interval (in `RequestPuller.sendToKafkaWithRetry`) |
-| **On Failure** | After retries exhausted, sends to DLQ |
+| **Methods** | `sendOracleRequest()`, `sendApiRequest()`, `sendOracleResponse()`, `sendApiResponse()`, `sendToOracleDlq()`, `sendToApiDlq()` |
+| **On Failure** | After retries exhausted, sends to source-specific DLQ |
 
-### E3: Consumer Process — `RequestConsumer.java`
+### E3: Consumer Process — `OracleRequestConsumer.java` / `ApiRequestConsumer.java`
 
-| Aspect | Detail |
-|--------|--------|
-| **Trigger** | `@KafkaListener(id = "requestConsumer", topics = "${gateway.kafka.topics.request-new}")` |
-| **Container Factory** | `requestConsumerFactory` with MANUAL ack, dynamic concurrency |
-| **Idempotency** | 1. Check `requestStateService.isCompleted(key)` — skip if done |
-| | 2. Try `requestStateService.tryLock(key)` — skip if locked |
-| **Processing** | Submit to `httpExecutor` thread pool -> call E4 |
-| **Ack** | Manual acknowledgment after async task submitted |
-| **On Failure** | Check attempt count -> retry or send to DLQ |
+Oracle and API flows use **independent** consumers, topics, and thread pools:
+
+| Aspect | Oracle | API |
+|--------|--------|-----|
+| **Consumer** | `OracleRequestConsumer` | `ApiRequestConsumer` |
+| **Topic** | `gateway.oracle.request` | `gateway.api.request` |
+| **Factory** | `oracleRequestConsumerFactory` | `apiRequestConsumerFactory` |
+| **Thread Pool** | `oracleHttpExecutor` | `apiHttpExecutor` |
+| **Ack** | MANUAL | MANUAL |
+| **Idempotency** | Redis check + lock | Redis check + lock |
+| **On Failure** | Retry → `sendOracleRequest()` or DLQ | Retry → `sendApiRequest()` or DLQ |
 
 ### E4: HTTP Request — `HttpRequestService.java`
 
 | Aspect | Detail |
 |--------|--------|
 | **Input** | `RequestMessage` from E3 |
-| **Output** | `ResponseMessage` sent to `gateway.request.response` topic |
+| **Output** | Oracle → `gateway.oracle.response`, API → `gateway.api.response` |
 | **Circuit Breaker** | Per-domain Resilience4j CB. If OPEN, returns 503 immediately. |
 | **OAuth2** | If `oauth2Provider` set, fetches token via `OAuth2ProviderService` and adds `Authorization` header |
 | **Timeouts** | Default: connect 10s, read 30s. Per-endpoint overrides via `gateway.http.endpoint-timeouts` |
 | **On Success** | Records CB success, sends ResponseMessage to response topic |
 | **On Failure** | Records CB failure, checks if retryable (408, 429, 5xx) |
 
-### E5: Oracle Save — `ResponseConsumer.java`
+### E5: Response Processing — `OracleResponseConsumer.java` / `ApiResponseConsumer.java`
 
-| Aspect | Detail |
-|--------|--------|
-| **Trigger** | `@KafkaListener(id = "responseConsumer", topics = "${gateway.kafka.topics.request-response}")` |
-| **Container Factory** | `responseConsumerFactory` with MANUAL ack |
-| **Input** | `ResponseMessage` from Kafka |
-| **Output** | HTTP POST to Biruni API (`/b/biruni/bmb/requests$save`) |
-| **Retry** | `saveWithRetry()` — max 3 attempts, 3s interval |
-| **On Failure** | After retries, saves error response to Oracle |
-| **Ack** | Manual acknowledgment after save attempt |
+| Aspect | Oracle | API |
+|--------|--------|-----|
+| **Consumer** | `OracleResponseConsumer` | `ApiResponseConsumer` |
+| **Topic** | `gateway.oracle.response` | `gateway.api.response` |
+| **Factory** | `oracleResponseConsumerFactory` | `apiResponseConsumerFactory` |
+| **RocksDB** | Saqlaydi (body mavjud bo'lsa) | Saqlaydi (body mavjud bo'lsa) |
+| **Callback** | Yo'q | `CallbackService.sendCallbackIfNeeded()` |
+| **Oracle save** | `saveWithRetry()` → Biruni API | Yo'q |
+| **Ack** | MANUAL | MANUAL |
 
 ## Component Map
 
 | Package | Responsibility | Key Classes |
 |---------|---------------|-------------|
-| `oracle/` | E1 (Pull) + E5 (Save) — Biruni API communication | `RequestPuller`, `BiruniClient` |
+| `oracle/` | E1 (Pull) — Biruni API communication | `RequestPuller`, `BiruniClient` |
 | `kafka/producer/` | E2 — Kafka message production | `RequestProducer` |
-| `kafka/consumer/` | E3 + E5 + DLQ — Kafka message consumption | `RequestConsumer`, `ResponseConsumer`, `DlqConsumer` |
+| `kafka/consumer/oracle/` | E3 + E5 — Oracle request/response/DLQ | `OracleRequestConsumer`, `OracleResponseConsumer`, `OracleDlqConsumer` |
+| `kafka/consumer/api/` | E3 + E5 — API request/response/DLQ | `ApiRequestConsumer`, `ApiResponseConsumer`, `ApiDlqConsumer` |
 | `http/` | E4 — HTTP client with CB + OAuth2 | `HttpRequestService` |
 | `state/` | Redis state management + distributed locks | `RequestStateService` |
 | `oauth2/` | OAuth2 token caching + distributed locking | `OAuth2ProviderService`, `OAuth2TokenRedisCache`, `OAuth2ProviderFetcher` |
@@ -242,8 +245,8 @@ ResponseSaveRequest (Oracle save payload)
 - **Core Size:** `minConcurrency` (default 10)
 - **Max Size:** `maxConcurrency * threadPoolMultiplier` (default 30)
 - **Queue:** 50 tasks
-- **Rejection Policy:** `RejectWithLogging` — when queue full, throws `RejectedExecutionException`. RequestConsumer catches it and re-queues the message to Kafka without incrementing attempt count. Consumer thread stays free.
-- **Non-blocking:** RequestConsumer uses `.subscribe()` instead of `.block()` — threads are freed immediately after dispatching HTTP request.
+- **Rejection Policy:** `RejectWithLogging` — when queue full, throws `RejectedExecutionException`. Consumer catches it and re-queues the message to Kafka without incrementing attempt count. Consumer thread stays free.
+- **Non-blocking:** Both request consumers use `.subscribe()` instead of `.block()` — threads are freed immediately after dispatching HTTP request.
 - **Message Expiry:** Messages older than `gateway.retry.max-message-age-ms` (default 5 min) are failed immediately to prevent infinite re-queue loops.
 - **CB-aware retry:** Circuit Breaker and OAuth2 errors are NOT retried — they cause immediate failure to prevent cascading loops.
 

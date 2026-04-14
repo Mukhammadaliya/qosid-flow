@@ -85,7 +85,7 @@ public class MyNewConsumer {
 ```java
 @Bean("myNewConsumerFactory")
 public ConcurrentKafkaListenerContainerFactory<String, Object> myNewListenerContainerFactory() {
-    // Follow the pattern of requestConsumerFactory or responseConsumerFactory
+    // Follow the pattern of oracleRequestConsumerFactory or apiRequestConsumerFactory
 }
 ```
 
@@ -200,9 +200,9 @@ public class MyCustomHttpService {
 }
 ```
 
-2. **Modify** `RequestConsumer.java` — add routing logic to delegate to the custom service based on some request attribute.
+2. **Modify** `OracleRequestConsumer.java` or `ApiRequestConsumer.java` — add routing logic to delegate to the custom service based on some request attribute.
 
-**Warning:** Modifying `RequestConsumer.java` is a Protected Zone operation. Follow the Required Checklist in `SAFETY-RULES.md`.
+**Warning:** Modifying request consumers is a Protected Zone operation. Follow the Required Checklist in `SAFETY-RULES.md`.
 
 ---
 
@@ -334,6 +334,6 @@ gateway:
     channel: ${SLACK_CHANNEL:#alerts}
 ```
 
-**Note:** Multiple `NotificationService` implementations can coexist. The `DlqConsumer` injects all available implementations. Currently, `NoOpNotificationService` is the fallback when `TelegramNotificationService` is disabled.
+**Note:** Multiple `NotificationService` implementations can coexist. The `OracleDlqConsumer` and `ApiDlqConsumer` inject the active implementation. Currently, `NoOpNotificationService` is the fallback when `TelegramNotificationService` is disabled.
 
-**Important:** If you want multiple active notification channels simultaneously, you need to modify `DlqConsumer` to inject `List<NotificationService>` instead of a single bean.
+**Important:** If you want multiple active notification channels simultaneously, you need to modify the DLQ consumers to inject `List<NotificationService>` instead of a single bean.

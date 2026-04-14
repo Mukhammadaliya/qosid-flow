@@ -1,4 +1,4 @@
-package uz.greenwhite.gateway.kafka.consumer;
+package uz.greenwhite.gateway.kafka.consumer.api;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,13 +12,13 @@ import uz.greenwhite.gateway.notification.NotificationService;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class DlqConsumer {
+public class ApiDlqConsumer {
 
     private final NotificationService notificationService;
 
     @KafkaListener(
-            id = "dlqConsumer",
-            topics = "${gateway.kafka.topics.request-dlq}",
+            id = "apiDlqConsumer",
+            topics = "${gateway.kafka.topics.api-dlq}",
             groupId = "${gateway.kafka.group-id}",
             containerFactory = "dlqConsumerFactory"
     )
@@ -26,13 +26,12 @@ public class DlqConsumer {
         String key = record.key();
         DlqMessage message = record.value();
 
-        log.info("DLQ message received: {} [partition={}, offset={}]",
-                key, record.partition(), record.offset());
+        log.info("[API-DLQ] Message received: {} [partition={}, offset={}]", key, record.partition(), record.offset());
 
         try {
             notificationService.sendDlqAlert(message);
         } catch (Exception e) {
-            log.error("Failed to process DLQ message {}: {}", key, e.getMessage());
+            log.error("[API-DLQ] Failed to process message {}: {}", key, e.getMessage());
         }
 
         ack.acknowledge();

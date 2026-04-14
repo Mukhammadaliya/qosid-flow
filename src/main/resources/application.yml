@@ -40,8 +40,6 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      state-ttl-hours: ${REDIS_STATE_TTL_HOURS:72}
-      lock-ttl-seconds: ${REDIS_LOCK_TTL_SECONDS:300}
 
   autoconfigure:
     exclude:
@@ -84,14 +82,22 @@ management:
 # ============================================================
 gateway:
 
+  # --- Redis TTL ---
+  redis:
+    state-ttl-hours: ${REDIS_STATE_TTL_HOURS:72}
+    lock-ttl-seconds: ${REDIS_LOCK_TTL_SECONDS:300}
+
   # --- Kafka ---
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19092}
     group-id: ${KAFKA_GROUP_ID:gateway-service-group}
     topics:
-      request-new: ${KAFKA_TOPIC_REQUEST:gateway.request.new}
-      request-response: ${KAFKA_TOPIC_RESPONSE:gateway.request.response}
-      request-dlq: ${KAFKA_TOPIC_DLQ:gateway.request.dlq}
+      oracle-request: ${KAFKA_TOPIC_ORACLE_REQUEST:gateway.oracle.request}
+      oracle-response: ${KAFKA_TOPIC_ORACLE_RESPONSE:gateway.oracle.response}
+      oracle-dlq: ${KAFKA_TOPIC_ORACLE_DLQ:gateway.oracle.dlq}
+      api-request: ${KAFKA_TOPIC_API_REQUEST:gateway.api.request}
+      api-response: ${KAFKA_TOPIC_API_RESPONSE:gateway.api.response}
+      api-dlq: ${KAFKA_TOPIC_API_DLQ:gateway.api.dlq}
 
   # --- Data Source (Oracle/Biruni) ---
   source:
@@ -129,8 +135,10 @@ gateway:
 
   # --- Dynamic Concurrency ---
   concurrency:
-    min-concurrency: ${CONCURRENCY_MIN:10}
-    max-concurrency: ${CONCURRENCY_MAX:15}
+    oracle-min: ${ORACLE_CONCURRENCY_MIN:5}
+    oracle-max: ${ORACLE_CONCURRENCY_MAX:10}
+    api-min: ${API_CONCURRENCY_MIN:5}
+    api-max: ${API_CONCURRENCY_MAX:10}
     monitor-interval-ms: ${CONCURRENCY_MONITOR_INTERVAL:10000}
     scale-up-threshold: ${CONCURRENCY_SCALE_UP:50}
     scale-down-threshold: ${CONCURRENCY_SCALE_DOWN:10}
@@ -139,6 +147,10 @@ gateway:
     topic-partitions: ${KAFKA_PARTITIONS:10}
     thread-pool-multiplier: ${THREAD_POOL_MULTIPLIER:2}
     thread-pool-queue-capacity: ${THREAD_POOL_QUEUE:50}
+
+  # --- API Proxy ---
+  api:
+    base-url: ${API_BASE_URL:http://localhost:8081/b}
 
   # --- Proxy (REST API entry point) ---
   proxy:

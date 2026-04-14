@@ -60,12 +60,12 @@ public class TestController {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        requestProducer.sendRequest(request);
+        requestProducer.sendOracleRequest(request);
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "sent");
         response.put("compositeId", request.getCompositeId());
-        response.put("message", "Request sent to Kafka topic: bmb.request.new");
+        response.put("message", "Oracle request sent to Kafka");
 
         log.info("Test request sent: {}", request.getCompositeId());
         return ResponseEntity.ok(response);
@@ -124,7 +124,7 @@ public class TestController {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        requestProducer.sendRequest(request);
+        requestProducer.sendOracleRequest(request);
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "sent");
@@ -156,7 +156,7 @@ public class TestController {
                 .failedAt(LocalDateTime.now())
                 .build();
 
-        requestProducer.sendToDlq(dlqMessage);
+        requestProducer.sendToOracleDlq(dlqMessage);
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "sent_to_dlq");
@@ -194,7 +194,7 @@ public class TestController {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        requestProducer.sendRequest(request);
+        requestProducer.sendApiRequest(request);
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "sent");
