@@ -51,6 +51,7 @@ public class GatewayMetrics {
     private final Counter httpTimeout;
     private final Counter httpRetry;
     private final Counter httpCircuitBreakerOpen;
+    private final Counter poolRejection;
 
     // ==================== E5: Oracle Save ====================
     private final Timer oracleSaveTimer;
@@ -191,6 +192,11 @@ public class GatewayMetrics {
         this.httpCircuitBreakerOpen = Counter.builder("gateway.http.circuitbreaker.rejected")
                 .description("Requests rejected by circuit breaker")
                 .tag("stage", "http_request")
+                .register(registry);
+
+        this.poolRejection = Counter.builder("gateway.consumer.pool.rejection")
+                .description("Tasks rejected by HTTP thread pool (pool exhausted)")
+                .tag("stage", "consumer_process")
                 .register(registry);
 
         // ==================== E5: Oracle Save ====================

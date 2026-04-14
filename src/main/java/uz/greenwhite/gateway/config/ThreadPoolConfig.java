@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -22,6 +23,12 @@ public class ThreadPoolConfig {
      * Kafka consumer threads only receive messages and
      * delegate HTTP work to this pool.
      * Result: consumer threads stay free to accept new messages.
+     *
+     * IMPORTANT: Uses RejectWithLogging instead of CallerRunsPolicy.
+     * CallerRunsPolicy was blocking Kafka consumer threads when pool
+     * was exhausted, causing complete pipeline stall during cascading failures.
+     * RejectWithLogging throws RejectedExecutionException which RequestConsumer
+     * catches and re-queues the message to Kafka for later processing.
      */
     @Bean("httpRequestExecutor")
     public ThreadPoolTaskExecutor httpRequestExecutor() {
@@ -43,8 +50,8 @@ public class ThreadPoolConfig {
         // Thread name prefix — for debugging and monitoring
         executor.setThreadNamePrefix("http-req-");
 
-        // Rejection policy — what to do when queue is also full
-        executor.setRejectedExecutionHandler(new CallerRunsWithLogging());
+        // Rejection policy — reject task so consumer thread stays free
+        executor.setRejectedExecutionHandler(new RejectWithLogging());
 
         // Allow core threads to timeout (saves resources)
         executor.setAllowCoreThreadTimeOut(true);
@@ -54,31 +61,29 @@ public class ThreadPoolConfig {
         log.info("HTTP Request ThreadPool created: core={}, max={}, queue={}",
                 executor.getCorePoolSize(),
                 executor.getMaxPoolSize(),
-                200);
+                concurrencyProperties.getThreadPoolQueueCapacity());
 
         return executor;
     }
 
     /**
      * Custom rejection handler:
-     * When queue is full — caller thread executes the task (backpressure).
-     * This slows down the Kafka consumer thread,
-     * which naturally slows message consumption — natural backpressure.
+     * When queue is full — reject the task with RejectedExecutionException.
+     * RequestConsumer catches this and re-queues the message to Kafka.
+     * Consumer thread stays free to process new messages.
+     *
+     * Previous CallerRunsPolicy was running the task on the Kafka consumer thread,
+     * blocking it for up to 69 seconds and causing pipeline stall.
      */
-    static class CallerRunsWithLogging implements RejectedExecutionHandler {
+    static class RejectWithLogging implements RejectedExecutionHandler {
         @Override
         public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
-            log.warn("⚠ HTTP thread pool exhausted! queue={}, active={}, pool={}. " +
-                            "Task will run on caller thread (backpressure active)",
+            log.warn("HTTP thread pool exhausted! Task rejected. queue={}, active={}, pool={}",
                     executor.getQueue().size(),
                     executor.getActiveCount(),
                     executor.getPoolSize());
 
-            // Runs on caller thread — which is the Kafka consumer thread
-            // resulting in consumer slowdown (natural backpressure)
-            if (!executor.isShutdown()) {
-                r.run();
-            }
+            throw new RejectedExecutionException("HTTP thread pool exhausted — task will be re-queued");
         }
     }
 }

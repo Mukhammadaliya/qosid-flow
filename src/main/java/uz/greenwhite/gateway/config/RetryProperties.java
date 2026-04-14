@@ -36,6 +36,13 @@ public class RetryProperties {
     private String retryableStatuses = "408,429,500,502,503,504";
 
     /**
+     * Maximum age of a message in milliseconds before it is considered expired.
+     * Messages older than this are immediately failed (prevents infinite re-queue loops).
+     * Default: 300000 (5 minutes)
+     */
+    private long maxMessageAgeMs = 300_000;
+
+    /**
      * Cached set of retryable status codes, parsed once at startup
      */
     private Set<Integer> retryableStatusSet;

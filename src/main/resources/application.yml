@@ -95,7 +95,7 @@ gateway:
 
   # --- Data Source (Oracle/Biruni) ---
   source:
-    base-url: ${SOURCE_BASE_URL:https://app3.greenwhite.uz/x24}
+    base-url: ${SOURCE_BASE_URL:http://192.168.50.18:8080/smartup24}
     username: ${SOURCE_USERNAME:admin@head}
     password: ${SOURCE_PASSWORD:greenwhite}
     request-pull-uri: ${SOURCE_PULL_URI:/b/biruni/bmb/requests$pull}
@@ -125,6 +125,7 @@ gateway:
     max-attempts: ${RETRY_MAX_ATTEMPTS:3}
     interval-ms: ${RETRY_INTERVAL_MS:3000}
     retryable-statuses: ${RETRY_STATUSES:408,429,500,502,503,504}
+    max-message-age-ms: ${RETRY_MAX_MESSAGE_AGE:300000}
 
   # --- Dynamic Concurrency ---
   concurrency:

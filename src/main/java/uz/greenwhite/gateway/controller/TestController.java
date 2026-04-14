@@ -174,7 +174,8 @@ public class TestController {
      * Example: POST http://localhost:8090/api/test/proxy
      */
     @PostMapping("/proxy")
-    public ResponseEntity<Map<String, Object>> sendTestProxyRequest() {
+    public ResponseEntity<Map<String, Object>> sendTestProxyRequest(
+            @RequestHeader(value = "X-Callback-Url", required = false) String callbackUrl) {
         UUID uuid = UUID.randomUUID();
         long requestId = uuid.getMostSignificantBits() & Long.MAX_VALUE;
 
@@ -189,6 +190,7 @@ public class TestController {
                 .body("{\"test\": \"api-proxy\", \"uuid\": \"" + uuid + "\"}")
                 .clientIp("127.0.0.1")
                 .contentType("application/json")
+                .callbackUrl(callbackUrl)
                 .createdAt(LocalDateTime.now())
                 .build();
 

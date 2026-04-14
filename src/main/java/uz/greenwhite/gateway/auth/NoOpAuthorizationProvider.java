@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
  * Activated only if no other {@code AuthorizationProvider} bean is registered.
  */
 @Component
-@ConditionalOnMissingBean(AuthorizationProvider.class)
+@ConditionalOnMissingBean(value = AuthorizationProvider.class, ignored = NoOpAuthorizationProvider.class)
 public class NoOpAuthorizationProvider implements AuthorizationProvider {
 
     @Override

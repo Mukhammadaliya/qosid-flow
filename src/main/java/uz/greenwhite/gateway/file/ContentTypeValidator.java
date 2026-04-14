@@ -1,10 +1,12 @@
 package uz.greenwhite.gateway.file;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 import uz.greenwhite.gateway.exception.RequestValidationException;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -17,10 +19,24 @@ import java.util.List;
 @Component
 public class ContentTypeValidator {
 
-    private final List<String> allowedContentTypes;
+    private final Environment environment;
+    private List<String> allowedContentTypes;
 
-    public ContentTypeValidator(@Value("${gateway.security.content-types}") List<String> allowedContentTypes) {
-        this.allowedContentTypes = allowedContentTypes;
+    public ContentTypeValidator(Environment environment) {
+        this.environment = environment;
+    }
+
+    @PostConstruct
+    void init() {
+        allowedContentTypes = new ArrayList<>();
+        int i = 0;
+        while (true) {
+            String val = environment.getProperty("gateway.security.content-types[" + i + "]");
+            if (val == null) break;
+            allowedContentTypes.add(val.trim().toLowerCase());
+            i++;
+        }
+        log.info("ContentTypeValidator: {} allowed content types loaded", allowedContentTypes.size());
     }
 
     public boolean isAllowed(String contentType) {

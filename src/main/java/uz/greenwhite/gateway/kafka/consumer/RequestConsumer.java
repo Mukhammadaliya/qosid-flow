@@ -20,8 +20,10 @@ import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import uz.greenwhite.gateway.model.kafka.ResponseMessage;
 import uz.greenwhite.gateway.state.RequestStateService;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
 
 @Slf4j
 @Service
@@ -80,22 +82,22 @@ public class RequestConsumer {
             }
 
             // 3. Delegate HTTP work to a separate thread pool
-            CompletableFuture.runAsync(() -> {
-                try {
-                    processRequest(key, message);
-                } catch (Exception e) {
-                    log.error("Async processing failed for {}: {}", key, e.getMessage(), e);
-                    handleFailedProcessing(key, message, e);
-                } finally {
-                    requestStateService.releaseLock(key);
-                }
-            }, httpExecutor).whenComplete((result, throwable) -> {
-                if (throwable != null) {
-                    log.error("Unexpected error in async processing for {}: {}",
-                            key, throwable.getMessage(), throwable);
-                }
-                ack.acknowledge();
-            });
+            CompletableFuture.runAsync(() -> processRequest(key, message, ack), httpExecutor)
+                    .exceptionally(throwable -> {
+                        log.error("Unexpected error in async submission for {}: {}",
+                                key, throwable.getMessage(), throwable);
+                        requestStateService.releaseLock(key);
+                        ack.acknowledge();
+                        return null;
+                    });
+
+        } catch (RejectedExecutionException e) {
+            // Pool exhausted — re-queue message to Kafka, don't block consumer thread
+            log.warn("Pool exhausted, re-queuing: {}", key);
+            metrics.getPoolRejection().increment();
+            requestStateService.releaseLock(key);
+            requestProducer.sendRequest(message);
+            ack.acknowledge();
 
         } catch (Exception e) {
             log.error("Error submitting request {}: {}", key, e.getMessage(), e);
@@ -105,9 +107,20 @@ public class RequestConsumer {
     }
 
     /**
-     * Process single request (runs on httpExecutor thread)
+     * Process single request (runs on httpExecutor thread).
+     * Uses non-blocking .subscribe() instead of .block() to free the thread immediately.
      */
-    private void processRequest(String key, RequestMessage message) {
+    private void processRequest(String key, RequestMessage message, Acknowledgment ack) {
+        // 0. Message expiry check — prevent messages from circulating indefinitely
+        if (isMessageExpired(message)) {
+            long ageMs = Duration.between(message.getCreatedAt(), LocalDateTime.now()).toMillis();
+            log.warn("Message expired: {} (age={}ms, limit={}ms)", key, ageMs, retryProperties.getMaxMessageAgeMs());
+            handlePermanentFailure(key, message, 0, "Message expired after " + ageMs + "ms", ErrorSource.SYSTEM);
+            requestStateService.releaseLock(key);
+            ack.acknowledge();
+            return;
+        }
+
         // 1. Create initial state
         requestStateService.createInitialState(key);
 
@@ -117,39 +130,51 @@ public class RequestConsumer {
         // ===== E4: HTTP Request with Timer =====
         Timer.Sample httpSample = Timer.start(metrics.getRegistry());
 
-        ResponseMessage response;
-        try {
-            response = httpRequestService.sendRequest(message)
-                    .block(java.time.Duration.ofMillis(
-                            retryProperties.getIntervalMs() * retryProperties.getMaxAttempts() + 60_000));
-        } catch (Exception e) {
-            httpSample.stop(metrics.getHttpRequestTimer());
+        // 3. Non-blocking HTTP request — thread is freed immediately after subscribe()
+        httpRequestService.sendRequest(message)
+                .timeout(Duration.ofMillis(
+                        retryProperties.getIntervalMs() * retryProperties.getMaxAttempts() + 60_000))
+                .subscribe(
+                        response -> {
+                            try {
+                                httpSample.stop(metrics.getHttpRequestTimer());
 
-            // Timeout or connection error?
-            if (isTimeoutException(e)) {
-                metrics.recordHttpTimeout();
-                log.error("E4: HTTP timeout for {}: {}", key, e.getMessage());
-            } else {
-                metrics.getHttpError5xx().increment();
-                log.error("E4: HTTP exception for {}: {}", key, e.getMessage());
-            }
+                                if (response != null && response.isSuccess()) {
+                                    metrics.getHttpSuccess().increment();
+                                    handleSuccess(key, message, response);
+                                } else {
+                                    int httpStatus = response != null ? response.getHttpStatus() : 0;
+                                    metrics.recordHttpResult(httpStatus);
+                                    handleFailedResponse(key, message, response);
+                                }
+                            } catch (Exception e) {
+                                log.error("Error handling response for {}: {}", key, e.getMessage(), e);
+                            } finally {
+                                requestStateService.releaseLock(key);
+                                ack.acknowledge();
+                            }
+                        },
+                        error -> {
+                            try {
+                                httpSample.stop(metrics.getHttpRequestTimer());
 
-            handleFailedProcessing(key, message, e);
-            return;
-        }
+                                if (isTimeoutException(error)) {
+                                    metrics.recordHttpTimeout();
+                                    log.error("E4: HTTP timeout for {}: {}", key, error.getMessage());
+                                } else {
+                                    metrics.getHttpError5xx().increment();
+                                    log.error("E4: HTTP exception for {}: {}", key, error.getMessage());
+                                }
 
-        httpSample.stop(metrics.getHttpRequestTimer());
-
-        // 4. Handle response
-        if (response != null && response.isSuccess()) {
-            metrics.getHttpSuccess().increment();
-            handleSuccess(key, message, response);
-        } else {
-            // ===== E4: Record HTTP error by status code =====
-            int httpStatus = response != null ? response.getHttpStatus() : 0;
-            metrics.recordHttpResult(httpStatus);
-            handleFailedResponse(key, message, response);
-        }
+                                handleFailedProcessing(key, message, error);
+                            } catch (Exception e) {
+                                log.error("Error handling failure for {}: {}", key, e.getMessage(), e);
+                            } finally {
+                                requestStateService.releaseLock(key);
+                                ack.acknowledge();
+                            }
+                        }
+                );
     }
 
     private void handleSuccess(String key, RequestMessage request, ResponseMessage response) {
@@ -160,7 +185,6 @@ public class RequestConsumer {
         } catch (Exception e) {
             log.error("E4: Failed to send response to Kafka for {}: {}", key, e.getMessage());
 
-            // RecordTooLargeException yoki boshqa Kafka xatolari uchun DLQ ga yuborish
             DlqMessage dlqMessage = DlqMessage.builder()
                     .companyId(response.getCompanyId())
                     .requestId(response.getRequestId())
@@ -179,12 +203,22 @@ public class RequestConsumer {
         }
     }
 
+    /**
+     * Handle failed HTTP response.
+     * CB and OAuth2 errors are NOT retried — they indicate infrastructure issues,
+     * not transient external API errors. Retrying them causes infinite Kafka re-queue loops.
+     */
     private void handleFailedResponse(String key, RequestMessage message, ResponseMessage response) {
         int attemptCount = requestStateService.incrementAttempt(key);
         int httpStatus = response != null ? response.getHttpStatus() : 0;
         String errorMessage = response != null ? response.getErrorMessage() : "Unknown error";
 
-        boolean isRetryable = retryProperties.isRetryable(httpStatus);
+        // CB and OAuth2 errors — do NOT retry, fail immediately
+        String errorSourceStr = response != null ? response.getErrorSource() : null;
+        boolean isNonRetryableSource = "CIRCUIT_BREAKER".equals(errorSourceStr)
+                || "OAUTH2".equals(errorSourceStr);
+
+        boolean isRetryable = retryProperties.isRetryable(httpStatus) && !isNonRetryableSource;
         boolean hasAttemptsLeft = attemptCount < retryProperties.getMaxAttempts();
 
         if (isRetryable && hasAttemptsLeft) {
@@ -194,11 +228,16 @@ public class RequestConsumer {
                     key, httpStatus, attemptCount, retryProperties.getMaxAttempts());
             requestProducer.sendRequest(message);
         } else {
-            handlePermanentFailure(key, message, httpStatus, errorMessage, ErrorSource.HTTP);
+            if (isNonRetryableSource) {
+                log.warn("E4: Non-retryable error source for {}: source={}, status={}",
+                        key, errorSourceStr, httpStatus);
+            }
+            ErrorSource source = ErrorSource.fromString(errorSourceStr);
+            handlePermanentFailure(key, message, httpStatus, errorMessage, source);
         }
     }
 
-    private void handleFailedProcessing(String key, RequestMessage message, Exception e) {
+    private void handleFailedProcessing(String key, RequestMessage message, Throwable e) {
         int attemptCount = requestStateService.incrementAttempt(key);
 
         if (attemptCount < retryProperties.getMaxAttempts()) {
@@ -228,7 +267,7 @@ public class RequestConsumer {
         int attemptCount = requestStateService.getAttemptCount(key);
         DlqMessage dlqMessage = DlqMessage.from(
                 message, errorMessage, source.name(), httpStatus, attemptCount,
-                kafkaProperties.getTopics().getRequestNew() // ← dynamic topic
+                kafkaProperties.getTopics().getRequestNew()
         );
         requestProducer.sendToDlq(dlqMessage);
 
@@ -237,11 +276,20 @@ public class RequestConsumer {
     }
 
     /**
+     * Check if message has exceeded maximum age.
+     * Returns false if createdAt is null (backwards compatibility with old messages).
+     */
+    private boolean isMessageExpired(RequestMessage message) {
+        if (message.getCreatedAt() == null) return false;
+        long ageMs = Duration.between(message.getCreatedAt(), LocalDateTime.now()).toMillis();
+        return ageMs > retryProperties.getMaxMessageAgeMs();
+    }
+
+    /**
      * Check if exception is timeout-related
      */
-    private boolean isTimeoutException(Exception e) {
-        if (e == null)
-            return false;
+    private boolean isTimeoutException(Throwable e) {
+        if (e == null) return false;
 
         String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
         return e instanceof java.util.concurrent.TimeoutException
