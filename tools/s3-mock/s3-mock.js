@@ -53,15 +53,21 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // HEAD — check if object exists
+  // HEAD — check if object exists (statObject for MinIO SDK)
   if (req.method === "HEAD" && filePath) {
     if (fs.existsSync(filePath)) {
       const stat = fs.statSync(filePath);
       console.log(`HEAD   200 /${bucket}/${key}   ${stat.size}B (exists)`);
-      res.writeHead(200, { "Content-Length": stat.size });
+      res.writeHead(200, {
+        "Content-Length": stat.size,
+        "Content-Type": "application/octet-stream",
+        "ETag": `"${stat.mtimeMs.toString(16)}"`,
+        "Last-Modified": stat.mtime.toUTCString(),
+        "Accept-Ranges": "bytes",
+      });
     } else {
       console.log(`HEAD   404 /${bucket}/${key}   (not found)`);
-      res.writeHead(404);
+      res.writeHead(404, { "Content-Type": "application/xml" });
     }
     res.end();
     return;
