@@ -140,10 +140,6 @@ gateway:
     thread-pool-multiplier: ${THREAD_POOL_MULTIPLIER:2}
     thread-pool-queue-capacity: ${THREAD_POOL_QUEUE:50}
 
-  # --- Target (external API base URL) ---
-  target:
-    base-url: ${TARGET_BASE_URL:http://localhost:8081/b}
-
   # --- Proxy (REST API entry point) ---
   proxy:
     prefix: /qosid/queue

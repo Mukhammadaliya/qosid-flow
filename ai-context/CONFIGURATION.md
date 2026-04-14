@@ -130,12 +130,6 @@ gateway:
 | `slow-call-duration-threshold` | Duration | `10s` | Threshold for slow call detection |
 | `slow-call-rate-threshold` | int | `50` | Slow call percentage to trigger OPEN (%) |
 
-## gateway.target.* — Upstream Base URL
-
-| Property | Type | Default | Env Var | Description |
-|----------|------|---------|---------|-------------|
-| `gateway.target.base-url` | String | `http://localhost:8081/b` | `TARGET_BASE_URL` | Base URL used by API-source requests when no explicit upstream is supplied. |
-
 ## gateway.proxy.* — REST Proxy Layout
 
 | Property | Type | Default | Description |
