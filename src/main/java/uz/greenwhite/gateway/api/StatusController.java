@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uz.greenwhite.gateway.api.model.StatusResponse;
+import uz.greenwhite.gateway.config.ProxyProperties;
 import uz.greenwhite.gateway.model.RequestState;
 import uz.greenwhite.gateway.model.enums.RequestStatus;
 import uz.greenwhite.gateway.state.RequestStateService;
@@ -32,13 +33,14 @@ import java.util.Optional;
  */
 @Slf4j
 @RestController
-@RequestMapping("/qosid/api/v1/requests")
+@RequestMapping("${gateway.proxy.context-path}/api/v1/requests")
 @RequiredArgsConstructor
 public class StatusController {
 
     private final RequestStateService requestStateService;
     private final ResponseStorageService responseStorageService;
     private final ObjectMapper objectMapper;
+    private final ProxyProperties proxyProperties;
 
     @Value("${gateway.response.threshold-size:1024}")
     private int responseThresholdSize;
@@ -107,8 +109,8 @@ public class StatusController {
         }
     }
 
-    private static String resultUrl(String id) {
-        return "/qosid/api/v1/requests/" + id + "/result";
+    private String resultUrl(String id) {
+        return proxyProperties.getContextPath() + "/api/v1/requests/" + id + "/result";
     }
 
     // ==================== RESULT ====================

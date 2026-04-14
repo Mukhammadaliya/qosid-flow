@@ -14,7 +14,7 @@ import uz.greenwhite.gateway.api.model.CallbackPayload;
  */
 @Slf4j
 @RestController
-@RequestMapping("/qosid/api/v1/callback")
+@RequestMapping("${gateway.proxy.context-path}/api/v1/callback")
 public class CallbackController {
 
     @PostMapping

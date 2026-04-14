@@ -14,6 +14,7 @@ import uz.greenwhite.gateway.auth.AuthResult;
 import uz.greenwhite.gateway.auth.AuthorizationProvider;
 import uz.greenwhite.gateway.exception.AuthorizationDeniedException;
 import uz.greenwhite.gateway.exception.RequestValidationException;
+import uz.greenwhite.gateway.config.ProxyProperties;
 import uz.greenwhite.gateway.file.FileService;
 import uz.greenwhite.gateway.file.ServletFileUploadEntity;
 import uz.greenwhite.gateway.kafka.producer.RequestProducer;
@@ -43,18 +44,18 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @RestController
-@RequestMapping("/qosid/queue")
+@RequestMapping("${gateway.proxy.prefix}")
 @RequiredArgsConstructor
 public class ProxyController {
 
     private static final long API_COMPANY_ID = 0L;
     private static final String CALLBACK_HEADER = "X-Callback-Url";
     private static final String BIRUNI_UPLOAD_HEADER = "BiruniUpload";
-    private static final String QUEUE_PREFIX = "/qosid/queue";
 
     private final AuthorizationProvider authorizationProvider;
     private final RequestProducer requestProducer;
     private final FileService fileService;
+    private final ProxyProperties proxyProperties;
 
     @RequestMapping(
             value = "/**",
@@ -80,7 +81,7 @@ public class ProxyController {
         }
 
         // 2. Strip the proxy prefix to get the upstream URI
-        String targetUri = request.getRequestURI().replaceFirst(QUEUE_PREFIX, "");
+        String targetUri = request.getRequestURI().replaceFirst(proxyProperties.getPrefix(), "");
 
         // 3. Allocate IDs (see class-level note about the shortcut)
         UUID uuid = UUID.randomUUID();
@@ -135,7 +136,7 @@ public class ProxyController {
         ProxyResponse response = ProxyResponse.builder()
                 .requestId(compositeId)
                 .status("ACCEPTED")
-                .statusUrl("/qosid/api/v1/requests/" + compositeId + "/status")
+                .statusUrl(proxyProperties.getContextPath() + "/api/v1/requests/" + compositeId + "/status")
                 .build();
 
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
