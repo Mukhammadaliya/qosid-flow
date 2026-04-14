@@ -37,3 +37,8 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### Runtime data ###
+data/
+logs/
+tools/s3-mock/s3-data/
