@@ -179,10 +179,10 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
-| `gateway.s3.minio.enabled` | boolean | `false` | `MINIO_ENABLED` | Gate: client bean registered only when true. |
-| `gateway.s3.minio.endpoint` | String | — | `MINIO_ENDPOINT` | MinIO server URL. |
-| `gateway.s3.minio.access-key` | String | — | `MINIO_ACCESS_KEY` | |
-| `gateway.s3.minio.secret-key` | String | — | `MINIO_SECRET_KEY` | |
+| `gateway.s3.minio.enabled` | boolean | `true` | `MINIO_ENABLED` | Gate: client bean registered only when true. |
+| `gateway.s3.minio.endpoint` | String | `http://localhost:9000` | `MINIO_ENDPOINT` | S3-compatible server URL (MinIO or S3 mock). |
+| `gateway.s3.minio.access-key` | String | `minioadmin` | `MINIO_ACCESS_KEY` | |
+| `gateway.s3.minio.secret-key` | String | `minioadmin` | `MINIO_SECRET_KEY` | |
 | `gateway.s3.minio.bucket` | String | `gateway-files` | `MINIO_BUCKET` | Target bucket (must exist at startup). |
 
 ### Cloudflare R2 (`gateway.s3.cloudflare-r2.*`)

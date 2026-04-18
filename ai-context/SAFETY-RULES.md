@@ -58,7 +58,19 @@ Oracle and API flows use separate topics, consumers, and thread pools by design.
 
 `FileService.uploadFiles` calls `contentTypeValidator.validate(...)` per file. This is the sole guard against clients uploading arbitrary MIME types to MinIO / R2. Removing the call turns the service into an open file store — security exposure, storage cost, and potential abuse.
 
-### 14. Never widen `RocksDBProperties.responseRetentionDays` without also reviewing the cleanup cron
+### 14. Never remove S3 retry or fallback logic in `FileService` / `ProxyController`
+
+`FileService.tryUploadFiles()` retries S3 upload 3 times with backoff. On failure, `ProxyController` falls back to multipart forwarding so Biruni saves files to DB (`biruni_filespace`). Removing retry causes immediate failure on transient S3 errors. Removing fallback causes permanent data loss when S3 is unavailable.
+
+### 15. Never forward hop-by-hop headers to upstream
+
+`ProxyController.extractHeaders()` filters `host`, `connection`, `transfer-encoding`, etc. via `HOP_BY_HOP_HEADERS`. Forwarding `host` causes Tomcat virtual host routing failure (500). Forwarding `content-length` after body transformation causes request corruption.
+
+### 16. Never use Java `"\u0000"` (NULL char) for placeholder matching
+
+`ServletFileUploadEntity.replacePlaceholder()` must use `"\\u0000"` (literal 6-char string) to match JSON-encoded null placeholders. Java `"\u0000"` is a single NULL byte — it will never match the literal `\u0000` in JSON. This caused silent data loss (SHA not replaced → backend 500).
+
+### 17. Never widen `RocksDBProperties.responseRetentionDays` without also reviewing the cleanup cron
 
 `ResponseStorageService.cleanupExpiredResponses` evicts entries older than `retentionDays * 86_400_000 ms`. Increasing retention without a disk-capacity review will fill the volume silently — RocksDB writes will eventually start failing and the `/result` endpoint will return 404s intermittently.
 
@@ -80,7 +92,8 @@ These files contain production-critical logic. Before modifying any of them, run
 | `CallbackSender.java` | `@Retryable` (3 attempts, 1s backoff) + `@Recover` swallow | Lost callbacks, consumer stalls on bad URL |
 | `RocksDBConfig.java` | Singleton DB instance + `@PreDestroy` close | On-disk corruption across restarts |
 | `ResponseStorageService.java` | Scheduled retention cleanup + body/metadata dual-write | Disk exhaustion, orphaned metadata |
-| `ProxyController.java` | Auth gate + URL prefix strip + BiruniUpload parsing + `source="API"` tagging | Bypass of auth, cross-source mix-up, unvalidated uploads |
+| `ProxyController.java` | Auth gate + URL prefix strip + BiruniUpload parsing + S3 retry/fallback + hop-by-hop header filter + `files` header + `source="API"` tagging | Bypass of auth, cross-source mix-up, unvalidated uploads, S3 fallback failure |
+| `FileService.java` | S3 upload with 3x retry + content-type validation + fallback flag | Unvalidated uploads, missing retry on S3 failure |
 | `ContentTypeValidator.java` | MIME whitelist enforcement | Open file store, security exposure |
 
 ## Required Checklist

@@ -87,7 +87,7 @@ Oracle/Biruni                    (RedPanda)                  External APIs
 The pipeline has **two entry points** that both feed `gateway.request.new`:
 
 - **E1 Oracle pull** — original polling loop, tags `RequestMessage.source="ORACLE"`.
-- **E0 REST proxy** — `ProxyController` at `/qosid/queue/**`, tags `source="API"`. Runs `AuthorizationProvider.authorize(...)` first, optionally parses multipart via `BiruniUpload` header (uploading files to MinIO/R2 and rewriting `"\u0000<index>"` placeholders with SHAs), then enqueues via `RequestProducer.sendRequest`.
+- **E0 REST proxy** — `ProxyController` at `/qosid/queue/**`, tags `source="API"`. Runs `AuthorizationProvider.authorize(...)` first. For `BiruniUpload` requests: parses multipart, uploads files to S3 (3x retry via `FileService.tryUploadFiles()`), replaces `"\u0000<index>"` placeholders with SHAs. **S3 success:** sends JSON POST with `files` metadata header (Biruni `run()` path, `store_kind='S'`). **S3 failure:** falls back to multipart forwarding with `BiruniUpload` header (Biruni `runFileUploadParam()` path, files saved to DB). Hop-by-hop headers (`host`, `connection`, etc.) are filtered via `HOP_BY_HOP_HEADERS`. Enqueues via `RequestProducer.sendApiRequest()`.
 
 **Response routing by consumer:** `OracleResponseConsumer` saves to Biruni + RocksDB. `ApiResponseConsumer` saves to RocksDB + fires callback. No source-based `if/else` — routing is done at the topic level.
 

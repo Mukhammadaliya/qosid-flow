@@ -6,13 +6,13 @@ Java 21 + Spring Boot 3.3.0 microservice that pulls HTTP requests from Oracle/Bi
 
 Read these files for full project understanding:
 
-- `@ai-context/OVERVIEW.md` — Project identity, mission, tech stack, ports, repository structure
-- `@ai-context/ARCHITECTURE.md` — E1-E5 pipeline stages, component map, data flow, cross-cutting concerns
-- `@ai-context/CONVENTIONS.md` — Code style, naming, DI, logging, error handling, metrics patterns
-- `@ai-context/SAFETY-RULES.md` — **READ FIRST before modifying core pipeline code.** NEVER DO list, protected zones, checklists
-- `@ai-context/EXTENSION-GUIDE.md` — Step-by-step recipes: add consumer, OAuth2 provider, API integration, metric, config, notification
-- `@ai-context/CONFIGURATION.md` — All config parameters with types, defaults, env vars
-- `@ai-context/DOMAIN-GLOSSARY.md` — Key terms: Biruni, CompanyId, DLQ, CB, Pipeline Stage, etc.
+- `ai-context/OVERVIEW.md` — Project identity, mission, tech stack, ports, repository structure
+- `ai-context/ARCHITECTURE.md` — E1-E5 pipeline stages, component map, data flow, cross-cutting concerns
+- `ai-context/CONVENTIONS.md` — Code style, naming, DI, logging, error handling, metrics patterns
+- `ai-context/SAFETY-RULES.md` — **READ FIRST before modifying core pipeline code.** NEVER DO list, protected zones, checklists
+- `ai-context/EXTENSION-GUIDE.md` — Step-by-step recipes: add consumer, OAuth2 provider, API integration, metric, config, notification
+- `ai-context/CONFIGURATION.md` — All config parameters with types, defaults, env vars
+- `ai-context/DOMAIN-GLOSSARY.md` — Key terms: Biruni, CompanyId, DLQ, CB, Pipeline Stage, etc.
 
 ## Critical Safety Rules (Top 5)
 
@@ -22,7 +22,7 @@ Read these files for full project understanding:
 4. **Never remove Integer.MAX_VALUE safety net** — causes infinite retries when Redis is down (`RequestStateService.java`)
 5. **Never merge Oracle and API consumer logic** — causes cascading failures between flows (`kafka/consumer/oracle/`, `kafka/consumer/api/`)
 
-Full safety rules: `@ai-context/SAFETY-RULES.md`
+Full safety rules: `ai-context/SAFETY-RULES.md`
 
 ## Documentation Maintenance Rule
 
@@ -38,12 +38,12 @@ Full safety rules: `@ai-context/SAFETY-RULES.md`
 
 | Method          | Path                                             | Purpose                                                                                  |
 |-----------------|--------------------------------------------------|------------------------------------------------------------------------------------------|
-| POST/GET/PUT/DELETE/PATCH | `/qosid/queue/**`                       | Transparent proxy — auth gate → queue to Kafka → `202 ACCEPTED` with polling URL. `BiruniUpload: param\|alone` header activates multipart upload to MinIO/R2. `X-Callback-Url` header requests a callback when done. |
+| POST/GET/PUT/DELETE/PATCH | `/qosid/queue/**`                       | Transparent proxy — auth gate → queue to Kafka → `202 ACCEPTED` with polling URL. `BiruniUpload: param\|alone` header activates multipart upload to S3 (3x retry); on S3 failure falls back to multipart forwarding to Biruni for DB storage. `X-Callback-Url` header requests a callback when done. |
 | GET             | `/qosid/api/v1/requests/{id}/status`             | Status + inline result (when small & JSON/text) or `resultUrl` pointer.                  |
 | GET             | `/qosid/api/v1/requests/{id}/result`             | Full response body from RocksDB, original `Content-Type` + HTTP status.                  |
 | POST            | `/qosid/api/v1/callback`                         | Inbound callback receiver (currently logs + 200).                                        |
 
-Pluggable auth: implement `AuthorizationProvider` — the default `NoOpAuthorizationProvider` steps aside. See `@ai-context/EXTENSION-GUIDE.md` Recipe 0.
+Pluggable auth: implement `AuthorizationProvider` — the default `NoOpAuthorizationProvider` steps aside. See `ai-context/EXTENSION-GUIDE.md` Recipe 0.
 
 ## Quick Commands
 
@@ -62,8 +62,8 @@ Oracle/Biruni → [E1: Pull] ──┐
                              │
 HTTP (/qosid/queue/**) ──────┤→ [Kafka] → [Consumer + Redis Lock] → [HTTP + CB] → [ResponseConsumer]
   (ProxyController + auth +  │                                                           │
-   BiruniUpload multipart +   │                                   ┌───────────────────────┼──────────────────┐
-   fileReferences → S3)       │                                   ↓                       ↓                  ↓
+   BiruniUpload → S3 (3x) +  │                                   ┌───────────────────────┼──────────────────┐
+   fallback → multipart DB)   │                                   ↓                       ↓                  ↓
                               │                         Save to Oracle             RocksDB (7d)         Callback
                               │                         (source=ORACLE only)       (always, if body)    (if callbackUrl)
                               │                                   ↓ failure
