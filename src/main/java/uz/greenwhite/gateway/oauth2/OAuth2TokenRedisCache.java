@@ -132,7 +132,7 @@ public class OAuth2TokenRedisCache {
             try {
                 Thread.sleep(200);
                 Token token = getFromRedis(providerName);
-                if (token != null && !token.isExpired()) {
+                if (token != null) {
                     return token;
                 }
             } catch (InterruptedException e) {
