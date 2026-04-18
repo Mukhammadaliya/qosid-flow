@@ -24,6 +24,25 @@ Read these files for full project understanding:
 
 Full safety rules: `ai-context/SAFETY-RULES.md`
 
+## Branching & Release Policy
+
+**Only two branches are allowed in the repository: `main` and `debug`.**
+
+- `main` — stable, production-ready. Deployed to prod from this branch.
+- `debug` — active development. All feature work, fixes, and experiments happen here.
+
+**Rules:**
+- Do NOT create long-lived feature branches (`feature/*`, `fix/*`, etc.) — work on `debug` directly.
+- Do NOT push directly to `main` — always go through a PR from `debug`.
+- When `debug` is stable and ready for release, open a PR `debug` → `main`, merge, and tag.
+
+**Release is MANUAL (for now):**
+1. Merge `debug` → `main` via PR.
+2. Tag `main` with `v<version>` (e.g., `v1.0.0`) — annotated tag with release notes.
+3. Push tag: `git push upstream v<version>`.
+4. GitHub Actions workflow (`.github/workflows/build.yml`) builds the JAR when `VERSION.md` changes on `main`. For manual-only releases, trigger the workflow or attach a locally-built JAR to the GitHub Release by hand.
+5. On prod server: `git pull`, `mvn clean package -DskipTests`, restart the systemd service. Other services remain in Docker.
+
 ## Documentation Maintenance Rule
 
 **Har bir kod o'zgarishidan keyin** quyidagi doc fayllarni tekshirib, aktualizatsiya qiling:
