@@ -95,7 +95,8 @@ public class ServletFileUploadEntity {
         try (InputStream in = part.getInputStream()) {
             byte[] bytes = in.readAllBytes();
             String sha = sha256Hex(bytes);
-            return new FileData(sha, bytes, part.getContentType(), bytes.length, null);
+            String fileName = part.getSubmittedFileName() != null ? part.getSubmittedFileName() : "";
+            return new FileData(sha, bytes, part.getContentType(), bytes.length, null, fileName);
         } catch (IOException e) {
             throw new RequestValidationException("Failed to read file part: " + e.getMessage());
         }
@@ -115,7 +116,8 @@ public class ServletFileUploadEntity {
     }
 
     private static String replacePlaceholder(String param, String index, String sha) {
-        return param.replace("\"\u0000" + index + "\"", "\"" + sha + "\"");
+        // JSON.stringify encodes NULL char as literal "\u0000" (6 chars: \ u 0 0 0 0)
+        return param.replace("\"\\u0000" + index + "\"", "\"" + sha + "\"");
     }
 
     private static String sha256Hex(byte[] bytes) {
@@ -138,6 +140,7 @@ public class ServletFileUploadEntity {
         private final long size;
         /** null → MinIO, non-null → Cloudflare R2 targeting that bucket. */
         private final String bucket;
+        private final String fileName;
 
         public InputStream getInputStream() {
             return new ByteArrayInputStream(data);

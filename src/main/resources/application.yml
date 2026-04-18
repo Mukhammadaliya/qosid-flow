@@ -101,7 +101,7 @@ gateway:
 
   # --- Data Source (Oracle/Biruni) ---
   source:
-    base-url: ${SOURCE_BASE_URL:http://192.168.50.18:8080/smartup24}
+    base-url: ${SOURCE_BASE_URL:http://localhost:8080/smartup24}
     username: ${SOURCE_USERNAME:admin@head}
     password: ${SOURCE_PASSWORD:greenwhite}
     request-pull-uri: ${SOURCE_PULL_URI:/b/biruni/bmb/requests$pull}
@@ -150,7 +150,7 @@ gateway:
 
   # --- API Proxy ---
   api:
-    base-url: ${API_BASE_URL:http://localhost:8081/b}
+    base-url: ${API_BASE_URL:http://localhost:8080/smartup24/b}
 
   # --- Proxy (REST API entry point) ---
   proxy:
@@ -170,10 +170,10 @@ gateway:
   # --- S3 (MinIO + Cloudflare R2) ---
   s3:
     minio:
-      enabled: ${MINIO_ENABLED:false}
-      endpoint: ${MINIO_ENDPOINT:}
-      access-key: ${MINIO_ACCESS_KEY:}
-      secret-key: ${MINIO_SECRET_KEY:}
+      enabled: ${MINIO_ENABLED:true}
+      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${MINIO_SECRET_KEY:minioadmin}
       bucket: ${MINIO_BUCKET:gateway-files}
     cloudflare-r2:
       enabled: ${R2_ENABLED:false}

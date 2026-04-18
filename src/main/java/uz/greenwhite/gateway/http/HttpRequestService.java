@@ -22,6 +22,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -33,6 +35,8 @@ public class HttpRequestService {
     private final OAuth2ProviderService oAuth2ProviderService;
     private final HttpProperties httpProperties;
 
+    private final Set<String> registeredEventListeners = ConcurrentHashMap.newKeySet();
+
     /**
      * Get or create circuit breaker for specific base URL.
      * Each external service gets its own circuit breaker.
@@ -43,14 +47,16 @@ public class HttpRequestService {
 
         CircuitBreaker cb = circuitBreakerRegistry.circuitBreaker(cbName);
 
-        // Log state transition only once per CB creation
-        cb.getEventPublisher()
-                .onStateTransition(event ->
-                        log.warn("Circuit Breaker [{}] state change: {}", cbName, event.getStateTransition()))
-                .onFailureRateExceeded(event ->
-                        log.warn("Circuit Breaker [{}] failure rate exceeded: {}%", cbName, event.getFailureRate()))
-                .onSlowCallRateExceeded(event ->
-                        log.warn("Circuit Breaker [{}] slow call rate exceeded: {}%", cbName, event.getSlowCallRate()));
+        // Register event listeners only ONCE per circuit breaker name
+        if (registeredEventListeners.add(cbName)) {
+            cb.getEventPublisher()
+                    .onStateTransition(event ->
+                            log.warn("Circuit Breaker [{}] state change: {}", cbName, event.getStateTransition()))
+                    .onFailureRateExceeded(event ->
+                            log.warn("Circuit Breaker [{}] failure rate exceeded: {}%", cbName, event.getFailureRate()))
+                    .onSlowCallRateExceeded(event ->
+                            log.warn("Circuit Breaker [{}] slow call rate exceeded: {}%", cbName, event.getSlowCallRate()));
+        }
 
         return cb;
     }
@@ -121,16 +127,33 @@ public class HttpRequestService {
 
         int timeoutMs = httpProperties.getTimeoutForUrl(request.getBaseUrl());
 
-        byte[] bodyBytes = request.getBody() != null
-                ? request.getBody().getBytes(StandardCharsets.UTF_8)
-                : new byte[0];
+        // Choose body: multipart fallback (S3 failed → Biruni DB) or regular JSON
+        WebClient.RequestHeadersSpec<?> requestSpec;
+        if (request.getBiruniUploadMode() != null && request.getFileParts() != null) {
+            String boundary = "----QosidBoundary" + java.util.UUID.randomUUID().toString().replace("-", "");
+            byte[] multipartBody = buildMultipartBody(boundary, request);
+            String multipartContentType = "multipart/form-data; boundary=" + boundary;
 
-        return webClient
-                .method(method)
-                .uri(fullUrl)
-                .headers(h -> applyHeaders(h, headers, request.getContentType()))
-                .bodyValue(bodyBytes)
-                .retrieve()
+            log.info("Sending multipart fallback [CB: {}]: {} {} -> {} (DB storage)",
+                    cbName, method, fullUrl, compositeId);
+
+            requestSpec = webClient.method(method).uri(fullUrl)
+                    .headers(h -> {
+                        applyHeaders(h, headers, null);
+                        h.setContentType(MediaType.parseMediaType(multipartContentType));
+                        h.set("BiruniUpload", request.getBiruniUploadMode());
+                    })
+                    .bodyValue(multipartBody);
+        } else {
+            byte[] bodyBytes = request.getBody() != null
+                    ? request.getBody().getBytes(StandardCharsets.UTF_8)
+                    : new byte[0];
+            requestSpec = webClient.method(method).uri(fullUrl)
+                    .headers(h -> applyHeaders(h, headers, request.getContentType()))
+                    .bodyValue(bodyBytes);
+        }
+
+        return requestSpec.retrieve()
                 .toEntity(byte[].class)
                 .timeout(java.time.Duration.ofMillis(timeoutMs))
                 .map(entity -> {
@@ -185,6 +208,44 @@ public class HttpRequestService {
     }
 
     // ==================== HELPERS ====================
+
+    /**
+     * Build a raw multipart/form-data body with param field + file parts.
+     * Used for BiruniUpload DB fallback when S3 is unavailable.
+     */
+    private static byte[] buildMultipartBody(String boundary, RequestMessage request) {
+        try {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+
+            // param field
+            if (request.getBody() != null) {
+                out.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+                out.write("Content-Disposition: form-data; name=\"param\"\r\n".getBytes(StandardCharsets.UTF_8));
+                out.write("\r\n".getBytes(StandardCharsets.UTF_8));
+                out.write(request.getBody().getBytes(StandardCharsets.UTF_8));
+                out.write("\r\n".getBytes(StandardCharsets.UTF_8));
+            }
+
+            // file parts
+            if (request.getFileParts() != null) {
+                for (RequestMessage.FilePart part : request.getFileParts()) {
+                    out.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+                    out.write(("Content-Disposition: form-data; name=\"" + part.getFieldName()
+                            + "\"; filename=\"" + part.getFileName() + "\"\r\n").getBytes(StandardCharsets.UTF_8));
+                    out.write(("Content-Type: " + part.getContentType() + "\r\n").getBytes(StandardCharsets.UTF_8));
+                    out.write("\r\n".getBytes(StandardCharsets.UTF_8));
+                    out.write(part.getData());
+                    out.write("\r\n".getBytes(StandardCharsets.UTF_8));
+                }
+            }
+
+            // closing boundary
+            out.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+            return out.toByteArray();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to build multipart body", e);
+        }
+    }
 
     /**
      * Build full URL from base URL, URI path, and query parameters.

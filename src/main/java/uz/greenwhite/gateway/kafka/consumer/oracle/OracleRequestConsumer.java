@@ -115,7 +115,9 @@ public class OracleRequestConsumer {
             return;
         }
 
-        requestStateService.createInitialState(key);
+        if (requestStateService.getState(key).isEmpty()) {
+            requestStateService.createInitialState(key);
+        }
         requestStateService.updateStatus(key, RequestStatus.SENT);
 
         Timer.Sample httpSample = Timer.start(metrics.getRegistry());

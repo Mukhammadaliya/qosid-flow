@@ -74,6 +74,23 @@ public class RequestMessage {
     @JsonProperty("content_type")
     private String contentType;         // Original content-type
 
+    @JsonProperty("biruni_upload_mode")
+    private String biruniUploadMode;    // null = normal, "param"/"alone" = multipart fallback to Biruni DB
+
+    @JsonProperty("file_parts")
+    private List<FilePart> fileParts;   // File data for multipart fallback (only when S3 failed)
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class FilePart {
+        private String fieldName;       // e.g. "file[0]"
+        private String fileName;        // e.g. "IMG_11.png"
+        private String contentType;     // e.g. "image/png"
+        private byte[] data;            // raw file bytes
+    }
+
     public String getCompositeId() {
         return companyId + ":" + requestId;
     }

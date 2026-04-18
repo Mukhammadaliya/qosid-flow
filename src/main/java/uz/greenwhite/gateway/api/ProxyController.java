@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
@@ -23,11 +24,13 @@ import uz.greenwhite.gateway.model.kafka.RequestMessage;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -89,26 +92,60 @@ public class ProxyController {
         UUID uuid = UUID.randomUUID();
         long requestId = uuid.getMostSignificantBits() & Long.MAX_VALUE;
 
-        // 4. BiruniUpload handling — either parse multipart + upload to S3, or read raw body
+        // 4. BiruniUpload handling — parse multipart, try S3, fallback to Biruni DB
         String biruniUpload = request.getHeader(BIRUNI_UPLOAD_HEADER);
         List<String> fileReferences = null;
         String bodyStr;
+        String contentType;
+        String biruniUploadMode = null;
+        List<RequestMessage.FilePart> fileParts = null;
 
-        if ("param".equals(biruniUpload)) {
-            ServletFileUploadEntity entity = new ServletFileUploadEntity(request, "param");
-            fileReferences = fileService.uploadFiles(entity.getFiles());
-            bodyStr = entity.getUpdatedParam();
-        } else if ("alone".equals(biruniUpload)) {
-            ServletFileUploadEntity entity = new ServletFileUploadEntity(request, "alone");
-            fileReferences = fileService.uploadFiles(entity.getFiles());
-            bodyStr = null;
+        if ("param".equals(biruniUpload) || "alone".equals(biruniUpload)) {
+            ServletFileUploadEntity entity = new ServletFileUploadEntity(request, biruniUpload);
+            boolean s3Success = fileService.tryUploadFiles(entity.getFiles());
+
+            if (s3Success) {
+                // S3 OK → send as JSON with "files" metadata header
+                fileReferences = entity.getFiles().stream()
+                        .map(ServletFileUploadEntity.FileData::getSha).toList();
+                bodyStr = entity.getUpdatedParam();
+                String filesJson = buildFilesHeaderJson(entity.getFiles());
+
+                headers.keySet().removeIf(h ->
+                        h.equalsIgnoreCase("content-type")
+                        || h.equalsIgnoreCase("content-length")
+                        || h.equalsIgnoreCase(BIRUNI_UPLOAD_HEADER));
+                headers.put("files", filesJson);
+                contentType = MediaType.APPLICATION_JSON_VALUE;
+            } else {
+                // S3 FAILED → fallback: send multipart to Biruni for DB storage
+                log.warn("S3 upload failed, falling back to Biruni DB storage");
+                bodyStr = entity.getUpdatedParam();
+                biruniUploadMode = biruniUpload;
+                fileParts = new ArrayList<>();
+                for (int i = 0; i < entity.getFiles().size(); i++) {
+                    ServletFileUploadEntity.FileData f = entity.getFiles().get(i);
+                    fileParts.add(RequestMessage.FilePart.builder()
+                            .fieldName("file[" + i + "]")
+                            .fileName(f.getFileName())
+                            .contentType(f.getContentType())
+                            .data(f.getData())
+                            .build());
+                }
+                // Keep original multipart headers for Biruni
+                headers.keySet().removeIf(h ->
+                        h.equalsIgnoreCase("content-type")
+                        || h.equalsIgnoreCase("content-length"));
+                contentType = null;
+            }
         } else if (biruniUpload != null) {
             throw new RequestValidationException("Invalid value for BiruniUpload header: " + biruniUpload);
         } else {
             bodyStr = new String(request.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            contentType = request.getContentType();
         }
 
-        // 5. Build the Kafka message
+        // 6. Build the Kafka message
         RequestMessage message = RequestMessage.builder()
                 .companyId(API_COMPANY_ID)
                 .requestId(requestId)
@@ -120,14 +157,16 @@ public class ProxyController {
                 .body(bodyStr)
                 .params(request.getQueryString())
                 .clientIp(clientIp)
-                .contentType(request.getContentType())
+                .contentType(contentType)
                 .callbackUrl(request.getHeader(CALLBACK_HEADER))
                 .fileReferences(fileReferences)
+                .biruniUploadMode(biruniUploadMode)
+                .fileParts(fileParts)
                 .build();
 
         String compositeId = message.getCompositeId();
 
-        // 6. Dispatch to Kafka, blocking up to 10s for the broker to ack
+        // 7. Dispatch to Kafka, blocking up to 10s for the broker to ack
         try {
             requestProducer.sendApiRequest(message).get(10, TimeUnit.SECONDS);
         } catch (Exception e) {
@@ -135,7 +174,7 @@ public class ProxyController {
             throw new RuntimeException("Failed to enqueue request: " + e.getMessage(), e);
         }
 
-        // 7. Synchronous handshake response
+        // 8. Synchronous handshake response
         ProxyResponse response = ProxyResponse.builder()
                 .requestId(compositeId)
                 .status("ACCEPTED")
@@ -147,6 +186,38 @@ public class ProxyController {
 
     // ==================== HELPERS ====================
 
+    /**
+     * Build a JSON array of file metadata for Biruni's {@code OracleHeader.getFiles()}.
+     * Format: {@code [{"file_name":"x","content_type":"y","file_size":"z","sha":"h","store_kind":"S","bucket":"PERMANENT"}]}
+     */
+    private static String buildFilesHeaderJson(List<ServletFileUploadEntity.FileData> files) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < files.size(); i++) {
+            if (i > 0) sb.append(",");
+            ServletFileUploadEntity.FileData f = files.get(i);
+            sb.append("{")
+              .append("\"file_name\":\"").append(escapeJson(f.getFileName())).append("\",")
+              .append("\"content_type\":\"").append(escapeJson(f.getContentType())).append("\",")
+              .append("\"file_size\":\"").append(f.getSize()).append("\",")
+              .append("\"sha\":\"").append(f.getSha()).append("\",")
+              .append("\"store_kind\":\"S\",")
+              .append("\"bucket\":\"PERMANENT\"")
+              .append("}");
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private static String escapeJson(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    /** Hop-by-hop headers that must not be forwarded to the upstream. */
+    private static final Set<String> HOP_BY_HOP_HEADERS = Set.of(
+            "host", "connection", "keep-alive", "proxy-authenticate",
+            "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade");
+
     private static Map<String, String> extractHeaders(HttpServletRequest request) {
         Map<String, String> headers = new HashMap<>();
         Enumeration<String> names = request.getHeaderNames();
@@ -155,7 +226,9 @@ public class ProxyController {
         }
         while (names.hasMoreElements()) {
             String name = names.nextElement();
-            headers.put(name, request.getHeader(name));
+            if (!HOP_BY_HOP_HEADERS.contains(name.toLowerCase())) {
+                headers.put(name, request.getHeader(name));
+            }
         }
         return headers;
     }
