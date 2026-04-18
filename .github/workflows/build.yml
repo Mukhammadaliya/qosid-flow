@@ -2,9 +2,10 @@ name: Build & Release JAR
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
     paths:
       - 'VERSION.md'
+  workflow_dispatch:
 
 permissions:
   contents: write

@@ -135,21 +135,21 @@ docker-compose down
 
 ## Branching & Release
 
-The repository uses **two branches only**: `main` (stable, production) and `debug` (active development).
+The repository uses **two branches only**: `master` (stable, production — GitHub default) and `debug` (active development).
 
-- Do NOT create feature branches — work on `debug`.
-- Do NOT push directly to `main` — merge via PR from `debug`.
+- Do NOT create feature branches or a `main` branch — work on `debug`.
+- Do NOT push directly to `master` — merge via PR from `debug`.
 - Upstream (`greenwhite/qosid-flow`) is the source of truth. Developer forks (e.g., `origin`) should stay in sync with upstream.
 
 ### Release process (manual)
 
-1. Open a PR `debug` → `main` on `greenwhite/qosid-flow` and merge when stable.
+1. Open a PR `debug` → `master` on `greenwhite/qosid-flow` and merge when stable.
 2. Create an annotated tag `v<version>` on the merged commit and push it:
    ```bash
    git tag -a v1.0.0 -m "Release notes..."
    git push upstream v1.0.0
    ```
-3. A GitHub Actions workflow (`.github/workflows/build.yml`) builds a JAR and creates a GitHub Release **when `VERSION.md` changes on `main`**. For releases without a VERSION.md bump, attach the JAR to the GitHub Release manually.
+3. A GitHub Actions workflow (`.github/workflows/build.yml`) builds a JAR and creates a GitHub Release **when `VERSION.md` changes on `master`**. For releases without a VERSION.md bump, attach the JAR to the GitHub Release manually.
 4. Deploy to prod by hand: `git pull` on the server, `mvn clean package -DskipTests`, restart the systemd unit. Other services run in Docker via `docker-compose`.
 
 Auto-release on every VERSION.md change is available but intentionally not used yet — all production releases are gated by a human step.
