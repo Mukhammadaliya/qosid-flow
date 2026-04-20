@@ -138,7 +138,7 @@ public class ServletFileUploadEntity {
         private final byte[] data;
         private final String contentType;
         private final long size;
-        /** null → MinIO, non-null → Cloudflare R2 targeting that bucket. */
+        /** null → default (S3 permanent bucket). Non-null → override bucket name. */
         private final String bucket;
         private final String fileName;
 

@@ -3,20 +3,19 @@ package uz.greenwhite.gateway.file;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import uz.greenwhite.gateway.file.s3.CloudflareR2Client;
-import uz.greenwhite.gateway.file.s3.MinIOClient;
+import uz.greenwhite.gateway.file.s3.S3Client;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Validates and routes uploaded files to the right S3 backend.
+ * Validates and uploads multipart files to S3-compatible storage with retry.
  *
- * <p>Routing rule: {@link ServletFileUploadEntity.FileData#getBucket()} {@code == null}
- * → MinIO; otherwise → Cloudflare R2 targeting that bucket. Both backends are
- * optional — missing a configured backend only matters if a caller actually
- * tries to use it (then an {@link IllegalStateException} is thrown).</p>
+ * <p>Default routing: {@link ServletFileUploadEntity.FileData#getBucket()} {@code == null}
+ * uploads to the {@link S3Client#getPermanentBucket() permanent bucket}; non-null
+ * bucket overrides that target. Fallback to multipart DB storage is handled by
+ * the caller if {@link #tryUploadFiles(List)} returns false.</p>
  */
 @Slf4j
 @Service
@@ -24,8 +23,7 @@ import java.util.Optional;
 public class FileService {
 
     private final ContentTypeValidator contentTypeValidator;
-    private final Optional<MinIOClient> minIOClient;
-    private final Optional<CloudflareR2Client> r2Client;
+    private final Optional<S3Client> s3Client;
 
     private static final int MAX_RETRY = 3;
 
@@ -80,13 +78,10 @@ public class FileService {
     }
 
     private void uploadFile(ServletFileUploadEntity.FileData file) {
-        if (file.getBucket() == null) {
-            minIOClient.orElseThrow(() -> new IllegalStateException("MinIO is not configured"))
-                    .uploadObject(file.getInputStream(), file.getSha(), file.getContentType(), file.getSize());
-        } else {
-            r2Client.orElseThrow(() -> new IllegalStateException("Cloudflare R2 is not configured"))
-                    .uploadObject(file.getBucket(), file.getSha(),
-                            file.getInputStream(), file.getContentType(), file.getSize());
-        }
+        S3Client s3 = s3Client.orElseThrow(
+                () -> new IllegalStateException("S3 client is not configured"));
+        String bucket = file.getBucket() != null ? file.getBucket() : s3.getPermanentBucket();
+        s3.uploadObject(bucket, file.getSha(),
+                file.getInputStream(), file.getContentType(), file.getSize());
     }
 }
