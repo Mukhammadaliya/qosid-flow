@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
 
@@ -54,6 +55,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleUploadSize(MaxUploadSizeExceededException e) {
         log.warn("Upload exceeds max size: {}", e.getMessage());
         return build(HttpStatus.PAYLOAD_TOO_LARGE, e.getMessage());
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException e) {
+        log.debug("No route matched: {}", e.getResourcePath());
+        return build(HttpStatus.NOT_FOUND, "Not Found: /" + e.getResourcePath());
     }
 
     @ExceptionHandler(Exception.class)

@@ -30,9 +30,12 @@ public class HttpClientConfig {
                 .pendingAcquireTimeout(Duration.ofMillis(httpProperties.getPendingAcquireTimeoutMs()))
                 .build();
 
+        // compress(true): send Accept-Encoding: gzip, deflate AND auto-decompress responses.
+        // Keeps stored bodies plain so /result and callbacks serve the real payload.
         HttpClient httpClient = HttpClient.create(connectionProvider)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, httpProperties.getConnectTimeoutMs())
                 .responseTimeout(Duration.ofMillis(httpProperties.getReadTimeoutMs()))
+                .compress(true)
                 .doOnConnected(conn -> conn
                         .addHandlerLast(new ReadTimeoutHandler(httpProperties.getReadTimeoutMs(), TimeUnit.MILLISECONDS))
                         .addHandlerLast(new WriteTimeoutHandler(httpProperties.getWriteTimeoutMs(), TimeUnit.MILLISECONDS))
