@@ -56,7 +56,7 @@ Oracle and API flows use separate topics, consumers, and thread pools by design.
 
 ### 13. Never bypass `ContentTypeValidator` for uploaded files
 
-`FileService.uploadFiles` calls `contentTypeValidator.validate(...)` per file. This is the sole guard against clients uploading arbitrary MIME types to MinIO / R2. Removing the call turns the service into an open file store — security exposure, storage cost, and potential abuse.
+`FileService.uploadFiles` calls `contentTypeValidator.validate(...)` per file. This is the sole guard against clients uploading arbitrary MIME types to S3. Removing the call turns the service into an open file store — security exposure, storage cost, and potential abuse.
 
 ### 14. Never remove S3 retry or fallback logic in `FileService` / `ProxyController`
 

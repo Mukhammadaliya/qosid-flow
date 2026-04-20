@@ -39,8 +39,7 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 | Micrometer + Prometheus | Metrics collection and export | (Spring Boot managed) |
 | Oracle JDBC | Database connectivity (via Biruni REST) | 23.4.0.24.05 |
 | RocksDB | Local disk-backed response body storage | 9.7.3 |
-| MinIO SDK | S3-compatible file upload (local / self-hosted) | 8.5.12 |
-| AWS SDK (S3) | Cloudflare R2 file upload | 2.27.24 |
+| AWS SDK (S3) | S3-compatible object storage file upload (AWS S3 / Cloudflare R2 / etc.) | 2.27.24 |
 | Lombok | Boilerplate reduction | (Spring Boot managed) |
 | Jackson | JSON serialization | (Spring Boot managed) |
 | RedPanda | Kafka-compatible broker (local dev) | 24.1.1 |
@@ -57,7 +56,7 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 | Exception Handling | `exception/` | `@RestControllerAdvice` producing uniform `ErrorResponse` JSON for all API errors. |
 | RocksDB Storage | `storage/` | Disk-backed response bodies keyed by `compositeId`, 7-day retention via `@Scheduled` cleanup cron. |
 | Callback System | `callback/` | `@Retryable` HTTP POST sender with `@Recover` (3 attempts, 1s backoff). |
-| File Upload | `file/` + `file/s3/` | Multipart handling with SHA-256 dedup; MinIO + Cloudflare R2 clients. |
+| File Upload | `file/` + `file/s3/` | Multipart handling with SHA-256 dedup via a single S3-compatible client (`S3Client`). |
 
 ## Key Ports
 

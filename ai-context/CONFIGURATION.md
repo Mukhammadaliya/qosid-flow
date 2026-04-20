@@ -171,31 +171,19 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 | `gateway.rocksdb.response-retention-days` | int | `7` | `ROCKSDB_RETENTION_DAYS` | Age after which a stored response is evicted by the cleanup job. |
 | `gateway.rocksdb.cleanup-cron` | String | `0 0 0 * * *` | — | Spring cron expression for `ResponseStorageService.cleanupExpiredResponses`. |
 
-## gateway.s3.* — File Upload Backends
+## gateway.s3.* — File Upload Backend
 
-**Properties class:** `FileProperties.java`
-
-### MinIO (`gateway.s3.minio.*`)
+**Properties class:** `FileProperties.java` · **Client:** `S3Client.java` (AWS S3 SDK, works with AWS S3 / Cloudflare R2 / any S3-compatible backend).
 
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
-| `gateway.s3.minio.enabled` | boolean | `true` | `MINIO_ENABLED` | Gate: client bean registered only when true. |
-| `gateway.s3.minio.endpoint` | String | `http://localhost:9000` | `MINIO_ENDPOINT` | S3-compatible server URL (MinIO or S3 mock). |
-| `gateway.s3.minio.access-key` | String | `minioadmin` | `MINIO_ACCESS_KEY` | |
-| `gateway.s3.minio.secret-key` | String | `minioadmin` | `MINIO_SECRET_KEY` | |
-| `gateway.s3.minio.bucket` | String | `gateway-files` | `MINIO_BUCKET` | Target bucket (must exist at startup). |
-
-### Cloudflare R2 (`gateway.s3.cloudflare-r2.*`)
-
-| Property | Type | Default | Env Var | Description |
-|----------|------|---------|---------|-------------|
-| `gateway.s3.cloudflare-r2.enabled` | boolean | `false` | `R2_ENABLED` | Gate: client bean registered only when true. |
-| `gateway.s3.cloudflare-r2.endpoint` | String | — | `R2_ENDPOINT` | R2 endpoint URL. |
-| `gateway.s3.cloudflare-r2.access-key` | String | — | `R2_ACCESS_KEY` | |
-| `gateway.s3.cloudflare-r2.secret-key` | String | — | `R2_SECRET_KEY` | |
-| `gateway.s3.cloudflare-r2.temp-bucket` | String | — | `R2_TEMP_BUCKET` | Temp-upload bucket. |
-| `gateway.s3.cloudflare-r2.permanent-bucket` | String | — | `R2_PERMANENT_BUCKET` | Permanent-upload bucket. |
-| `gateway.s3.cloudflare-r2.link-expiration-hours` | int | `24` | `R2_LINK_EXPIRY` | Presigned GET URL lifetime (hours). |
+| `gateway.s3.enabled` | boolean | `false` | `S3_ENABLED` | Gate: client bean registered only when true. |
+| `gateway.s3.endpoint` | String | — | `S3_ENDPOINT` | S3 endpoint URL (AWS region endpoint or R2 account URL). |
+| `gateway.s3.access-key` | String | — | `S3_ACCESS_KEY` | |
+| `gateway.s3.secret-key` | String | — | `S3_SECRET_KEY` | |
+| `gateway.s3.temp-bucket` | String | — | `S3_TEMP_BUCKET` | Temp-upload bucket name. |
+| `gateway.s3.permanent-bucket` | String | — | `S3_PERMANENT_BUCKET` | Permanent-upload bucket (default target when `FileData.bucket` is null). |
+| `gateway.s3.link-expiration-hours` | int | `24` | `S3_LINK_EXPIRY` | Presigned GET URL lifetime (hours). |
 
 ## gateway.security.* — Content-Type Allowlist
 

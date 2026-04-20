@@ -7,7 +7,6 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
@@ -22,8 +21,9 @@ import java.time.Duration;
 import java.io.InputStream;
 
 /**
- * Cloudflare R2 uploader using the AWS S3 SDK. Only registered when
- * {@code gateway.s3.cloudflare-r2.enabled=true}.
+ * S3-compatible object storage uploader using the AWS S3 SDK. Only registered
+ * when {@code gateway.s3.enabled=true}. Works with any S3-compatible backend
+ * (AWS S3, Cloudflare R2, etc.).
  *
  * <p>Object keys are sharded by the SHA — {@code <first2>/<next2>/<full-sha>}
  * — to avoid hotspotting a single bucket prefix. Both the temp and permanent
@@ -31,26 +31,26 @@ import java.io.InputStream;
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "gateway.s3.cloudflare-r2.enabled", havingValue = "true")
-public class CloudflareR2Client {
+@ConditionalOnProperty(name = "gateway.s3.enabled", havingValue = "true")
+public class S3Client {
 
-    private final S3Client client;
+    private final software.amazon.awssdk.services.s3.S3Client client;
     private final S3Presigner presigner;
-    private final FileProperties.R2Config config;
+    private final FileProperties properties;
 
-    public CloudflareR2Client(FileProperties properties) {
-        this.config = properties.getCloudflareR2();
+    public S3Client(FileProperties properties) {
+        this.properties = properties;
 
         AwsBasicCredentials credentials = AwsBasicCredentials.create(
-                config.getAccessKey(), config.getSecretKey());
+                properties.getAccessKey(), properties.getSecretKey());
         StaticCredentialsProvider credentialsProvider = StaticCredentialsProvider.create(credentials);
 
         S3Configuration serviceConfig = S3Configuration.builder()
                 .pathStyleAccessEnabled(true)
                 .build();
 
-        this.client = S3Client.builder()
-                .endpointOverride(URI.create(config.getEndpoint()))
+        this.client = software.amazon.awssdk.services.s3.S3Client.builder()
+                .endpointOverride(URI.create(properties.getEndpoint()))
                 .credentialsProvider(credentialsProvider)
                 .region(Region.of("auto"))
                 .serviceConfiguration(serviceConfig)
@@ -60,13 +60,13 @@ public class CloudflareR2Client {
                 .build();
 
         this.presigner = S3Presigner.builder()
-                .endpointOverride(URI.create(config.getEndpoint()))
+                .endpointOverride(URI.create(properties.getEndpoint()))
                 .credentialsProvider(credentialsProvider)
                 .region(Region.of("auto"))
                 .serviceConfiguration(serviceConfig)
                 .build();
 
-        log.info("Cloudflare R2 client initialized: endpoint={}", config.getEndpoint());
+        log.info("S3 client initialized: endpoint={}", properties.getEndpoint());
     }
 
     /**
@@ -76,7 +76,7 @@ public class CloudflareR2Client {
     public void uploadObject(String bucket, String sha, InputStream stream, String contentType, long fileSize) {
         try {
             if (checkObjectExist(bucket, sha)) {
-                log.debug("R2 object already exists, skipping upload: bucket={}, sha={}", bucket, sha);
+                log.debug("S3 object already exists, skipping upload: bucket={}, sha={}", bucket, sha);
                 return;
             }
             client.putObject(
@@ -86,10 +86,10 @@ public class CloudflareR2Client {
                             .contentType(contentType)
                             .build(),
                     RequestBody.fromInputStream(stream, fileSize));
-            log.debug("R2 upload complete: bucket={}, sha={}, size={}", bucket, sha, fileSize);
+            log.debug("S3 upload complete: bucket={}, sha={}, size={}", bucket, sha, fileSize);
         } catch (Exception e) {
-            log.error("Error uploading to R2: bucket={}, sha={}, msg={}", bucket, sha, e.getMessage(), e);
-            throw new RuntimeException("Error while uploading file to CloudflareR2", e);
+            log.error("Error uploading to S3: bucket={}, sha={}, msg={}", bucket, sha, e.getMessage(), e);
+            throw new RuntimeException("Error while uploading file to S3", e);
         }
     }
 
@@ -103,7 +103,7 @@ public class CloudflareR2Client {
     }
 
     /**
-     * Generate a presigned GET URL valid for {@link FileProperties.R2Config#getLinkExpirationHours()}.
+     * Generate a presigned GET URL valid for {@link FileProperties#getLinkExpirationHours()}.
      */
     public String generatePresignedUrl(String bucket, String sha) {
         GetObjectRequest getRequest = GetObjectRequest.builder()
@@ -111,7 +111,7 @@ public class CloudflareR2Client {
                 .key(getObjectPath(sha))
                 .build();
         GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofHours(config.getLinkExpirationHours()))
+                .signatureDuration(Duration.ofHours(properties.getLinkExpirationHours()))
                 .getObjectRequest(getRequest)
                 .build();
         PresignedGetObjectRequest presigned = presigner.presignGetObject(presignRequest);
@@ -124,10 +124,10 @@ public class CloudflareR2Client {
     }
 
     public String getTempBucket() {
-        return config.getTempBucket();
+        return properties.getTempBucket();
     }
 
     public String getPermanentBucket() {
-        return config.getPermanentBucket();
+        return properties.getPermanentBucket();
     }
 }

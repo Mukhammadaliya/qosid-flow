@@ -167,22 +167,15 @@ gateway:
     response-retention-days: ${ROCKSDB_RETENTION_DAYS:7}
     cleanup-cron: "0 0 0 * * *"
 
-  # --- S3 (MinIO + Cloudflare R2) ---
+  # --- S3 (object storage for file uploads) ---
   s3:
-    minio:
-      enabled: ${MINIO_ENABLED:true}
-      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-      access-key: ${MINIO_ACCESS_KEY:minioadmin}
-      secret-key: ${MINIO_SECRET_KEY:minioadmin}
-      bucket: ${MINIO_BUCKET:gateway-files}
-    cloudflare-r2:
-      enabled: ${R2_ENABLED:false}
-      endpoint: ${R2_ENDPOINT:}
-      access-key: ${R2_ACCESS_KEY:}
-      secret-key: ${R2_SECRET_KEY:}
-      temp-bucket: ${R2_TEMP_BUCKET:}
-      permanent-bucket: ${R2_PERMANENT_BUCKET:}
-      link-expiration-hours: ${R2_LINK_EXPIRY:24}
+    enabled: ${S3_ENABLED:false}
+    endpoint: ${S3_ENDPOINT:}
+    access-key: ${S3_ACCESS_KEY:}
+    secret-key: ${S3_SECRET_KEY:}
+    temp-bucket: ${S3_TEMP_BUCKET:}
+    permanent-bucket: ${S3_PERMANENT_BUCKET:}
+    link-expiration-hours: ${S3_LINK_EXPIRY:24}
 
   # --- Security (allowed content types) ---
   security:
