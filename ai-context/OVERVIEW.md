@@ -51,7 +51,7 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 
 | Component | Package | Purpose |
 |-----------|---------|---------|
-| REST API Layer | `api/` | Transparent proxy `POST/GET/PUT/DELETE/PATCH /qosid/api/v1/queue/**`; status/result endpoints at `/qosid/api/v1/requests/{id}/{status,result}`; callback receiver at `/qosid/api/v1/callback`. |
+| REST API Layer | `api/` | Transparent proxy `POST/GET/PUT/DELETE/PATCH /qosid/api/v1/queue/**` (Accept-Encoding stripped from forwarded headers to avoid Cloudflare HTTP/1.1 decode artifacts); status/result endpoints at `/qosid/api/v1/requests/{id}/{status,result}`; callback receiver at `/qosid/api/v1/callback`. Upstream JSON responses are defensively decompressed in `HttpRequestService` based on `Content-Encoding`. |
 | Authorization Framework | `auth/` | Pluggable `AuthorizationProvider` SPI, default `NoOpAuthorizationProvider`. |
 | Exception Handling | `exception/` | `@RestControllerAdvice` producing uniform `ErrorResponse` JSON for all API errors. |
 | RocksDB Storage | `storage/` | Disk-backed response bodies keyed by `compositeId`, 7-day retention via `@Scheduled` cleanup cron. |

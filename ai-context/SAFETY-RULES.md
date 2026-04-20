@@ -66,11 +66,27 @@ Oracle and API flows use separate topics, consumers, and thread pools by design.
 
 `ProxyController.extractHeaders()` filters `host`, `connection`, `transfer-encoding`, etc. via `HOP_BY_HOP_HEADERS`. Forwarding `host` causes Tomcat virtual host routing failure (500). Forwarding `content-length` after body transformation causes request corruption.
 
-### 16. Never use Java `"\u0000"` (NULL char) for placeholder matching
+### 16. Never remove `accept-encoding` from the stripped-header set
 
-`ServletFileUploadEntity.replacePlaceholder()` must use `"\\u0000"` (literal 6-char string) to match JSON-encoded null placeholders. Java `"\u0000"` is a single NULL byte — it will never match the literal `\u0000` in JSON. This caused silent data loss (SHA not replaced → backend 500).
+`HOP_BY_HOP_HEADERS` in `ProxyController.java` intentionally includes `accept-encoding` beyond the RFC hop-by-hop set. Clients (especially Postman with default `gzip, deflate, br`) would otherwise cause Cloudflare on HTTP/1.1 to return partially-encoded bytes that reactor-netty can only half-decode, leaving `/result` with unreadable raw-deflate prefix (`0x0b 0x9c...`). qosid-flow's own Tomcat still compresses outbound `/result` responses based on the **client's** Accept-Encoding, so transparency for readers is preserved — but upstream calls must always request plain bodies.
 
-### 17. Never widen `RocksDBProperties.responseRetentionDays` without also reviewing the cleanup cron
+### 17. Never re-enable reactor-netty `.compress(true)` or remove `decompressIfNeeded`
+
+`HttpClientConfig` deliberately omits `.compress(true)` (was enabled briefly in v1.0.4, broke Cloudflare responses). Instead `HttpRequestService.decompressIfNeeded(body, headers)` handles gzip/deflate/x-gzip defensively on both the success and error paths, reading `Content-Encoding` from the response. Re-enabling the Netty-level toggle or dropping the helper reintroduces the garbled-body bug. Unknown encodings pass through and are logged at DEBUG.
+
+### 18. Never drop the upstream error body in `HttpRequestService.buildErrorResponse`
+
+`buildErrorResponse` extracts `getResponseBodyAsByteArray()` + `Content-Type` from `WebClientResponseException` and places them on `ResponseMessage`. Without this, `ApiResponseConsumer`'s `if (body != null)` branch is skipped, `/result` returns 404 on failed upstream calls, and debugging a 4xx/5xx from smartup24 requires grep-chasing logs. Keep the body capture and let the consumer persist it.
+
+### 19. Never remove the `NoResourceFoundException` handler in `GlobalExceptionHandler`
+
+Spring Boot 3.2+ throws `NoResourceFoundException` for unmapped routes. The handler in `GlobalExceptionHandler` returns 404 with a proper `ErrorResponse` JSON. Without it the generic `Exception` handler catches it and surfaces HTTP 500 with a confusing "No static resource" body — breaks client expectations for typo'd endpoints and triggers false-positive alerts.
+
+### 20. Never use Java `"\u0000"` (NULL char) for placeholder matching
+
+`ServletFileUploadEntity.replacePlaceholder()` must use `"\\u0000"` (literal 6-char string) to match the `\u0000<index>` placeholder emitted by `JSON.stringify`. Java `"\u0000"` is a single NULL byte — it will never match the literal `\u0000` in JSON. The method also matches the JSON-string-wrapped form `\"\\u0000<i>\"` (escaped quotes + doubled backslash) so clients can send either the plain JSON body or a JSON-encoded string without SHA substitution silently failing (→ backend 500 observed pre-v1.0.3).
+
+### 21. Never widen `RocksDBProperties.responseRetentionDays` without also reviewing the cleanup cron
 
 `ResponseStorageService.cleanupExpiredResponses` evicts entries older than `retentionDays * 86_400_000 ms`. Increasing retention without a disk-capacity review will fill the volume silently — RocksDB writes will eventually start failing and the `/result` endpoint will return 404s intermittently.
 
@@ -85,16 +101,18 @@ These files contain production-critical logic. Before modifying any of them, run
 | `OracleRequestConsumer.java`, `ApiRequestConsumer.java` | Idempotency check + distributed lock + manual ack + async HTTP delegation | Duplicate processing, message loss, thread pool exhaustion |
 | `OracleResponseConsumer.java` | Retry logic + Oracle save + manual ack + RocksDB | Response data loss, Oracle inconsistency |
 | `ApiResponseConsumer.java` | RocksDB + callback trigger + manual ack | Response data loss, lost callbacks |
-| `HttpRequestService.java` | Circuit Breaker + OAuth2 token injection + per-endpoint timeouts + callbackUrl/source propagation | Cascading failures, auth failures, timeout mismatches, lost callbacks |
+| `HttpRequestService.java` | Circuit Breaker + OAuth2 token injection + per-endpoint timeouts + callbackUrl/source propagation + defensive `decompressIfNeeded` + upstream error body capture | Cascading failures, auth failures, timeout mismatches, lost callbacks, garbled `/result` bodies, dropped 5xx error payloads |
 | `RequestStateService.java` | Redis state CRUD + distributed lock (tryLock/releaseLock) + Integer.MAX_VALUE safety | Duplicate processing, infinite retries, state corruption |
 | `KafkaConfig.java` | Topic creation + consumer factories + MANUAL ack mode + error handlers | Message loss, consumer misconfiguration, missing topics |
 | `OAuth2TokenRedisCache.java` | Distributed token lock + cache with TTL + fallback on Redis failure | Token race conditions, auth failures, Redis lock leaks |
 | `CallbackSender.java` | `@Retryable` (3 attempts, 1s backoff) + `@Recover` swallow | Lost callbacks, consumer stalls on bad URL |
 | `RocksDBConfig.java` | Singleton DB instance + `@PreDestroy` close | On-disk corruption across restarts |
 | `ResponseStorageService.java` | Scheduled retention cleanup + body/metadata dual-write | Disk exhaustion, orphaned metadata |
-| `ProxyController.java` | Auth gate + URL prefix strip + BiruniUpload parsing + S3 retry/fallback + hop-by-hop header filter + `files` header + `source="API"` tagging | Bypass of auth, cross-source mix-up, unvalidated uploads, S3 fallback failure |
+| `ProxyController.java` | Auth gate + URL prefix strip (`/qosid/api/v1/queue`) + BiruniUpload parsing + S3 retry/fallback + hop-by-hop + Accept-Encoding filter + `files` header + `source="API"` tagging | Bypass of auth, cross-source mix-up, unvalidated uploads, S3 fallback failure, Cloudflare gzip decode artifacts |
 | `FileService.java` | S3 upload with 3x retry + content-type validation + fallback flag | Unvalidated uploads, missing retry on S3 failure |
 | `ContentTypeValidator.java` | MIME whitelist enforcement | Open file store, security exposure |
+| `HttpClientConfig.java` | Netty `HttpClient` setup — pool, timeouts, **no `.compress(true)`** (see Rule 17) | Re-enabling Netty compression reintroduces Cloudflare gzip decode artifacts |
+| `GlobalExceptionHandler.java` | `@RestControllerAdvice` mapping of auth / validation / upload / not-found / generic exceptions to uniform `ErrorResponse` | Unmapped routes leak 500, validation errors become opaque stack traces to clients |
 
 ## Required Checklist
 
