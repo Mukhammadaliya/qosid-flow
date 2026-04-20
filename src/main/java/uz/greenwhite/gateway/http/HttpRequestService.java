@@ -340,21 +340,33 @@ public class HttpRequestService {
     }
 
     /**
-     * Build error response from exception
+     * Build error response from exception.
+     * When upstream returned an HTTP error with a body, capture it so clients can
+     * retrieve the real error payload via {@code /qosid/api/v1/requests/{id}/result}.
      */
     private ResponseMessage buildErrorResponse(RequestMessage request, Throwable ex) {
         int status = 500;
         String errorMessage = ex.getMessage();
+        byte[] body = null;
+        String contentType = null;
 
         if (ex instanceof WebClientResponseException webEx) {
             status = webEx.getStatusCode().value();
             errorMessage = "HTTP " + status + ": " + webEx.getStatusText();
+            byte[] respBody = webEx.getResponseBodyAsByteArray();
+            if (respBody != null && respBody.length > 0) {
+                body = respBody;
+                MediaType ct = webEx.getHeaders().getContentType();
+                contentType = ct != null ? ct.toString() : null;
+            }
         }
 
         return ResponseMessage.builder()
                 .companyId(request.getCompanyId())
                 .requestId(request.getRequestId())
                 .httpStatus(status)
+                .contentType(contentType)
+                .body(body)
                 .errorMessage(errorMessage)
                 .errorSource("HTTP")
                 .processedAt(LocalDateTime.now())
