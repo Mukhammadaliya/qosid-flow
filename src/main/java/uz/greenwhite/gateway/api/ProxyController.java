@@ -35,7 +35,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Transparent REST proxy. Accepts any method on {@code /qosid/queue/**},
+ * Transparent REST proxy. Accepts any method on {@code /qosid/api/v1/queue/**},
  * runs authorization, then enqueues a {@link RequestMessage} for downstream
  * processing. Returns 202 ACCEPTED with a polling URL.
  *

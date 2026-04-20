@@ -12,10 +12,10 @@ import org.springframework.stereotype.Component;
 public class ProxyProperties {
 
     /**
-     * URI prefix for the proxy endpoint (e.g. /qosid/queue).
+     * URI prefix for the proxy endpoint (e.g. /qosid/api/v1/queue).
      * Stripped when forwarding the request upstream.
      */
-    private String prefix = "/qosid/queue";
+    private String prefix = "/qosid/api/v1/queue";
 
     /**
      * Application context path (e.g. /qosid).
