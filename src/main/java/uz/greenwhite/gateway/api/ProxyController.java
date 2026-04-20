@@ -213,10 +213,19 @@ public class ProxyController {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    /** Hop-by-hop headers that must not be forwarded to the upstream. */
+    /**
+     * Headers stripped from the forwarded request. Standard RFC 7230 hop-by-hop
+     * headers plus {@code accept-encoding}: we intentionally force upstream
+     * responses to be uncompressed because intermediaries (Cloudflare in HTTP/1.1)
+     * have been observed returning gzip that reactor-netty can only partially
+     * decode, leaving the stored body as unreadable raw deflate. The outbound
+     * response from qosid-flow is still compressed by its own Tomcat based on
+     * the client's own Accept-Encoding.
+     */
     private static final Set<String> HOP_BY_HOP_HEADERS = Set.of(
             "host", "connection", "keep-alive", "proxy-authenticate",
-            "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade");
+            "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade",
+            "accept-encoding");
 
     private static Map<String, String> extractHeaders(HttpServletRequest request) {
         Map<String, String> headers = new HashMap<>();
