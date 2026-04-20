@@ -17,13 +17,18 @@ import uz.greenwhite.gateway.model.kafka.ResponseMessage;
 import uz.greenwhite.gateway.oauth2.OAuth2ProviderService;
 import uz.greenwhite.gateway.oauth2.model.Token;
 import uz.greenwhite.gateway.config.HttpProperties;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.InflaterInputStream;
 
 @Slf4j
 @Service
@@ -168,7 +173,8 @@ public class HttpRequestService {
                             ? entity.getHeaders().getContentType().toString()
                             : MediaType.APPLICATION_JSON_VALUE;
 
-                    return buildSuccessResponse(request, status, contentType, entity.getBody());
+                    byte[] body = decompressIfNeeded(entity.getBody(), entity.getHeaders());
+                    return buildSuccessResponse(request, status, contentType, body);
                 })
                 .onErrorResume(ex -> {
                     long duration = System.nanoTime() - startTime;
@@ -355,7 +361,7 @@ public class HttpRequestService {
             errorMessage = "HTTP " + status + ": " + webEx.getStatusText();
             byte[] respBody = webEx.getResponseBodyAsByteArray();
             if (respBody != null && respBody.length > 0) {
-                body = respBody;
+                body = decompressIfNeeded(respBody, webEx.getHeaders());
                 MediaType ct = webEx.getHeaders().getContentType();
                 contentType = ct != null ? ct.toString() : null;
             }
@@ -373,6 +379,39 @@ public class HttpRequestService {
                 .callbackUrl(request.getCallbackUrl())
                 .source(request.getSource())
                 .build();
+    }
+
+    /**
+     * Decompress the response body if the upstream set {@code Content-Encoding}.
+     * Handles gzip and zlib-wrapped deflate. If the header is absent or names an
+     * unknown encoding we pass the bytes through. On decompression failure we log
+     * and return the original bytes so the caller still has something to store.
+     */
+    private static byte[] decompressIfNeeded(byte[] body, HttpHeaders headers) {
+        if (body == null || body.length == 0 || headers == null) {
+            return body;
+        }
+        String encoding = headers.getFirst(HttpHeaders.CONTENT_ENCODING);
+        if (encoding == null || encoding.isBlank()) {
+            return body;
+        }
+        String normalized = encoding.trim().toLowerCase(Locale.ROOT);
+        try {
+            if ("gzip".equals(normalized) || "x-gzip".equals(normalized)) {
+                try (GZIPInputStream in = new GZIPInputStream(new ByteArrayInputStream(body))) {
+                    return in.readAllBytes();
+                }
+            }
+            if ("deflate".equals(normalized)) {
+                try (InflaterInputStream in = new InflaterInputStream(new ByteArrayInputStream(body))) {
+                    return in.readAllBytes();
+                }
+            }
+            log.debug("Unknown Content-Encoding '{}', passing body through", encoding);
+        } catch (IOException e) {
+            log.warn("Failed to decompress response (Content-Encoding: {}): {}", encoding, e.getMessage());
+        }
+        return body;
     }
 
     /**
