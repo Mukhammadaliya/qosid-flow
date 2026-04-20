@@ -16,7 +16,7 @@ import java.util.Map;
 @AllArgsConstructor
 public class AuthContext {
 
-    /** Request URI (path), e.g. {@code /qosid/queue/foo}. */
+    /** Request URI (path), e.g. {@code /qosid/api/v1/queue/foo}. */
     private String uri;
 
     /** HTTP method (GET, POST, ...). */

@@ -116,8 +116,14 @@ public class ServletFileUploadEntity {
     }
 
     private static String replacePlaceholder(String param, String index, String sha) {
-        // JSON.stringify encodes NULL char as literal "\u0000" (6 chars: \ u 0 0 0 0)
-        return param.replace("\"\\u0000" + index + "\"", "\"" + sha + "\"");
+        // The placeholder appears in two forms depending on how the client serialized param:
+        //   1) Plain JSON object     — bytes: " \ u 0 0 0 0 <i> "      (quote + single-backslash escape)
+        //   2) JSON-string-wrapped   — bytes: \ " \ \ u 0 0 0 0 <i> \ "  (escaped quotes + doubled backslash)
+        // Form (2) appears when the client wraps the whole param as a JSON string literal.
+        // Replace both so the outgoing body carries the real SHA regardless of wire format.
+        return param
+                .replace("\"\\u0000" + index + "\"", "\"" + sha + "\"")
+                .replace("\\\"\\\\u0000" + index + "\\\"", "\\\"" + sha + "\\\"");
     }
 
     private static String sha256Hex(byte[] bytes) {

@@ -5,7 +5,7 @@
 ```
 Main Server (HAProxy)
      |
-     |  /qosid/queue/** prefixli request keldi
+     |  /qosid/api/v1/queue/** prefixli request keldi
      |
      v
 ProxyController (qosid-flow)
@@ -59,7 +59,7 @@ Oracle/Biruni                    (RedPanda)                  External APIs
                                     |    Oracle/ApiRequestConsumer ->+
  HTTP clients                       |         |                   |
      |                              |    (idempotency check)      |
-     +-->  /qosid/queue/**          |    (distributed lock)       |
+     +-->  /qosid/api/v1/queue/**   |    (distributed lock)       |
           ProxyController ----------+    HttpRequestService ----->+  (Circuit Breaker)
               source="API"          |         |                   |  (OAuth2 if needed)
               (auth + multipart)    |         v                   |
@@ -87,7 +87,7 @@ Oracle/Biruni                    (RedPanda)                  External APIs
 The pipeline has **two entry points** that both feed `gateway.request.new`:
 
 - **E1 Oracle pull** — original polling loop, tags `RequestMessage.source="ORACLE"`.
-- **E0 REST proxy** — `ProxyController` at `/qosid/queue/**`, tags `source="API"`. Runs `AuthorizationProvider.authorize(...)` first. For `BiruniUpload` requests: parses multipart, uploads files to S3 (3x retry via `FileService.tryUploadFiles()`), replaces `"\u0000<index>"` placeholders with SHAs. **S3 success:** sends JSON POST with `files` metadata header (Biruni `run()` path, `store_kind='S'`). **S3 failure:** falls back to multipart forwarding with `BiruniUpload` header (Biruni `runFileUploadParam()` path, files saved to DB). Hop-by-hop headers (`host`, `connection`, etc.) are filtered via `HOP_BY_HOP_HEADERS`. Enqueues via `RequestProducer.sendApiRequest()`.
+- **E0 REST proxy** — `ProxyController` at `/qosid/api/v1/queue/**`, tags `source="API"`. Runs `AuthorizationProvider.authorize(...)` first. For `BiruniUpload` requests: parses multipart, uploads files to S3 (3x retry via `FileService.tryUploadFiles()`), replaces `"\u0000<index>"` placeholders with SHAs. **S3 success:** sends JSON POST with `files` metadata header (Biruni `run()` path, `store_kind='S'`). **S3 failure:** falls back to multipart forwarding with `BiruniUpload` header (Biruni `runFileUploadParam()` path, files saved to DB). Hop-by-hop headers (`host`, `connection`, etc.) are filtered via `HOP_BY_HOP_HEADERS`. Enqueues via `RequestProducer.sendApiRequest()`.
 
 **Response routing by consumer:** `OracleResponseConsumer` saves to Biruni + RocksDB. `ApiResponseConsumer` saves to RocksDB + fires callback. No source-based `if/else` — routing is done at the topic level.
 

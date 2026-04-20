@@ -154,7 +154,7 @@ gateway:
 
   # --- Proxy (REST API entry point) ---
   proxy:
-    prefix: /qosid/queue
+    prefix: /qosid/api/v1/queue
     context-path: /qosid
 
   # --- Response handling ---

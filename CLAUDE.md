@@ -1,6 +1,6 @@
 # Request Gateway Service (qosid-flow)
 
-Java 21 + Spring Boot 3.3.0 microservice that pulls HTTP requests from Oracle/Biruni **or accepts them via REST** (`/qosid/queue/**`), routes them through Kafka for load balancing, sends to external APIs with Circuit Breaker + OAuth2 + retry, stores response bodies in RocksDB (7-day retention), fires per-request callbacks, and saves Oracle-source responses back to Biruni. Package: `uz.greenwhite.gateway`.
+Java 21 + Spring Boot 3.3.0 microservice that pulls HTTP requests from Oracle/Biruni **or accepts them via REST** (`/qosid/api/v1/queue/**`), routes them through Kafka for load balancing, sends to external APIs with Circuit Breaker + OAuth2 + retry, stores response bodies in RocksDB (7-day retention), fires per-request callbacks, and saves Oracle-source responses back to Biruni. Package: `uz.greenwhite.gateway`.
 
 ## AI Context Documentation
 
@@ -57,7 +57,7 @@ Full safety rules: `ai-context/SAFETY-RULES.md`
 
 | Method          | Path                                             | Purpose                                                                                  |
 |-----------------|--------------------------------------------------|------------------------------------------------------------------------------------------|
-| POST/GET/PUT/DELETE/PATCH | `/qosid/queue/**`                       | Transparent proxy — auth gate → queue to Kafka → `202 ACCEPTED` with polling URL. `BiruniUpload: param\|alone` header activates multipart upload to S3 (3x retry); on S3 failure falls back to multipart forwarding to Biruni for DB storage. `X-Callback-Url` header requests a callback when done. |
+| POST/GET/PUT/DELETE/PATCH | `/qosid/api/v1/queue/**`                | Transparent proxy — auth gate → queue to Kafka → `202 ACCEPTED` with polling URL. `BiruniUpload: param\|alone` header activates multipart upload to S3 (3x retry); on S3 failure falls back to multipart forwarding to Biruni for DB storage. `X-Callback-Url` header requests a callback when done. |
 | GET             | `/qosid/api/v1/requests/{id}/status`             | Status + inline result (when small & JSON/text) or `resultUrl` pointer.                  |
 | GET             | `/qosid/api/v1/requests/{id}/result`             | Full response body from RocksDB, original `Content-Type` + HTTP status.                  |
 | POST            | `/qosid/api/v1/callback`                         | Inbound callback receiver (currently logs + 200).                                        |
@@ -79,7 +79,7 @@ docker-compose down                   # Stop infrastructure
 ```
 Oracle/Biruni → [E1: Pull] ──┐
                              │
-HTTP (/qosid/queue/**) ──────┤→ [Kafka] → [Consumer + Redis Lock] → [HTTP + CB] → [ResponseConsumer]
+HTTP (/qosid/api/v1/queue/**) ┤→ [Kafka] → [Consumer + Redis Lock] → [HTTP + CB] → [ResponseConsumer]
   (ProxyController + auth +  │                                                           │
    BiruniUpload → S3 (3x) +  │                                   ┌───────────────────────┼──────────────────┐
    fallback → multipart DB)   │                                   ↓                       ↓                  ↓

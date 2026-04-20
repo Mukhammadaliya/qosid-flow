@@ -4,7 +4,7 @@ Step-by-step recipes for adding new features to the gateway. Follow these patter
 
 ## Recipe 0: Add a Custom `AuthorizationProvider`
 
-**When:** You want to gate the REST proxy (`POST/GET/... /qosid/queue/**`) with a bespoke auth scheme — API-key header, JWT, IP allowlist, etc.
+**When:** You want to gate the REST proxy (`POST/GET/... /qosid/api/v1/queue/**`) with a bespoke auth scheme — API-key header, JWT, IP allowlist, etc.
 
 **How it works:** `ProxyController` calls `authorizationProvider.authorize(AuthContext)` on every inbound request. The default `NoOpAuthorizationProvider` allows everything. Your custom bean displaces it automatically because of `@ConditionalOnMissingBean(AuthorizationProvider.class)` on the default.
 

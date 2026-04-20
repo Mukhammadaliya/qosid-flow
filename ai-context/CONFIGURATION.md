@@ -152,7 +152,7 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `gateway.proxy.prefix` | String | `/qosid/queue` | URI prefix stripped when forwarding the proxied request. |
+| `gateway.proxy.prefix` | String | `/qosid/api/v1/queue` | URI prefix stripped when forwarding the proxied request. |
 | `gateway.proxy.context-path` | String | `/qosid` | Application context path (informational). |
 
 ## gateway.response.* — Response Inlining

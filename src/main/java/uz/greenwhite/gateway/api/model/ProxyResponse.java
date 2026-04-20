@@ -4,7 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 /**
- * Body returned by {@code POST/GET/PUT/DELETE/PATCH /qosid/queue/**}
+ * Body returned by {@code POST/GET/PUT/DELETE/PATCH /qosid/api/v1/queue/**}
  * confirming the request was accepted and queued for processing.
  */
 @Data
