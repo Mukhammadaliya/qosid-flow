@@ -87,7 +87,7 @@ Oracle/Biruni                    (RedPanda)                  External APIs
 The pipeline has **two entry points** that both feed `gateway.request.new`:
 
 - **E1 Oracle pull** — original polling loop, tags `RequestMessage.source="ORACLE"`.
-- **E0 REST proxy** — `ProxyController` at `/qosid/api/v1/queue/**`, tags `source="API"`. Runs `AuthorizationProvider.authorize(...)` first. For `BiruniUpload` requests: parses multipart, uploads files to S3 (3x retry via `FileService.tryUploadFiles()`), replaces `"\u0000<index>"` placeholders with SHAs. **S3 success:** sends JSON POST with `files` metadata header (Biruni `run()` path, `store_kind='S'`). **S3 failure:** falls back to multipart forwarding with `BiruniUpload` header (Biruni `runFileUploadParam()` path, files saved to DB). Hop-by-hop headers (`host`, `connection`, etc.) are filtered via `HOP_BY_HOP_HEADERS`. Enqueues via `RequestProducer.sendApiRequest()`.
+- **E0 REST proxy** — `ProxyController` at `/qosid/api/v1/queue/**`, tags `source="API"`. Runs `AuthorizationProvider.authorize(...)` first. For `BiruniUpload` requests: parses multipart, uploads files to S3 (3x retry via `FileService.tryUploadFiles()`), replaces both plain (`"\u0000<index>"`) and JSON-string-wrapped (`\"\\u0000<i>\"`) placeholders with SHAs. **S3 success:** sends JSON POST with `files` metadata header (Biruni `run()` path, `store_kind='S'`). **S3 failure:** falls back to multipart forwarding with `BiruniUpload` header (Biruni `runFileUploadParam()` path, files saved to DB). `HOP_BY_HOP_HEADERS` filter strips hop-by-hop headers **and** `accept-encoding` so upstream returns plain bodies (prevents Cloudflare HTTP/1.1 gzip decode artifacts). Enqueues via `RequestProducer.sendApiRequest()`.
 
 **Response routing by consumer:** `OracleResponseConsumer` saves to Biruni + RocksDB. `ApiResponseConsumer` saves to RocksDB + fires callback. No source-based `if/else` — routing is done at the topic level.
 
@@ -138,8 +138,9 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 | **Circuit Breaker** | Per-domain Resilience4j CB. If OPEN, returns 503 immediately. |
 | **OAuth2** | If `oauth2Provider` set, fetches token via `OAuth2ProviderService` and adds `Authorization` header |
 | **Timeouts** | Default: connect 10s, read 30s. Per-endpoint overrides via `gateway.http.endpoint-timeouts` |
-| **On Success** | Records CB success, sends ResponseMessage to response topic |
-| **On Failure** | Records CB failure, checks if retryable (408, 429, 5xx) |
+| **Compression** | `HttpClientConfig` does NOT enable reactor-netty `.compress(true)` (broken with Cloudflare). `decompressIfNeeded(body, headers)` handles `Content-Encoding: gzip/deflate/x-gzip` defensively on both success and error paths so `/result` always gets plain bytes. |
+| **On Success** | Records CB success, sends ResponseMessage to response topic (body decompressed if needed) |
+| **On Failure** | Records CB failure, checks if retryable (408, 429, 5xx). `buildErrorResponse` captures the upstream error body via `WebClientResponseException.getResponseBodyAsByteArray()` so failed 4xx/5xx bodies are retrievable via `/result`. |
 
 ### E5: Response Processing — `OracleResponseConsumer.java` / `ApiResponseConsumer.java`
 
