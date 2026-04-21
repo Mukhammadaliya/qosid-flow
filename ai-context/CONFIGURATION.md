@@ -146,7 +146,7 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
-| `gateway.api.base-url` | String | `http://localhost:8081/b` | `API_BASE_URL` | Main app base URL. API proxy requests are forwarded to this URL + stripped URI path. |
+| `gateway.api.base-url` | String | `http://localhost:8080/smartup24/b` | `API_BASE_URL` | Upstream base URL, **including any path prefix** (e.g. `/b`). API proxy requests are forwarded to `{baseUrl}{stripped client URI}`. Client URIs therefore omit the `/b` prefix — e.g. client sends `/qosid/api/v1/queue/sb/sbr/…` and qosid-flow calls `https://app.smartup24.com/b/sb/sbr/…`. Prod: `https://app.smartup24.com/b` (env var must include `/b`). |
 
 ## gateway.proxy.* — REST Proxy Layout
 

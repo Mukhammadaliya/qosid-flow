@@ -90,6 +90,10 @@ Spring Boot 3.2+ throws `NoResourceFoundException` for unmapped routes. The hand
 
 `ResponseStorageService.cleanupExpiredResponses` evicts entries older than `retentionDays * 86_400_000 ms`. Increasing retention without a disk-capacity review will fill the volume silently — RocksDB writes will eventually start failing and the `/result` endpoint will return 404s intermittently.
 
+### 22. Never strip or duplicate the `/b` upstream prefix — it lives in `API_BASE_URL`
+
+The API proxy composes upstream URLs as `baseUrl + <stripped client URI>`. By convention `gateway.api.base-url` (env `API_BASE_URL`) carries the full upstream path prefix — **including `/b`** — so client URIs DON'T. Example: client sends `/qosid/api/v1/queue/sb/sbr/moderator/product/measure_list:table`, qosid-flow strips `/qosid/api/v1/queue`, leaving `/sb/sbr/…`, and concatenates with `https://app.smartup24.com/b` → `https://app.smartup24.com/b/sb/sbr/…`. Putting `/b` in the client path **and** in `baseUrl` produces `/b/b/…` (404). Dropping it from `baseUrl` bypasses the upstream prefix entirely (404 from smartup24 for `/sb/…`). Prod `.env` MUST set `API_BASE_URL=https://app.smartup24.com/b`.
+
 ---
 
 ## Protected Zones
