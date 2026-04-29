@@ -94,6 +94,10 @@ Spring Boot 3.2+ throws `NoResourceFoundException` for unmapped routes. The hand
 
 The API proxy composes upstream URLs as `baseUrl + <stripped client URI>`. By convention `gateway.api.base-url` (env `API_BASE_URL`) carries the full upstream path prefix — **including `/b`** — so client URIs DON'T. Example: client sends `/qosid/api/v1/queue/sb/sbr/moderator/product/measure_list:table`, qosid-flow strips `/qosid/api/v1/queue`, leaving `/sb/sbr/…`, and concatenates with `https://app.smartup24.com/b` → `https://app.smartup24.com/b/sb/sbr/…`. Putting `/b` in the client path **and** in `baseUrl` produces `/b/b/…` (404). Dropping it from `baseUrl` bypasses the upstream prefix entirely (404 from smartup24 for `/sb/…`). Prod `.env` MUST set `API_BASE_URL=https://app.smartup24.com/b`.
 
+### 23. Never treat `errorSource=CIRCUIT_BREAKER` as a permanent failure in `*RequestConsumer.handleFailedResponse`
+
+CB-blocked responses (HTTP 503 from `HttpRequestService.buildCircuitBreakerResponse`) are **transient back-pressure**, not external API failures. Both `OracleRequestConsumer` and `ApiRequestConsumer` must short-circuit on `"CIRCUIT_BREAKER".equals(errorSourceStr)` to **re-queue the message via `sendOracleRequest`/`sendApiRequest` without incrementing `attemptCount`**. The `processRequest` message-expiry check (`max-message-age-ms`, default 5 min) is the safety net that converts genuinely-stuck CB-blocked messages into DLQ alerts after the deadline. If you re-add CIRCUIT_BREAKER to the `isNonRetryableSource` predicate (or any equivalent), every CB-OPEN burst will produce one DLQ alert per blocked request — the v1.0.8 incident produced ~2200 Telegram alerts/day from this exact bug. OAuth2 stays non-retryable (real auth issue, immediate DLQ); only CIRCUIT_BREAKER changed.
+
 ---
 
 ## Protected Zones

@@ -190,15 +190,20 @@ public class OracleRequestConsumer {
     }
 
     private void handleFailedResponse(String key, RequestMessage message, ResponseMessage response) {
-        int attemptCount = requestStateService.incrementAttempt(key);
         int httpStatus = response != null ? response.getHttpStatus() : 0;
         String errorMessage = response != null ? response.getErrorMessage() : "Unknown error";
-
         String errorSourceStr = response != null ? response.getErrorSource() : null;
-        boolean isNonRetryableSource = "CIRCUIT_BREAKER".equals(errorSourceStr)
-                || "OAUTH2".equals(errorSourceStr);
 
-        boolean isRetryable = retryProperties.isRetryable(httpStatus) && !isNonRetryableSource;
+        if ("CIRCUIT_BREAKER".equals(errorSourceStr)) {
+            metrics.getHttpRetry().increment();
+            log.warn("[ORACLE] CB-blocked, requeueing without attempt increment: {}", key);
+            requestProducer.sendOracleRequest(message);
+            return;
+        }
+
+        int attemptCount = requestStateService.incrementAttempt(key);
+        boolean isOAuth2 = "OAUTH2".equals(errorSourceStr);
+        boolean isRetryable = retryProperties.isRetryable(httpStatus) && !isOAuth2;
         boolean hasAttemptsLeft = attemptCount < retryProperties.getMaxAttempts();
 
         if (isRetryable && hasAttemptsLeft) {
@@ -207,8 +212,8 @@ public class OracleRequestConsumer {
                     key, httpStatus, attemptCount, retryProperties.getMaxAttempts());
             requestProducer.sendOracleRequest(message);
         } else {
-            if (isNonRetryableSource) {
-                log.warn("[ORACLE] Non-retryable error source for {}: source={}", key, errorSourceStr);
+            if (isOAuth2) {
+                log.warn("[ORACLE] Non-retryable OAuth2 error for {}", key);
             }
             ErrorSource source = ErrorSource.fromString(errorSourceStr);
             handlePermanentFailure(key, message, httpStatus, errorMessage, source);
