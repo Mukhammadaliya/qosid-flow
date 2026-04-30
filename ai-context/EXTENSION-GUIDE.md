@@ -162,6 +162,8 @@ public class MyProviderOAuth2Client implements OAuth2Client {
 
 **Redis cache key:** `oauth2:token:my-provider` (automatic via `OAuth2TokenRedisCache`).
 
+**Refresh model:** Stale-while-revalidate — once a cached token crosses 80 % of its lifetime, the next caller silently fires an async refresh on `oauth2RefreshExecutor` while still being served the still-valid token. The synchronous lock+wait path only runs on a true cache miss (cold start, expired token, or repeated async-refresh failures). New providers automatically participate without any registration.
+
 ---
 
 ## Recipe 3: Add a New External API Integration
