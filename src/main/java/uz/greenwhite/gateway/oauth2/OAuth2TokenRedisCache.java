@@ -2,79 +2,81 @@ package uz.greenwhite.gateway.oauth2;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 import uz.greenwhite.gateway.oauth2.client.OAuth2Client;
 import uz.greenwhite.gateway.oauth2.model.ProviderProperties;
 import uz.greenwhite.gateway.oauth2.model.Token;
 
 import java.time.Duration;
+import java.util.concurrent.RejectedExecutionException;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class OAuth2TokenRedisCache {
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final ThreadPoolTaskExecutor refreshExecutor;
 
     private static final String TOKEN_KEY_PREFIX = "oauth2:token:";
     private static final String LOCK_KEY_PREFIX = "oauth2:lock:";
-    private static final Duration LOCK_TTL = Duration.ofSeconds(10);
+    private static final Duration LOCK_TTL = Duration.ofSeconds(20);
     private static final long MARGIN_MS = 15_000;
+    private static final int WAIT_ITERATIONS = 30;
+    private static final long WAIT_SLEEP_MS = 500;
+
+    public OAuth2TokenRedisCache(StringRedisTemplate redisTemplate,
+                                 ObjectMapper objectMapper,
+                                 @Qualifier("oauth2RefreshExecutor") ThreadPoolTaskExecutor refreshExecutor) {
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
+        this.refreshExecutor = refreshExecutor;
+    }
 
     /**
-     * Getting token: Redis cache → refresh expired → get new if not exists
+     * Stale-while-revalidate token retrieval:
+     *   1. fresh cache hit  → return immediately
+     *   2. stale cache hit  → return immediately AND fire async refresh in background
+     *   3. expired / absent → synchronous refresh (with distributed lock + wait fallback)
+     *
+     * Path (2) is what eliminates the thundering herd: once a token crosses 80%
+     * of its lifetime, the very next caller silently kicks off a refresh while
+     * still serving the valid token. No user-facing request waits on the network.
      */
     public Token getToken(String providerName, ProviderProperties properties, OAuth2Client client) {
-        // 1. Getting from Redis
         Token cached = getFromRedis(providerName);
 
         if (cached != null && !cached.isExpired()) {
+            if (cached.isDueForRefresh()) {
+                triggerAsyncRefresh(providerName, properties, client, cached);
+            }
             log.debug("OAuth2 token cache HIT: {}", providerName);
             return cached;
         }
 
-        // 2. Getting from Lock — only one instance will refresh
         if (!acquireLock(providerName)) {
             log.debug("Another instance is refreshing token: {}, waiting...", providerName);
             return waitForToken(providerName, cached);
         }
 
         try {
-            // 3. Double-check — check after getting lock
             Token doubleCheck = getFromRedis(providerName);
             if (doubleCheck != null && !doubleCheck.isExpired()) {
                 log.debug("OAuth2 token refreshed by another instance: {}", providerName);
                 return doubleCheck;
             }
 
-            // 4. Getting toke or refresh
-            Token newToken;
-            if (cached != null && cached.refreshToken() != null) {
-                log.info("Refreshing OAuth2 token: {}", providerName);
-                try {
-                    newToken = client.refreshAccessToken(properties, cached);
-                } catch (Exception e) {
-                    log.warn("Token refresh failed for {}, getting new token: {}", providerName, e.getMessage());
-                    newToken = client.getAccessToken(properties);
-                }
-            } else {
-                log.info("Getting new OAuth2 token: {}", providerName);
-                newToken = client.getAccessToken(properties);
-            }
-
-            // 5. Save to Redis
+            Token newToken = performRefresh(providerName, properties, client, cached);
             saveToRedis(providerName, newToken);
             log.info("OAuth2 token saved to Redis: {}", providerName);
-
             return newToken;
 
         } catch (Exception e) {
             log.error("Failed to get/refresh OAuth2 token: {} - {}", providerName, e.getMessage());
-            // If old token exists in cache — return it as fallback (even if expired)
             if (cached != null) {
                 log.warn("Returning expired token as fallback: {}", providerName);
                 return cached;
@@ -83,6 +85,60 @@ public class OAuth2TokenRedisCache {
         } finally {
             releaseLock(providerName);
         }
+    }
+
+    // ==================== ASYNC REFRESH (stale-while-revalidate) ====================
+
+    private void triggerAsyncRefresh(String providerName, ProviderProperties properties,
+                                     OAuth2Client client, Token cached) {
+        try {
+            refreshExecutor.execute(() -> doAsyncRefresh(providerName, properties, client, cached));
+        } catch (RejectedExecutionException e) {
+            log.debug("Async OAuth2 refresh rejected (executor full): {}", providerName);
+        }
+    }
+
+    private void doAsyncRefresh(String providerName, ProviderProperties properties,
+                                OAuth2Client client, Token cached) {
+        if (!acquireLock(providerName)) {
+            log.debug("Async refresh skipped, another instance already refreshing: {}", providerName);
+            return;
+        }
+
+        try {
+            Token doubleCheck = getFromRedis(providerName);
+            if (doubleCheck != null && !doubleCheck.isDueForRefresh()) {
+                log.debug("Async refresh skipped, token already refreshed: {}", providerName);
+                return;
+            }
+
+            log.info("Async OAuth2 token refresh started: {}", providerName);
+            Token newToken = performRefresh(providerName, properties, client, cached);
+            saveToRedis(providerName, newToken);
+            log.info("Async OAuth2 token refresh completed: {}", providerName);
+        } catch (Exception e) {
+            log.warn("Async OAuth2 token refresh failed for {}: {} (cached token still valid until expiry)",
+                    providerName, e.getMessage());
+        } finally {
+            releaseLock(providerName);
+        }
+    }
+
+    // ==================== REFRESH HELPERS ====================
+
+    private Token performRefresh(String providerName, ProviderProperties properties,
+                                 OAuth2Client client, Token cached) {
+        if (cached != null && cached.refreshToken() != null) {
+            log.info("Refreshing OAuth2 token: {}", providerName);
+            try {
+                return client.refreshAccessToken(properties, cached);
+            } catch (Exception e) {
+                log.warn("Token refresh failed for {}, getting new token: {}", providerName, e.getMessage());
+                return client.getAccessToken(properties);
+            }
+        }
+        log.info("Getting new OAuth2 token: {}", providerName);
+        return client.getAccessToken(properties);
     }
 
     // ==================== REDIS OPERATIONS ====================
@@ -125,12 +181,15 @@ public class OAuth2TokenRedisCache {
     }
 
     /**
-     * Waiting when another instance token refreshing, getting from Redis
+     * Poll Redis up to WAIT_ITERATIONS × WAIT_SLEEP_MS for the lock holder to
+     * publish a fresh token. Budget must comfortably exceed the OAuth2 endpoint's
+     * worst-case response time so concurrent waiters don't all give up before the
+     * single in-flight refresh completes.
      */
     private Token waitForToken(String providerName, Token fallback) {
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < WAIT_ITERATIONS; i++) {
             try {
-                Thread.sleep(200);
+                Thread.sleep(WAIT_SLEEP_MS);
                 Token token = getFromRedis(providerName);
                 if (token != null) {
                     return token;
@@ -141,7 +200,6 @@ public class OAuth2TokenRedisCache {
             }
         }
 
-        // Timeout — return fallback
         if (fallback != null) {
             log.warn("Wait timeout, returning fallback token: {}", providerName);
             return fallback;

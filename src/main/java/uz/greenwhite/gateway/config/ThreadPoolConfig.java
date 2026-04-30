@@ -27,6 +27,28 @@ public class ThreadPoolConfig {
         return buildExecutor(props.getApiMin(), props.getApiMax(), "api-http-");
     }
 
+    /**
+     * Dedicated pool for asynchronous OAuth2 token refreshes triggered by the
+     * stale-while-revalidate path. Small and bounded — when full we drop the
+     * task because the next request will trigger another refresh anyway.
+     */
+    @Bean("oauth2RefreshExecutor")
+    public ThreadPoolTaskExecutor oauth2RefreshExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(50);
+        executor.setKeepAliveSeconds(60);
+        executor.setThreadNamePrefix("oauth2-refresh-");
+        executor.setRejectedExecutionHandler((r, e) ->
+                log.debug("OAuth2 refresh rejected — executor saturated, will retry on next request"));
+        executor.setAllowCoreThreadTimeOut(true);
+        executor.initialize();
+        log.info("ThreadPool [oauth2-refresh-] created: core={}, max={}, queue=50",
+                executor.getCorePoolSize(), executor.getMaxPoolSize());
+        return executor;
+    }
+
     private ThreadPoolTaskExecutor buildExecutor(int min, int max, String prefix) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(min);

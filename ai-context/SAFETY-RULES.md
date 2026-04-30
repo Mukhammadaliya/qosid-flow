@@ -112,7 +112,7 @@ These files contain production-critical logic. Before modifying any of them, run
 | `HttpRequestService.java` | Circuit Breaker + OAuth2 token injection + per-endpoint timeouts + callbackUrl/source propagation + defensive `decompressIfNeeded` + upstream error body capture | Cascading failures, auth failures, timeout mismatches, lost callbacks, garbled `/result` bodies, dropped 5xx error payloads |
 | `RequestStateService.java` | Redis state CRUD + distributed lock (tryLock/releaseLock) + Integer.MAX_VALUE safety | Duplicate processing, infinite retries, state corruption |
 | `KafkaConfig.java` | Topic creation + consumer factories + MANUAL ack mode + error handlers | Message loss, consumer misconfiguration, missing topics |
-| `OAuth2TokenRedisCache.java` | Distributed token lock + cache with TTL + fallback on Redis failure | Token race conditions, auth failures, Redis lock leaks |
+| `OAuth2TokenRedisCache.java` | Distributed token lock + stale-while-revalidate (async pre-refresh at 80% TTL via `oauth2RefreshExecutor`) + 15s wait budget + fallback on Redis failure | Token race conditions, thundering-herd 401 storms, auth failures, Redis lock leaks |
 | `CallbackSender.java` | `@Retryable` (3 attempts, 1s backoff) + `@Recover` swallow | Lost callbacks, consumer stalls on bad URL |
 | `RocksDBConfig.java` | Singleton DB instance + `@PreDestroy` close | On-disk corruption across restarts |
 | `ResponseStorageService.java` | Scheduled retention cleanup + body/metadata dual-write | Disk exhaustion, orphaned metadata |
