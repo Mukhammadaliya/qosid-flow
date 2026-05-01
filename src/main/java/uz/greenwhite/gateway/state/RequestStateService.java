@@ -23,6 +23,7 @@ public class RequestStateService {
 
     private static final String STATE_PREFIX = "request:state:";
     private static final String LOCK_PREFIX = "request:lock:";
+    private static final String TOKEN_EVICTED_PREFIX = "request:token-evicted:";
 
     // ==================== STATE OPERATIONS ====================
 
@@ -208,6 +209,39 @@ public class RequestStateService {
             log.error("Redis error during getAttemptCount for {}: {}. " +
                     "Returning MAX_VALUE to prevent infinite retry.", compositeId, e.getMessage());
             return Integer.MAX_VALUE;
+        }
+    }
+
+    /**
+     * Mark this request as having had its OAuth2 token evicted once already.
+     * Set with the same TTL as request state, so the flag dies naturally with the
+     * request lifecycle. Prevents an infinite evict→retry→evict loop when the 401
+     * persists despite a fresh token (real auth misconfiguration).
+     */
+    public void markTokenEvicted(String compositeId) {
+        String key = TOKEN_EVICTED_PREFIX + compositeId;
+        try {
+            redisTemplate.opsForValue().set(key, "1",
+                    redisProperties.getStateTtlHours(), TimeUnit.HOURS);
+            log.debug("Token eviction flag set: {}", compositeId);
+        } catch (Exception e) {
+            log.warn("Redis error setting token-evicted flag for {}: {}", compositeId, e.getMessage());
+        }
+    }
+
+    /**
+     * Check whether {@link #markTokenEvicted} has already been called for this
+     * request. If Redis is unavailable returns {@code true} (fail-closed) so we
+     * don't accidentally enter an evict loop during a Redis outage.
+     */
+    public boolean isTokenEvicted(String compositeId) {
+        String key = TOKEN_EVICTED_PREFIX + compositeId;
+        try {
+            return Boolean.TRUE.equals(redisTemplate.hasKey(key));
+        } catch (Exception e) {
+            log.warn("Redis error checking token-evicted flag for {}: {}. " +
+                    "Returning true to avoid evict loop.", compositeId, e.getMessage());
+            return true;
         }
     }
 }

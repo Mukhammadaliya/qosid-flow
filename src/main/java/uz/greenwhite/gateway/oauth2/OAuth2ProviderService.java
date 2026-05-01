@@ -47,4 +47,12 @@ public class OAuth2ProviderService {
     public void evictProviderCache(String providerName) {
         providerFetcher.evictCache(providerName);
     }
+
+    /**
+     * Evict cached OAuth2 token for a provider (provider config cache stays intact).
+     * Used by request consumers on API 401 to force a fresh token mint on retry.
+     */
+    public void evictToken(String providerName) {
+        tokenRedisCache.evictToken(providerName);
+    }
 }

@@ -13,6 +13,7 @@ import uz.greenwhite.gateway.config.RetryProperties;
 import uz.greenwhite.gateway.http.HttpRequestService;
 import uz.greenwhite.gateway.kafka.producer.RequestProducer;
 import uz.greenwhite.gateway.metrics.GatewayMetrics;
+import uz.greenwhite.gateway.oauth2.OAuth2ProviderService;
 import uz.greenwhite.gateway.model.enums.ErrorSource;
 import uz.greenwhite.gateway.model.enums.RequestStatus;
 import uz.greenwhite.gateway.model.kafka.DlqMessage;
@@ -36,6 +37,7 @@ public class ApiRequestConsumer {
     private final ThreadPoolTaskExecutor httpExecutor;
     private final GatewayMetrics metrics;
     private final KafkaProperties kafkaProperties;
+    private final OAuth2ProviderService oAuth2ProviderService;
 
     public ApiRequestConsumer(
             HttpRequestService httpRequestService,
@@ -43,7 +45,9 @@ public class ApiRequestConsumer {
             RequestProducer requestProducer,
             RetryProperties retryProperties,
             @Qualifier("apiHttpExecutor") ThreadPoolTaskExecutor httpExecutor,
-            GatewayMetrics metrics, KafkaProperties kafkaProperties) {
+            GatewayMetrics metrics,
+            KafkaProperties kafkaProperties,
+            OAuth2ProviderService oAuth2ProviderService) {
         this.httpRequestService = httpRequestService;
         this.requestStateService = requestStateService;
         this.requestProducer = requestProducer;
@@ -51,6 +55,7 @@ public class ApiRequestConsumer {
         this.httpExecutor = httpExecutor;
         this.metrics = metrics;
         this.kafkaProperties = kafkaProperties;
+        this.oAuth2ProviderService = oAuth2ProviderService;
     }
 
     @KafkaListener(
@@ -197,6 +202,17 @@ public class ApiRequestConsumer {
         if ("CIRCUIT_BREAKER".equals(errorSourceStr)) {
             metrics.getHttpRetry().increment();
             log.warn("[API] CB-blocked, requeueing without attempt increment: {}", key);
+            requestProducer.sendApiRequest(message);
+            return;
+        }
+
+        if (httpStatus == 401 && message.getOauth2Provider() != null
+                && !requestStateService.isTokenEvicted(key)) {
+            metrics.getHttpRetry().increment();
+            log.warn("[API] 401 from API with OAuth2 provider — evicting token and requeuing: {} (provider={})",
+                    key, message.getOauth2Provider());
+            oAuth2ProviderService.evictToken(message.getOauth2Provider());
+            requestStateService.markTokenEvicted(key);
             requestProducer.sendApiRequest(message);
             return;
         }

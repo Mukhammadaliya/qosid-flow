@@ -87,6 +87,22 @@ public class OAuth2TokenRedisCache {
         }
     }
 
+    /**
+     * Evict cached token for a provider — forces next request to mint a fresh one.
+     * Used when downstream API rejects a syntactically-valid token (e.g. smartup
+     * OAuth occasionally issues "stuck" tokens that pass /security/oauth/token but
+     * are rejected by /b/trade/api/*). Evicting then retrying with a fresh mint
+     * recovers within one Kafka round-trip instead of waiting for 3h TTL expiry.
+     */
+    public void evictToken(String providerName) {
+        Boolean deleted = redisTemplate.delete(TOKEN_KEY_PREFIX + providerName);
+        if (Boolean.TRUE.equals(deleted)) {
+            log.info("OAuth2 token cache evicted: {}", providerName);
+        } else {
+            log.debug("OAuth2 token cache eviction no-op (not present): {}", providerName);
+        }
+    }
+
     // ==================== ASYNC REFRESH (stale-while-revalidate) ====================
 
     private void triggerAsyncRefresh(String providerName, ProviderProperties properties,
