@@ -343,7 +343,7 @@
   "schemaVersion": 39,
   "tags": ["redis", "gateway", "monitoring"],
   "time": { "from": "now-1h", "to": "now" },
-  "title": "Redis Monitoring — Request Gateway Service",
+  "title": "Redis Monitoring — Qosid Flow",
   "uid": "redis-gateway-monitoring",
   "version": 1
 }

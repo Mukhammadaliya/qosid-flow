@@ -95,7 +95,7 @@ public class TestController {
     public ResponseEntity<Map<String, String>> health() {
         return ResponseEntity.ok(Map.of(
                 "status", "UP",
-                "service", "request-gateway-service",
+                "service", "qosid-flow",
                 "timestamp", LocalDateTime.now().toString()
         ));
     }
