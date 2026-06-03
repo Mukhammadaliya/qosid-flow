@@ -1,4 +1,4 @@
-# Request Gateway Service
+# Qosid Flow
 
 **Version:** 1.2.0  
 **Java:** 21 | **Spring Boot:** 3.4.4  
@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-Request Gateway Service is a **message processing pipeline** that pulls HTTP requests from an Oracle database, routes them through Kafka, sends them to external APIs, and saves responses back to Oracle. It replaces the legacy Biruni Message Broker (Apache Artemis + RocksDB) with a modern, cloud-native architecture.
+Qosid Flow is a **message processing pipeline** that pulls HTTP requests from an Oracle database, routes them through Kafka, sends them to external APIs, and saves responses back to Oracle. It replaces the legacy Biruni Message Broker (Apache Artemis + RocksDB) with a modern, cloud-native architecture.
 
 **Core mission:** Pull requests from Oracle → marshal through Kafka → send HTTP to external APIs → save response back to Oracle.
 
@@ -64,7 +64,7 @@ F (Failed)     → Failed after all retries
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    REQUEST GATEWAY SERVICE                        │
+│                          QOSID FLOW                               │
 │                                                                   │
 │  ┌─────────────┐     ┌──────────────────────────────────┐       │
 │  │RequestPuller│────▶│         KAFKA TOPICS              │       │
@@ -665,7 +665,7 @@ management:
 
 ```bash
 git clone <repository-url>
-cd request-gateway-service
+cd qosid-flow
 ```
 
 ### 8.3 Start Infrastructure
@@ -757,7 +757,7 @@ curl -X POST http://localhost:8090/api/test/dlq
 
 ```bash
 # Build the application image
-docker build -t request-gateway-service .
+docker build -t qosid-flow .
 
 # Or run everything together
 docker compose --profile app up -d
@@ -1115,16 +1115,16 @@ Start with #4 (30 min, highest security impact), then #1 (biggest functional ris
 
 ## 11. Working with Claude.AI — Project Setup Guide
 
-This section explains how to set up and effectively use Claude.AI as a development assistant for the Request Gateway Service project.
+This section explains how to set up and effectively use Claude.AI as a development assistant for the Qosid Flow project.
 
 ### 11.1 Creating a Claude Project
 
 1. Go to [claude.ai](https://claude.ai)
 2. Click **"Projects"** in the left sidebar → **"Create Project"**
-3. Name it: `Request Gateway Service` (or your preferred name)
+3. Name it: `Qosid Flow` (or your preferred name)
 4. Add a **Project Description** (optional):
    ```
-   Request Gateway Service — A message processing pipeline that replaces 
+   Qosid Flow — A message processing pipeline that replaces 
    the legacy Biruni Message Broker. Tech stack: Java 21, Spring Boot 3.4, 
    Kafka/RedPanda, Redis, Resilience4j, WebClient, Prometheus/Grafana.
    ```
@@ -1347,7 +1347,7 @@ Claude: → Step 1: Topic partition increase command
 ## 12. Project Structure
 
 ```
-request-gateway-service/
+qosid-flow/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── pom.xml

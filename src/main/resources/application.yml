@@ -1,5 +1,5 @@
 # ============================================================
-# REQUEST GATEWAY SERVICE — Unified Configuration
+# QOSID FLOW — Unified Configuration
 # ============================================================
 # All values use: ${ENV_VAR:default_value}
 # Dev: default values work out of the box
@@ -10,7 +10,7 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 30s
   application:
-    name: request-gateway-service
+    name: qosid-flow
 
   servlet:
     multipart:

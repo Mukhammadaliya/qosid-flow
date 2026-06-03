@@ -1,4 +1,4 @@
-# Request Gateway Service (qosid-flow)
+# Qosid Flow (qosid-flow)
 
 Java 21 + Spring Boot 3.3.0 microservice that pulls HTTP requests from Oracle/Biruni **or accepts them via REST** (`/qosid/api/v1/queue/**`), routes them through Kafka for load balancing, sends to external APIs with Circuit Breaker + OAuth2 + retry, stores response bodies in RocksDB (7-day retention), fires per-request callbacks, and saves Oracle-source responses back to Biruni. Package: `uz.greenwhite.gateway`.
 

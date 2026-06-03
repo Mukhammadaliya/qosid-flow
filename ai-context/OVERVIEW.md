@@ -4,13 +4,13 @@
 
 | Field | Value |
 |-------|-------|
-| **Name** | Request Gateway Service (qosid-flow) |
+| **Name** | Qosid Flow (qosid-flow) |
 | **Version** | 1.0.1 |
 | **Language** | Java 21 |
 | **Framework** | Spring Boot 3.3.0 |
 | **Base Package** | `uz.greenwhite.gateway` |
 | **Group ID** | `uz.greenwhite` |
-| **Artifact ID** | `request-gateway-service` |
+| **Artifact ID** | `qosid-flow` |
 | **Build Tool** | Maven |
 
 ## Mission

@@ -80,12 +80,19 @@ public class StandardOAuth2Client implements OAuth2Client {
         try {
             JsonNode json = objectMapper.readTree(responseBody);
 
+            JsonNode accessToken = json.get("access_token");
+            JsonNode expiresIn = json.get("expires_in");
+            if (accessToken == null || expiresIn == null) {
+                // Provider returned 2xx but an error/unexpected payload — log the raw body for diagnosis.
+                throw new IllegalStateException("Token response missing access_token/expires_in: " + responseBody);
+            }
+
             JsonNode tokenType = json.get("token_type");
             JsonNode refreshToken = json.get("refresh_token");
 
             return new Token(
-                    json.get("access_token").asText(),
-                    json.get("expires_in").asLong() * 1000,
+                    accessToken.asText(),
+                    expiresIn.asLong() * 1000,
                     tokenType != null ? tokenType.asText() : "Bearer",
                     refreshToken != null ? refreshToken.asText() : null
             );

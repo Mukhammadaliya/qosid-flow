@@ -409,7 +409,7 @@
   "schemaVersion": 39,
   "tags": ["kafka", "redpanda", "gateway", "monitoring"],
   "time": { "from": "now-1h", "to": "now" },
-  "title": "RedPanda/Kafka Monitoring — Request Gateway Service",
+  "title": "RedPanda/Kafka Monitoring — Qosid Flow",
   "uid": "redpanda-gateway-monitoring",
   "version": 1
 }

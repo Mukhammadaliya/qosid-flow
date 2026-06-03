@@ -7,10 +7,10 @@
 
     <!-- PROJECT INFO -->
     <groupId>uz.greenwhite</groupId>
-    <artifactId>request-gateway-service</artifactId>
+    <artifactId>qosid-flow</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
-    <name>Request Gateway Service</name>
+    <name>Qosid Flow</name>
 
     <!-- PARENT -->
     <parent>
