@@ -209,6 +209,9 @@ gateway:
       - video/x-msvideo
       - video/x-matroska
       - video/3gpp
+    # Callback (X-Callback-Url) host allowlist. Empty = any PUBLIC host allowed
+    # (private/loopback/link-local are always blocked).
+    callback-allowed-hosts: ${CALLBACK_ALLOWED_HOSTS:}
 
   # --- Telegram Notifications ---
   telegram:

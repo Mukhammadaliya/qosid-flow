@@ -61,6 +61,7 @@ public class ProxyController {
     private final FileService fileService;
     private final ProxyProperties proxyProperties;
     private final ApiProperties apiProperties;
+    private final uz.greenwhite.gateway.validation.CallbackUrlValidator callbackUrlValidator;
 
     @RequestMapping(
             value = "/**",
@@ -83,6 +84,12 @@ public class ProxyController {
         AuthResult authResult = authorizationProvider.authorize(authContext);
         if (!authResult.isAllowed()) {
             throw new AuthorizationDeniedException(authResult.getReason(), authResult.getHttpStatus());
+        }
+
+        // 1b. SSRF guard on client-supplied callback URL — reject at accept time
+        String callbackUrl = request.getHeader(CALLBACK_HEADER);
+        if (callbackUrl != null && !callbackUrl.isBlank()) {
+            callbackUrlValidator.validate(callbackUrl);
         }
 
         // 2. Strip the proxy prefix to get the upstream URI
@@ -158,7 +165,7 @@ public class ProxyController {
                 .params(request.getQueryString())
                 .clientIp(clientIp)
                 .contentType(contentType)
-                .callbackUrl(request.getHeader(CALLBACK_HEADER))
+                .callbackUrl(callbackUrl)
                 .fileReferences(fileReferences)
                 .biruniUploadMode(biruniUploadMode)
                 .fileParts(fileParts)
