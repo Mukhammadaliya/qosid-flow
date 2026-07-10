@@ -35,7 +35,21 @@ class HttpRequestServiceTest {
 
         assertNotNull(response);
         assertEquals("SYSTEM", response.getErrorSource());
+        assertEquals(0, response.getHttpStatus());
         assertFalse(response.isSuccess());
         assertTrue(response.getErrorMessage().contains("method"));
+    }
+
+    @Test
+    void nullMethodShortCircuitsBeforeAnyCollaboratorCall() {
+        RequestMessage request = RequestMessage.builder()
+                .companyId(1L).requestId(2L)
+                .baseUrl("https://example.com")
+                .method(null)
+                .build();
+
+        service.sendRequest(request).block();
+
+        org.mockito.Mockito.verifyNoInteractions(circuitBreakerRegistry, oAuth2ProviderService, webClient);
     }
 }
