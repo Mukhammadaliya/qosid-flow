@@ -9,6 +9,7 @@ import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import uz.greenwhite.gateway.api.model.CallbackPayload;
+import uz.greenwhite.gateway.validation.CallbackUrlValidator;
 
 /**
  * Synchronous HTTP POST sender for completion callbacks.
@@ -20,15 +21,24 @@ import uz.greenwhite.gateway.api.model.CallbackPayload;
  *
  * <p>Uses the synchronous {@link RestClient} rather than {@code WebClient} so the
  * blocking semantics required by spring-retry's AOP interception work cleanly.</p>
+ *
+ * <p>SSRF note: the callback URL was validated at accept time by
+ * {@link CallbackUrlValidator}, and is re-validated here immediately before
+ * sending to narrow the DNS-rebinding window between accept and delivery.
+ * Full DNS pinning (resolving once and forcing the HTTP client to connect to
+ * that exact address via a custom DnsResolver) is deliberately out of scope —
+ * the send-time re-check plus the accept-time check is the accepted trade-off.</p>
  */
 @Slf4j
 @Service
 public class CallbackSender {
 
     private final RestClient restClient;
+    private final CallbackUrlValidator callbackUrlValidator;
 
-    public CallbackSender() {
+    public CallbackSender(CallbackUrlValidator callbackUrlValidator) {
         this.restClient = RestClient.builder().build();
+        this.callbackUrlValidator = callbackUrlValidator;
     }
 
     @Retryable(
@@ -37,6 +47,7 @@ public class CallbackSender {
             backoff = @Backoff(delay = 1000)
     )
     public void sendCallback(String callbackUrl, CallbackPayload payload) {
+        callbackUrlValidator.validate(callbackUrl);
         log.info("Sending callback to {}: requestId={}", callbackUrl, payload.getRequestId());
 
         HttpStatusCode status = restClient.post()

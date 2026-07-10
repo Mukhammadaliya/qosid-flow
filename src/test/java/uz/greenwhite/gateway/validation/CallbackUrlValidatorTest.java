@@ -21,6 +21,9 @@ class CallbackUrlValidatorTest {
     @Test void cloudMetadataRejected()   { assertThrows(RequestValidationException.class, () -> open.validate("http://169.254.169.254/latest/meta-data")); }
     @Test void nonHttpSchemeRejected()   { assertThrows(RequestValidationException.class, () -> open.validate("ftp://example.com/x")); }
     @Test void garbageRejected()         { assertThrows(RequestValidationException.class, () -> open.validate("not a url")); }
+    @Test void ipv6UniqueLocalRejected() { assertThrows(RequestValidationException.class, () -> open.validate("http://[fc00::1]/x")); }
+    @Test void cgnatRejected()           { assertThrows(RequestValidationException.class, () -> open.validate("http://100.64.0.1/x")); }
+    @Test void broadcastRejected()       { assertThrows(RequestValidationException.class, () -> open.validate("http://255.255.255.255/x")); }
 
     @Test
     void allowlistRestrictsToListedHosts() {

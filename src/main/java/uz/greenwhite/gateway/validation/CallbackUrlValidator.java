@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import uz.greenwhite.gateway.exception.RequestValidationException;
 
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.URI;
 import java.util.List;
@@ -15,8 +16,9 @@ import java.util.Locale;
  *
  * <p>Rejects anything that is not plain http/https to a public address. When
  * {@code gateway.security.callback-allowed-hosts} is non-empty, the host must
- * additionally be on that list. Resolution happens once at accept time; the
- * later delivery by {@code CallbackSender} reuses the same URL.</p>
+ * additionally be on that list. Validation runs at accept time in
+ * {@code ProxyController} and again at send time in {@code CallbackSender}
+ * to narrow the DNS-rebinding window between the two.</p>
  */
 @Slf4j
 @Component
@@ -61,19 +63,62 @@ public class CallbackUrlValidator {
             return;
         }
 
-        InetAddress address;
+        // Resolve ALL A/AAAA answers — checking only the first record lets an
+        // attacker hide a private IP behind a public one in a multi-answer reply.
+        InetAddress[] addresses;
         try {
-            address = InetAddress.getByName(host);
+            addresses = InetAddress.getAllByName(host);
         } catch (Exception e) {
             throw new RequestValidationException("Invalid X-Callback-Url: unresolvable host " + host);
         }
 
-        if (address.isLoopbackAddress() || address.isSiteLocalAddress()
-                || address.isLinkLocalAddress() || address.isAnyLocalAddress()
-                || address.isMulticastAddress()) {
-            log.warn("Blocked SSRF attempt: callback URL {} resolves to {}", url, address.getHostAddress());
-            throw new RequestValidationException(
-                    "X-Callback-Url must point to a public address (got " + host + ")");
+        for (InetAddress address : addresses) {
+            if (isDisallowed(address)) {
+                log.warn("Blocked SSRF attempt: callback URL {} resolves to {}", url, address.getHostAddress());
+                throw new RequestValidationException(
+                        "X-Callback-Url must point to a public address (got " + host + ")");
+            }
         }
+    }
+
+    /**
+     * True when the resolved address must not be a callback target: loopback,
+     * RFC1918 site-local, link-local (incl. 169.254.169.254 cloud metadata),
+     * wildcard, multicast, IPv6 unique-local (fc00::/7), IPv4 CGNAT
+     * (100.64.0.0/10), or the IPv4 limited broadcast address.
+     *
+     * <p>IPv4-mapped IPv6 addresses ({@code ::ffff:a.b.c.d}) are normalized by
+     * Java's resolver to {@link java.net.Inet4Address}, so the IPv4 checks
+     * below cover them too.</p>
+     */
+    private static boolean isDisallowed(InetAddress a) {
+        if (a.isLoopbackAddress() || a.isSiteLocalAddress()
+                || a.isLinkLocalAddress() || a.isAnyLocalAddress()
+                || a.isMulticastAddress()) {
+            return true;
+        }
+
+        byte[] raw = a.getAddress();
+
+        // IPv6 unique-local fc00::/7 — NOT covered by isSiteLocalAddress()
+        // (Java only flags the deprecated fec0::/10 as site-local for IPv6).
+        if (a instanceof Inet6Address && (raw[0] & 0xFE) == 0xFC) {
+            return true;
+        }
+
+        if (raw.length == 4) {
+            int first = raw[0] & 0xFF;
+            int second = raw[1] & 0xFF;
+            // IPv4 CGNAT 100.64.0.0/10 (RFC 6598)
+            if (first == 100 && second >= 64 && second <= 127) {
+                return true;
+            }
+            // IPv4 limited broadcast
+            if (first == 255 && second == 255 && (raw[2] & 0xFF) == 255 && (raw[3] & 0xFF) == 255) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
