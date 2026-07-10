@@ -256,6 +256,10 @@ public class ProxyController {
     /**
      * Resolve client IP. Proxy headers are client-controlled, so they are only
      * honored when the direct peer is a declared trusted proxy (our nginx).
+     *
+     * <p>When trusted, the RIGHTMOST X-Forwarded-For entry is used — it is the
+     * one appended by our own nginx ({@code proxy_add_x_forwarded_for} appends
+     * to any existing header) — earlier entries are client-supplied and forgeable.</p>
      */
     String getClientIp(HttpServletRequest request) {
         String remoteAddr = request.getRemoteAddr();
@@ -266,8 +270,11 @@ public class ProxyController {
 
         String forwardedFor = request.getHeader("X-Forwarded-For");
         if (forwardedFor != null && !forwardedFor.isBlank()) {
-            int comma = forwardedFor.indexOf(',');
-            return comma > 0 ? forwardedFor.substring(0, comma).trim() : forwardedFor.trim();
+            // Rightmost entry is the one appended by OUR trusted proxy
+            // (nginx proxy_add_x_forwarded_for appends) — earlier entries are
+            // client-supplied and forgeable.
+            int comma = forwardedFor.lastIndexOf(',');
+            return comma >= 0 ? forwardedFor.substring(comma + 1).trim() : forwardedFor.trim();
         }
         String realIp = request.getHeader("X-Real-IP");
         if (realIp != null && !realIp.isBlank()) {

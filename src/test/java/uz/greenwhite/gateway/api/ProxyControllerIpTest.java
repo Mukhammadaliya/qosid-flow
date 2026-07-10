@@ -34,6 +34,16 @@ class ProxyControllerIpTest {
         request.setRemoteAddr("127.0.0.1");
         request.addHeader("X-Forwarded-For", "1.2.3.4, 10.0.0.1");
 
+        // Rightmost entry is the one appended by our trusted nginx proxy.
+        assertEquals("10.0.0.1", controllerWithTrusted(List.of("127.0.0.1")).getClientIp(request));
+    }
+
+    @Test
+    void xffSingleEntryFromTrustedProxy() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader("X-Forwarded-For", "1.2.3.4");
+
         assertEquals("1.2.3.4", controllerWithTrusted(List.of("127.0.0.1")).getClientIp(request));
     }
 }

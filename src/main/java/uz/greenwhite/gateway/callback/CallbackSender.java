@@ -3,13 +3,18 @@ package uz.greenwhite.gateway.callback;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Recover;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import uz.greenwhite.gateway.api.model.CallbackPayload;
+import uz.greenwhite.gateway.exception.RequestValidationException;
 import uz.greenwhite.gateway.validation.CallbackUrlValidator;
+
+import java.net.http.HttpClient;
+import java.time.Duration;
 
 /**
  * Synchronous HTTP POST sender for completion callbacks.
@@ -27,7 +32,9 @@ import uz.greenwhite.gateway.validation.CallbackUrlValidator;
  * sending to narrow the DNS-rebinding window between accept and delivery.
  * Full DNS pinning (resolving once and forcing the HTTP client to connect to
  * that exact address via a custom DnsResolver) is deliberately out of scope —
- * the send-time re-check plus the accept-time check is the accepted trade-off.</p>
+ * the send-time re-check plus the accept-time check is the accepted trade-off.
+ * Redirects are disabled so a validated public host can't 302 the sender to
+ * an internal address, bypassing the SSRF guard.</p>
  */
 @Slf4j
 @Service
@@ -37,12 +44,19 @@ public class CallbackSender {
     private final CallbackUrlValidator callbackUrlValidator;
 
     public CallbackSender(CallbackUrlValidator callbackUrlValidator) {
-        this.restClient = RestClient.builder().build();
         this.callbackUrlValidator = callbackUrlValidator;
+        var httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .build();
+        var factory = new JdkClientHttpRequestFactory(httpClient);
+        factory.setReadTimeout(Duration.ofSeconds(10));
+        this.restClient = RestClient.builder().requestFactory(factory).build();
     }
 
     @Retryable(
             retryFor = Exception.class,
+            noRetryFor = RequestValidationException.class,
             maxAttempts = 3,
             backoff = @Backoff(delay = 1000)
     )
