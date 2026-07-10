@@ -93,7 +93,11 @@ public class ProxyController {
         }
 
         // 2. Strip the proxy prefix to get the upstream URI
-        String targetUri = request.getRequestURI().replaceFirst(proxyProperties.getPrefix(), "");
+        String requestUri = request.getRequestURI();
+        String prefix = proxyProperties.getPrefix();
+        String targetUri = requestUri.startsWith(prefix)
+                ? requestUri.substring(prefix.length())
+                : requestUri;
 
         // 3. Allocate IDs (see class-level note about the shortcut)
         UUID uuid = UUID.randomUUID();
@@ -250,12 +254,18 @@ public class ProxyController {
     }
 
     /**
-     * Resolve client IP honoring proxy headers. Falls back to the socket address.
+     * Resolve client IP. Proxy headers are client-controlled, so they are only
+     * honored when the direct peer is a declared trusted proxy (our nginx).
      */
-    private static String getClientIp(HttpServletRequest request) {
+    String getClientIp(HttpServletRequest request) {
+        String remoteAddr = request.getRemoteAddr();
+        List<String> trusted = proxyProperties.getTrustedProxies();
+        if (trusted == null || !trusted.contains(remoteAddr)) {
+            return remoteAddr;
+        }
+
         String forwardedFor = request.getHeader("X-Forwarded-For");
         if (forwardedFor != null && !forwardedFor.isBlank()) {
-            // Take the leftmost address — that's the original client
             int comma = forwardedFor.indexOf(',');
             return comma > 0 ? forwardedFor.substring(0, comma).trim() : forwardedFor.trim();
         }
@@ -263,6 +273,6 @@ public class ProxyController {
         if (realIp != null && !realIp.isBlank()) {
             return realIp.trim();
         }
-        return request.getRemoteAddr();
+        return remoteAddr;
     }
 }

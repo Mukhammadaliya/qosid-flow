@@ -156,6 +156,7 @@ gateway:
   proxy:
     prefix: /qosid/api/v1/queue
     context-path: /qosid
+    trusted-proxies: ${TRUSTED_PROXIES:127.0.0.1}
 
   # --- Response handling ---
   response:
