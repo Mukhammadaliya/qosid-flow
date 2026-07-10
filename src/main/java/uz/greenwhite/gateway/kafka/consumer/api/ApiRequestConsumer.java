@@ -73,6 +73,8 @@ public class ApiRequestConsumer {
 
         metrics.getConsumerReceived().increment();
 
+        // Idempotency gate. Redis failure here must NOT ack — nack and let Kafka
+        // redeliver once Redis is back (see SAFETY-RULES: no silent drops).
         try {
             if (requestStateService.isCompleted(key)) {
                 log.warn("[API] Request already completed, skipping: {}", key);
@@ -87,7 +89,14 @@ public class ApiRequestConsumer {
                 ack.acknowledge();
                 return;
             }
+        } catch (Exception e) {
+            log.error("[API] State store unavailable for {} — nack, will redeliver: {}",
+                    key, e.getMessage());
+            ack.nack(Duration.ofSeconds(5));
+            return;
+        }
 
+        try {
             CompletableFuture.runAsync(() -> processRequest(key, message, ack), httpExecutor)
                     .exceptionally(throwable -> {
                         log.error("[API] Unexpected error for {}: {}", key, throwable.getMessage(), throwable);
