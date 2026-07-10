@@ -146,7 +146,10 @@ AI API kaliti sozlamalarda; o'chirilgan bo'lsa modul ko'rinmaydi.
 | DLQ replay noto'g'ri ishlatilishi | Tasdiq dialogi, replay ham audit'ga yoziladi |
 | Loki disk sarfi | Retention limit (masalan 14 kun), compose'da volume chegarasi |
 
-## 7a. Kelajak g'oyasi (2026-07-10 kechqurun, hali brainstorm qilinmagan)
+## 7a. Kelajak g'oyalari (2026-07-10 kechqurun, hali brainstorm qilinmagan)
+
+**C-faza QAYTA KO'RIB CHIQILADI — tenant mapping UI'da (user qarori, 2026-07-10 kech):** Avvalgi "qattiq o'tish, Main app o'z payload'ini moslab beradi" qarori bekor. Yangi yo'nalish: Main app'ga TEGILMAYDI — u `company_id`/`filial_id` yuborishda davom etadi; **gateway'ning o'zi UI'da sozlanadigan mapping qatlami orqali** ularni `tenant_id`/`extra_tenant_id` ga tarjima qiladi (kirishda map, Biruni'ga qaytarishda teskari map). Ichki model/kalitlar baribir tenant_id'da bo'ladi. Bu C-fazani B-fazaga (Settings/UI) yaqinlashtiradi — ehtimol tartib o'zgaradi (mapping sozlamasi Settings Service'ni talab qiladi). Brainstormda hal qilinadi: mapping qayerda amal qiladi (pull, REST, save, OAuth fetch), default mapping (company_id→tenant_id 1:1), va faza tartibi.
+
 
 **OAuth2 plugin-JAR mexanizmi (user taklifi):** OAuth2 oqimi har bir Main app'da har xil bo'lgani uchun (masalan, bizda `BiruniOAuth2Client`), foydalanuvchi o'z OAuth2 implementatsiyasini **JAR fayl sifatida UI orqali yuklaydi**; tizim JAR ichidan token oluvchi klass/metodlarni ko'rsatadi (yoki biz metod nomlarini interfeys-kontrakt sifatida belgilaymiz — `OAuth2Client` SPI shunga tayyor); gateway shu JAR orqali token oladi/yangilaydi va Main app'ga murojaat qiladi. Loyihani ishga tushirish ham UI orqali bo'lishi kerak degan istak bor.
 
