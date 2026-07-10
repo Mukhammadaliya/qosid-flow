@@ -65,8 +65,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception e) {
-        log.error("Unhandled exception: {}", e.getMessage(), e);
-        return build(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());
+        String ref = java.util.UUID.randomUUID().toString().substring(0, 8);
+        log.error("Unhandled exception [ref={}]: {}", ref, e.getMessage(), e);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error (ref: " + ref + ")");
     }
 
     private static ResponseEntity<ErrorResponse> build(HttpStatus status, String message) {
