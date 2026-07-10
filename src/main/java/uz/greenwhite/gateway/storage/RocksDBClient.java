@@ -35,6 +35,7 @@ public class RocksDBClient {
             rocksDB.put(key, body);
         } catch (RocksDBException e) {
             log.error("RocksDB putResponse failed for {}: {}", compositeId, e.getMessage(), e);
+            throw new StorageWriteException("RocksDB body write failed for " + compositeId, e);
         }
     }
 
@@ -57,8 +58,10 @@ public class RocksDBClient {
             rocksDB.put(key, value);
         } catch (RocksDBException e) {
             log.error("RocksDB putResponseMetadata failed for {}: {}", compositeId, e.getMessage(), e);
+            throw new StorageWriteException("RocksDB metadata write failed for " + compositeId, e);
         } catch (Exception e) {
             log.error("Failed to serialize ResponseMetadata for {}: {}", compositeId, e.getMessage(), e);
+            throw new StorageWriteException("ResponseMetadata serialization failed for " + compositeId, e);
         }
     }
 

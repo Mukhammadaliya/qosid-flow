@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import uz.greenwhite.gateway.metrics.GatewayMetrics;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -23,6 +24,7 @@ public class ResponseStorageService {
 
     private final RocksDBClient rocksDBClient;
     private final RocksDBProperties rocksDBProperties;
+    private final GatewayMetrics metrics;
 
     /**
      * Persist a response body and its metadata.
@@ -35,9 +37,15 @@ public class ResponseStorageService {
                 .savedAt(System.currentTimeMillis())
                 .build();
 
-        rocksDBClient.putResponse(compositeId, body);
-        rocksDBClient.putResponseMetadata(compositeId, meta);
+        try {
+            rocksDBClient.putResponse(compositeId, body);
+            rocksDBClient.putResponseMetadata(compositeId, meta);
+        } catch (StorageWriteException e) {
+            metrics.getRocksdbSaveError().increment();
+            throw e;
+        }
 
+        metrics.getRocksdbSaveSuccess().increment();
         log.debug("Response saved to RocksDB: {}", compositeId);
     }
 

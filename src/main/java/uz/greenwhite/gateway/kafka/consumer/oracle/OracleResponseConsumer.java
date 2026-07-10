@@ -14,6 +14,7 @@ import uz.greenwhite.gateway.model.ResponseSaveRequest;
 import uz.greenwhite.gateway.source.ResponseSinkClient;
 import uz.greenwhite.gateway.state.RequestStateService;
 import uz.greenwhite.gateway.storage.ResponseStorageService;
+import uz.greenwhite.gateway.storage.StorageWriteException;
 
 import java.nio.charset.StandardCharsets;
 
@@ -55,10 +56,15 @@ public class OracleResponseConsumer {
 
         try {
             if (message.getBody() != null) {
-                responseStorageService.saveResponse(
-                        message.getCompositeId(), message.getBody(),
-                        message.getHttpStatus(), message.getContentType());
-                requestStateService.updateHasResult(message.getCompositeId(), true);
+                try {
+                    responseStorageService.saveResponse(
+                            message.getCompositeId(), message.getBody(),
+                            message.getHttpStatus(), message.getContentType());
+                    requestStateService.updateHasResult(message.getCompositeId(), true);
+                } catch (StorageWriteException e) {
+                    log.error("[ORACLE] RocksDB save failed for {} — /result will 404, continuing pipeline: {}",
+                            key, e.getMessage());
+                }
             }
 
             Timer.Sample saveSample = Timer.start(metrics.getRegistry());

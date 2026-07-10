@@ -11,6 +11,7 @@ import uz.greenwhite.gateway.model.enums.RequestStatus;
 import uz.greenwhite.gateway.model.kafka.ResponseMessage;
 import uz.greenwhite.gateway.state.RequestStateService;
 import uz.greenwhite.gateway.storage.ResponseStorageService;
+import uz.greenwhite.gateway.storage.StorageWriteException;
 
 @Slf4j
 @Service
@@ -47,10 +48,15 @@ public class ApiResponseConsumer {
 
         try {
             if (message.getBody() != null) {
-                responseStorageService.saveResponse(
-                        message.getCompositeId(), message.getBody(),
-                        message.getHttpStatus(), message.getContentType());
-                requestStateService.updateHasResult(message.getCompositeId(), true);
+                try {
+                    responseStorageService.saveResponse(
+                            message.getCompositeId(), message.getBody(),
+                            message.getHttpStatus(), message.getContentType());
+                    requestStateService.updateHasResult(message.getCompositeId(), true);
+                } catch (StorageWriteException e) {
+                    log.error("[API] RocksDB save failed for {} — /result will 404, continuing pipeline: {}",
+                            key, e.getMessage());
+                }
             }
 
             callbackService.sendCallbackIfNeeded(message);
