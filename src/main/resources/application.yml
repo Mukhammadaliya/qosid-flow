@@ -102,8 +102,8 @@ gateway:
   # --- Data Source (Oracle/Biruni) ---
   source:
     base-url: ${SOURCE_BASE_URL:http://localhost:8080/smartup24}
-    username: ${SOURCE_USERNAME:admin@head}
-    password: ${SOURCE_PASSWORD:greenwhite}
+    username: ${SOURCE_USERNAME:}
+    password: ${SOURCE_PASSWORD:}
     request-pull-uri: ${SOURCE_PULL_URI:/b/biruni/bmb/requests$pull}
     response-save-uri: ${SOURCE_SAVE_URI:/b/biruni/bmb/requests$save}
     oauth2-provider-uri: ${SOURCE_OAUTH2_PROVIDER_URI:/b/biruni/bmb/requests$get_oauth_provider_data}
@@ -213,9 +213,9 @@ gateway:
   # --- Telegram Notifications ---
   telegram:
     enabled: ${TELEGRAM_ENABLED:true}
-    bot-token: ${TELEGRAM_BOT_TOKEN:8318506270:AAGzEwBW46VE-_K_Z__Gcuh8MiPOvBdaVMM}
-    chat-id: ${TELEGRAM_CHAT_ID:-1002508752139}
-    message-thread-id: ${TELEGRAM_MESSAGE_THREAD_ID:3716}
+    bot-token: ${TELEGRAM_BOT_TOKEN:}
+    chat-id: ${TELEGRAM_CHAT_ID:0}
+    message-thread-id: ${TELEGRAM_MESSAGE_THREAD_ID:}
 
 # ============================================================
 # CIRCUIT BREAKER

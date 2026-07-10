@@ -21,17 +21,33 @@ public class TelegramNotificationService implements NotificationService {
 
     private final TelegramProperties properties;
     private final RestTemplate restTemplate;
+    private final boolean enabled;
     private static final String TELEGRAM_API = "https://api.telegram.org/bot%s/sendMessage";
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public TelegramNotificationService(TelegramProperties properties) {
         this.properties = properties;
-        this.restTemplate = new RestTemplate();
-        log.info("Telegram notification ENABLED: chatId={}", properties.getChatId());
+        this.enabled = properties.getBotToken() != null && !properties.getBotToken().isBlank();
+
+        var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(properties.getConnectTimeoutMs());
+        factory.setReadTimeout(properties.getReadTimeoutMs());
+        this.restTemplate = new RestTemplate(factory);
+
+        if (enabled) {
+            log.info("Telegram notification ENABLED: chatId={}", properties.getChatId());
+        } else {
+            log.warn("Telegram notification DISABLED: bot token is blank (set TELEGRAM_BOT_TOKEN)");
+        }
     }
 
     @Override
     public void sendDlqAlert(DlqMessage message) {
+        if (!enabled) {
+            log.warn("Telegram disabled — DLQ alert not sent: {}", message.getCompositeId());
+            return;
+        }
+
         try {
             String text = formatMessage(message);
             sendMessage(text);
@@ -44,7 +60,7 @@ public class TelegramNotificationService implements NotificationService {
 
     @Override
     public boolean isEnabled() {
-        return true;
+        return enabled;
     }
 
     private String formatMessage(DlqMessage msg) {
