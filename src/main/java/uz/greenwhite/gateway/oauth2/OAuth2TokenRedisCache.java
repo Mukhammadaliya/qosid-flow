@@ -29,6 +29,11 @@ public class OAuth2TokenRedisCache {
     private static final int WAIT_ITERATIONS = 30;
     private static final long WAIT_SLEEP_MS = 500;
 
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> COMPARE_AND_DELETE =
+            new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                    Long.class);
+
     public OAuth2TokenRedisCache(StringRedisTemplate redisTemplate,
                                  ObjectMapper objectMapper,
                                  @Qualifier("oauth2RefreshExecutor") ThreadPoolTaskExecutor refreshExecutor) {
@@ -58,7 +63,19 @@ public class OAuth2TokenRedisCache {
             return cached;
         }
 
-        if (!acquireLock(providerName)) {
+        String lockToken;
+        try {
+            lockToken = acquireLock(providerName);
+        } catch (Exception e) {
+            log.warn("Redis unavailable acquiring OAuth2 lock for {} — degrading: {}",
+                    providerName, e.getMessage());
+            if (cached != null) {
+                return cached;                                    // stale token beats total failure
+            }
+            return performRefresh(providerName, properties, client, null); // direct uncached mint
+        }
+
+        if (lockToken == null) {
             log.debug("Another instance is refreshing token: {}, waiting...", providerName);
             return waitForToken(providerName, cached);
         }
@@ -83,7 +100,7 @@ public class OAuth2TokenRedisCache {
             }
             throw new RuntimeException("Failed to get OAuth2 token for: " + providerName, e);
         } finally {
-            releaseLock(providerName);
+            releaseLock(providerName, lockToken);
         }
     }
 
@@ -116,7 +133,14 @@ public class OAuth2TokenRedisCache {
 
     private void doAsyncRefresh(String providerName, ProviderProperties properties,
                                 OAuth2Client client, Token cached) {
-        if (!acquireLock(providerName)) {
+        String lockToken;
+        try {
+            lockToken = acquireLock(providerName);
+        } catch (Exception e) {
+            log.debug("Async refresh skipped, Redis unavailable: {}", providerName);
+            return;
+        }
+        if (lockToken == null) {
             log.debug("Async refresh skipped, another instance already refreshing: {}", providerName);
             return;
         }
@@ -136,7 +160,7 @@ public class OAuth2TokenRedisCache {
             log.warn("Async OAuth2 token refresh failed for {}: {} (cached token still valid until expiry)",
                     providerName, e.getMessage());
         } finally {
-            releaseLock(providerName);
+            releaseLock(providerName, lockToken);
         }
     }
 
@@ -186,14 +210,22 @@ public class OAuth2TokenRedisCache {
 
     // ==================== DISTRIBUTED LOCK ====================
 
-    private boolean acquireLock(String providerName) {
+    /** @return owner token when acquired, null when someone else holds the lock */
+    private String acquireLock(String providerName) {
+        String token = java.util.UUID.randomUUID().toString();
         Boolean acquired = redisTemplate.opsForValue()
-                .setIfAbsent(LOCK_KEY_PREFIX + providerName, "locked", LOCK_TTL);
-        return Boolean.TRUE.equals(acquired);
+                .setIfAbsent(LOCK_KEY_PREFIX + providerName, token, LOCK_TTL);
+        return Boolean.TRUE.equals(acquired) ? token : null;
     }
 
-    private void releaseLock(String providerName) {
-        redisTemplate.delete(LOCK_KEY_PREFIX + providerName);
+    private void releaseLock(String providerName, String token) {
+        if (token == null) return;
+        try {
+            redisTemplate.execute(COMPARE_AND_DELETE,
+                    java.util.List.of(LOCK_KEY_PREFIX + providerName), token);
+        } catch (Exception e) {
+            log.warn("Redis error releasing OAuth2 lock {}: {} (TTL will reap it)", providerName, e.getMessage());
+        }
     }
 
     /**

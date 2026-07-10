@@ -3,6 +3,7 @@ package uz.greenwhite.gateway.state;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import uz.greenwhite.gateway.config.RedisProperties;
 import uz.greenwhite.gateway.model.RequestState;
@@ -19,11 +20,21 @@ import java.util.concurrent.TimeUnit;
 public class RequestStateService {
 
     private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate stringRedisTemplate;
     private final RedisProperties redisProperties;
 
     private static final String STATE_PREFIX = "request:state:";
     private static final String LOCK_PREFIX = "request:lock:";
     private static final String TOKEN_EVICTED_PREFIX = "request:token-evicted:";
+
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> COMPARE_AND_DELETE =
+            new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                    Long.class);
+
+    /** Lock tokens held by THIS instance; release is only valid for a token we own. */
+    private final java.util.concurrent.ConcurrentHashMap<String, String> ownedLockTokens =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     // ==================== STATE OPERATIONS ====================
 
@@ -158,15 +169,18 @@ public class RequestStateService {
     // ==================== LOCK OPERATIONS ====================
 
     /**
-     * Try to acquire lock (for idempotency)
+     * Try to acquire lock (for idempotency). The lock value is a random owner
+     * token so that release can be compare-and-delete — a lock that expired and
+     * was re-acquired by another instance will NOT be deleted by us.
      */
     public boolean tryLock(String compositeId) {
         String key = LOCK_PREFIX + compositeId;
-        Boolean acquired = redisTemplate.opsForValue()
-                .setIfAbsent(key, LocalDateTime.now().toString(),
-                        redisProperties.getLockTtlSeconds(), TimeUnit.SECONDS);
+        String token = java.util.UUID.randomUUID().toString();
+        Boolean acquired = stringRedisTemplate.opsForValue()
+                .setIfAbsent(key, token, redisProperties.getLockTtlSeconds(), TimeUnit.SECONDS);
 
         if (Boolean.TRUE.equals(acquired)) {
+            ownedLockTokens.put(compositeId, token);
             log.debug("Lock acquired: {}", compositeId);
             return true;
         }
@@ -175,12 +189,25 @@ public class RequestStateService {
     }
 
     /**
-     * Release lock
+     * Release lock — only if this instance still owns it (compare-and-delete).
      */
     public void releaseLock(String compositeId) {
+        String token = ownedLockTokens.remove(compositeId);
+        if (token == null) {
+            log.debug("Release skipped — lock not owned by this instance: {}", compositeId);
+            return;
+        }
         String key = LOCK_PREFIX + compositeId;
-        redisTemplate.delete(key);
-        log.debug("Lock released: {}", compositeId);
+        try {
+            Long deleted = stringRedisTemplate.execute(COMPARE_AND_DELETE, java.util.List.of(key), token);
+            if (deleted == null || deleted == 0) {
+                log.warn("Lock {} expired and was taken over before release — not deleted", compositeId);
+            } else {
+                log.debug("Lock released: {}", compositeId);
+            }
+        } catch (Exception e) {
+            log.warn("Redis error releasing lock {}: {} (TTL will reap it)", compositeId, e.getMessage());
+        }
     }
 
     /**
