@@ -69,19 +69,36 @@ public class BiruniOAuth2Client implements OAuth2Client {
         }
     }
 
-    private Token parseToken(String responseBody) {
+    Token parseToken(String responseBody) {
         try {
             JsonNode json = objectMapper.readTree(responseBody);
 
+            JsonNode accessToken = json.get("access_token");
+            JsonNode expiresIn = json.get("expires_in");
+            if (accessToken == null || accessToken.isNull() || expiresIn == null || expiresIn.isNull()) {
+                throw new IllegalStateException(
+                        "OAuth2 response missing access_token/expires_in. Keys present: "
+                                + String.join(",", iteratorToList(json.fieldNames())));
+            }
+
+            String tokenType = json.hasNonNull("token_type") ? json.get("token_type").asText() : "Bearer";
+            String refreshToken = json.hasNonNull("refresh_token") ? json.get("refresh_token").asText() : null;
+
             return new Token(
-                    json.get("access_token").asText(),
-                    json.get("expires_in").asLong() * 1000,
-                    json.get("token_type").asText(),
-                    json.get("refresh_token").asText()
+                    accessToken.asText(),
+                    expiresIn.asLong() * 1000,
+                    tokenType,
+                    refreshToken
             );
         } catch (Exception e) {
             log.error("Failed to parse OAuth2 token response: {}", e.getMessage());
-            throw new RuntimeException("Failed to parse OAuth2 token", e);
+            throw new RuntimeException("Failed to parse OAuth2 token: " + e.getMessage(), e);
         }
+    }
+
+    private static java.util.List<String> iteratorToList(java.util.Iterator<String> it) {
+        java.util.List<String> list = new java.util.ArrayList<>();
+        it.forEachRemaining(list::add);
+        return list;
     }
 }
