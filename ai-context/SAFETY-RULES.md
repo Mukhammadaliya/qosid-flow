@@ -102,6 +102,36 @@ CB-blocked responses (HTTP 503 from `HttpRequestService.buildCircuitBreakerRespo
 
 The 401-retry-with-fresh-token path in `OracleRequestConsumer.handleFailedResponse` and `ApiRequestConsumer.handleFailedResponse` evicts the cached OAuth2 token and re-queues the message **without incrementing `attemptCount`** — same back-pressure-style pattern as CB-blocked re-queue (Rule 23). The `markTokenEvicted` flag is the loop guard: on the second 401 for the same `compositeId`, `isTokenEvicted` returns true, the eviction branch is skipped, and the request falls through to the standard retry/permanent-failure path. Removing the flag write turns this into an infinite evict→re-mint→401→evict loop that hammers the OAuth endpoint forever (and the `processRequest` `max-message-age-ms` safety net is the only thing that would eventually stop it, ~5 min later, after the OAuth endpoint has been pounded). The flag's TTL matches request state TTL (default 72h) so it dies with the request lifecycle. `isTokenEvicted` returns `true` on Redis failure (fail-closed) — a Redis outage degrades to existing pre-v1.1.0 behavior (immediate DLQ on 401), never to a runaway loop.
 
+### 25. Never ack a request message when the Redis idempotency gate itself fails
+
+`OracleRequestConsumer`/`ApiRequestConsumer` wrap `isCompleted`+`tryLock` in a dedicated
+try/catch that calls `ack.nack(Duration.ofSeconds(5))` and returns. Acking on a Redis
+outage silently drops the message (pre-A-faza bug). Do not "simplify" this into the
+generic catch below it — that one acks.
+
+### 26. Never swallow RocksDB write failures
+
+`RocksDBClient.putResponse`/`putResponseMetadata` throw `StorageWriteException` on failure
+and `ResponseStorageService.saveResponse` propagates it. Response consumers catch it and
+keep `hasResult=false`. Swallowing the exception re-creates phantom COMPLETED states whose
+`/result` returns 404.
+
+### 27. Never release a Redis lock without ownership check
+
+Both `RequestStateService.releaseLock` and `OAuth2TokenRedisCache.releaseLock` use a
+compare-and-delete Lua script against the owner token issued at acquire time. A blind
+`DEL` deletes another instance's lock after TTL takeover → concurrent processing.
+
+### 28. Never forward X-Callback-Url without CallbackUrlValidator
+
+`ProxyController` validates the callback URL at accept time: http/https only, public
+addresses only, optional `gateway.security.callback-allowed-hosts` allowlist. Removing the
+check reopens SSRF (internal endpoints, cloud metadata) via a client-controlled header.
+`CallbackSender` re-validates at send time (its `callbackUrlValidator.validate(url)` call
+is the first line of `sendCallback`, before the retryable HTTP POST) to narrow the
+DNS-rebinding window between accept and delivery — removing either check reopens SSRF via
+that gap.
+
 ---
 
 ## Protected Zones

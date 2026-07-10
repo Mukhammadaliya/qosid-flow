@@ -229,6 +229,8 @@ ResponseSaveRequest (Oracle save payload)
   2. `tryLock(key)` — Redis `SET NX` with TTL. If fails, another instance is processing it
 - **Safety Net:** If Redis unavailable, `getAttemptCount()` returns `Integer.MAX_VALUE` to prevent infinite retries
 - **Managed by:** `RequestStateService.java`
+- **Gate failure (A-faza):** If Redis itself fails during `isCompleted`/`tryLock`, the consumer nacks (5s) instead of acking — the message is redelivered, never dropped.
+- **Lock ownership (A-faza):** lock values are per-acquire owner tokens; release is compare-and-delete.
 
 ### Dynamic Concurrency Scaling
 

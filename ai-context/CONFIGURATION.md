@@ -8,13 +8,13 @@ Complete reference for all configuration parameters. Every property has a defaul
 
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
-| `gateway.source.base-url` | String | `https://app3.greenwhite.uz/x24` | `SOURCE_BASE_URL` | Biruni API base URL |
-| `gateway.source.username` | String | `admin@head` | `SOURCE_USERNAME` | Basic Auth username |
-| `gateway.source.password` | String | `greenwhite` | `SOURCE_PASSWORD` | Basic Auth password |
+| `gateway.source.base-url` | String | `http://localhost:8080/smartup24` | `SOURCE_BASE_URL` | Biruni API base URL |
+| `gateway.source.username` | String | `` (empty, mandatory env var) | `SOURCE_USERNAME` | Basic Auth username |
+| `gateway.source.password` | String | `` (empty, mandatory env var) | `SOURCE_PASSWORD` | Basic Auth password |
 | `gateway.source.request-pull-uri` | String | `/b/biruni/bmb/requests$pull` | `SOURCE_PULL_URI` | URI for pulling requests |
 | `gateway.source.response-save-uri` | String | `/b/biruni/bmb/requests$save` | `SOURCE_SAVE_URI` | URI for saving responses |
 | `gateway.source.oauth2-provider-uri` | String | `/b/biruni/bmb/requests$get_oauth_provider_data` | `SOURCE_OAUTH2_PROVIDER_URI` | URI for OAuth2 provider config |
-| `gateway.source.connection-timeout` | int | `60` | — | Connection timeout in seconds |
+| `gateway.source.connection-timeout` | int | `60` | `SOURCE_TIMEOUT` | Connection timeout in seconds |
 
 ## gateway.kafka.* — Kafka Settings
 
@@ -105,8 +105,8 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
 | `gateway.telegram.enabled` | boolean | `true` | `TELEGRAM_ENABLED` | Enable Telegram DLQ alerts |
-| `gateway.telegram.bot-token` | String | — | `TELEGRAM_BOT_TOKEN` | Telegram Bot API token |
-| `gateway.telegram.chat-id` | Long | — | `TELEGRAM_CHAT_ID` | Target chat ID |
+| `gateway.telegram.bot-token` | String | `` (empty, mandatory env var) | `TELEGRAM_BOT_TOKEN` | Telegram Bot API token. A blank token disables the service with a WARN log (`Telegram notification DISABLED: bot token is blank`) instead of failing startup. |
+| `gateway.telegram.chat-id` | Long | `0` | `TELEGRAM_CHAT_ID` | Target chat ID |
 | `gateway.telegram.message-thread-id` | Integer | `null` | `TELEGRAM_MESSAGE_THREAD_ID` | Optional topic thread ID |
 | `gateway.telegram.connect-timeout-ms` | int | `5000` | — | Telegram API connect timeout |
 | `gateway.telegram.read-timeout-ms` | int | `5000` | — | Telegram API read timeout |
@@ -150,10 +150,11 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 
 ## gateway.proxy.* — REST Proxy Layout
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `gateway.proxy.prefix` | String | `/qosid/api/v1/queue` | URI prefix stripped when forwarding the proxied request. |
-| `gateway.proxy.context-path` | String | `/qosid` | Application context path (informational). |
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `gateway.proxy.prefix` | String | `/qosid/api/v1/queue` | — | URI prefix stripped when forwarding the proxied request. |
+| `gateway.proxy.context-path` | String | `/qosid` | — | Application context path (informational). |
+| `gateway.proxy.trusted-proxies` | List<String> | `127.0.0.1` | `TRUSTED_PROXIES` | Peers whose X-Forwarded-For/X-Real-IP are trusted. |
 
 ## gateway.response.* — Response Inlining
 
@@ -185,11 +186,12 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 | `gateway.s3.permanent-bucket` | String | — | `S3_PERMANENT_BUCKET` | Permanent-upload bucket (default target when `FileData.bucket` is null). |
 | `gateway.s3.link-expiration-hours` | int | `24` | `S3_LINK_EXPIRY` | Presigned GET URL lifetime (hours). |
 
-## gateway.security.* — Content-Type Allowlist
+## gateway.security.* — Content-Type Allowlist & Callback SSRF Guard
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `gateway.security.content-types` | List\<String\> | JSON/text/image/audio/video MIME list (see `application.yml`) | Whitelist enforced by `ContentTypeValidator`. Requests / uploads with other types are rejected with 400. |
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `gateway.security.content-types` | List\<String\> | JSON/text/image/audio/video MIME list (see `application.yml`) | — | Whitelist enforced by `ContentTypeValidator`. Requests / uploads with other types are rejected with 400. |
+| `gateway.security.callback-allowed-hosts` | List<String> | `[]` (empty) | `CALLBACK_ALLOWED_HOSTS` | X-Callback-Url host allowlist; empty = any public host. Private/loopback always blocked. |
 
 ## Server & Management
 
@@ -219,3 +221,10 @@ These **must** be set in production (no safe defaults):
 | `SOURCE_PASSWORD` | Production Biruni credentials |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot for DLQ alerts |
 | `TELEGRAM_CHAT_ID` | Telegram chat for DLQ alerts |
+
+Optional but recommended in production:
+
+| Env Var | Purpose |
+|---------|---------|
+| `CALLBACK_ALLOWED_HOSTS` | Restrict X-Callback-Url to an explicit host allowlist; empty = any public host accepted (SSRF guard still blocks private/loopback/CGNAT ranges regardless). |
+| `TRUSTED_PROXIES` | Peers whose X-Forwarded-For/X-Real-IP are trusted for client-IP extraction. Defaults to `127.0.0.1` — **must be set to the real nginx peer address in prod**, otherwise the trusted-proxy check silently never matches the actual reverse-proxy hop and forwarded-for headers are ignored. |
