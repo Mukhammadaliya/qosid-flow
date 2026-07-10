@@ -146,6 +146,16 @@ AI API kaliti sozlamalarda; o'chirilgan bo'lsa modul ko'rinmaydi.
 | DLQ replay noto'g'ri ishlatilishi | Tasdiq dialogi, replay ham audit'ga yoziladi |
 | Loki disk sarfi | Retention limit (masalan 14 kun), compose'da volume chegarasi |
 
+## 7a. Kelajak g'oyasi (2026-07-10 kechqurun, hali brainstorm qilinmagan)
+
+**OAuth2 plugin-JAR mexanizmi (user taklifi):** OAuth2 oqimi har bir Main app'da har xil bo'lgani uchun (masalan, bizda `BiruniOAuth2Client`), foydalanuvchi o'z OAuth2 implementatsiyasini **JAR fayl sifatida UI orqali yuklaydi**; tizim JAR ichidan token oluvchi klass/metodlarni ko'rsatadi (yoki biz metod nomlarini interfeys-kontrakt sifatida belgilaymiz — `OAuth2Client` SPI shunga tayyor); gateway shu JAR orqali token oladi/yangilaydi va Main app'ga murojaat qiladi. Loyihani ishga tushirish ham UI orqali bo'lishi kerak degan istak bor.
+
+Brainstormda hal qilinishi kerak bo'lgan savollar:
+- Xavfsizlik: JAR yuklash = ixtiyoriy kod ijrosi. Imzolash? Sandbox/alohida classloader? Faqat admin yuklaydimi?
+- Yuklangan JAR lifecycle: hot-load (URLClassLoader) vs restart talab qilish; versiyalash, o'chirish.
+- Kontrakt: mavjud `OAuth2Client` interfeysi (getName/getAccessToken/refreshAccessToken) plugin-kontrakt bo'ladimi.
+- "Loyihani UI orqali run qilish" aniqlashtirilishi kerak — UI gateway ichida bo'lsa, o'zini o'zi restart qila olmaydi (tashqi supervisor kerak).
+
 ## 7. Ko'lamdan tashqarida (out of scope)
 
 - Plugin/SPI qatlami (kelajakka qoldirildi — user qarori).
