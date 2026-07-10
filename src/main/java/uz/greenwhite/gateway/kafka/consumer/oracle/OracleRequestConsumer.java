@@ -190,7 +190,7 @@ public class OracleRequestConsumer {
                     .companyId(response.getCompanyId())
                     .requestId(response.getRequestId())
                     .originalTopic(kafkaProperties.getTopics().getOracleResponse())
-                    .failureReason("Response too large for Kafka: " + e.getMessage())
+                    .failureReason("Failed to publish response to Kafka: " + e.getMessage())
                     .errorSource("KAFKA")
                     .httpStatus(response.getHttpStatus())
                     .attemptCount(1)

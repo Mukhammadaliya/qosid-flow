@@ -116,6 +116,12 @@ public class TelegramNotificationService implements NotificationService {
             return reason.replace("Validation failed:", "Ошибка валидации:");
         }
 
+        // Kafka publish failed (broker down, timeout, or message too large)
+        if (reason.startsWith("Failed to publish response to Kafka:")) {
+            return reason.replace("Failed to publish response to Kafka:",
+                    "Не удалось опубликовать ответ в Kafka:");
+        }
+
         // Response too large for Kafka
         if (reason.startsWith("Response too large for Kafka:")) {
             return reason.replace("Response too large for Kafka:", "Ответ слишком большой для Kafka:");

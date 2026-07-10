@@ -29,7 +29,10 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
     public BiruniClient(GatewayProperties properties) {
         this.properties = properties;
 
-        var factory = new JdkClientHttpRequestFactory();
+        var httpClient = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(properties.getConnectionTimeout()))
+                .build();
+        var factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(Duration.ofSeconds(properties.getConnectionTimeout()));
 
         this.restClient = RestClient.builder()
