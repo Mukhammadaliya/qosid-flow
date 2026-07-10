@@ -101,6 +101,13 @@ public class HttpRequestService {
     public Mono<ResponseMessage> sendRequest(RequestMessage request) {
         String compositeId = request.getCompositeId();
 
+        // 0. Validate method BEFORE anything throws synchronously — a sync throw
+        //    escapes the Mono and the consumer would ack without DLQ (silent loss).
+        if (request.getMethod() == null || request.getMethod().isBlank()) {
+            log.error("Invalid HTTP method (null/blank) for {} — permanent failure", compositeId);
+            return Mono.just(buildSystemErrorResponse(request, "HTTP method is missing on the request"));
+        }
+
         // 1. Resolve OAuth2 token BEFORE Circuit Breaker
         //    Token failure is an internal issue, not external API failure — CB should not track it
         Map<String, String> headers;
@@ -126,7 +133,7 @@ public class HttpRequestService {
         // 4. Send HTTP request — CB tracks only real HTTP outcomes
         long startTime = System.nanoTime();
         String fullUrl = buildFullUrl(request);
-        HttpMethod method = HttpMethod.valueOf(request.getMethod().toUpperCase());
+        HttpMethod method = HttpMethod.valueOf(request.getMethod().toUpperCase(Locale.ROOT));
 
         log.info("Sending HTTP request [CB: {}]: {} {} -> {}", cbName, method, fullUrl, compositeId);
 
@@ -322,6 +329,23 @@ public class HttpRequestService {
                 .httpStatus(401)
                 .errorMessage("OAuth2 authentication failed: " + errorMessage)
                 .errorSource("OAUTH2")
+                .processedAt(LocalDateTime.now())
+                .callbackUrl(request.getCallbackUrl())
+                .source(request.getSource())
+                .build();
+    }
+
+    /**
+     * Build response for internal/system failures detected before the HTTP call (status 0).
+     * errorSource=SYSTEM + non-retryable status routes this to permanent failure + DLQ.
+     */
+    private ResponseMessage buildSystemErrorResponse(RequestMessage request, String errorMessage) {
+        return ResponseMessage.builder()
+                .companyId(request.getCompanyId())
+                .requestId(request.getRequestId())
+                .httpStatus(0)
+                .errorMessage(errorMessage)
+                .errorSource("SYSTEM")
                 .processedAt(LocalDateTime.now())
                 .callbackUrl(request.getCallbackUrl())
                 .source(request.getSource())
