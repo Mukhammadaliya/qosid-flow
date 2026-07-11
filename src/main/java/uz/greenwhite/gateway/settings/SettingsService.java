@@ -49,9 +49,7 @@ public class SettingsService {
             log.warn("getSecret({}) but cipher disabled — returning default", key);
             return defaultValue;
         }
-        String decrypted = cipher.decrypt(r.getValue());
-        // If decrypt returns null (value was plaintext from set()), return as-is
-        return decrypted != null ? decrypted : r.getValue();
+        return cipher.decrypt(r.getValue());
     }
 
     public void set(String key, String value, boolean secret, String changedBy) {
@@ -67,9 +65,8 @@ public class SettingsService {
         String oldForAudit = prev == null ? null : (prev.isSecret() ? MASK : prev.getValue());
         String newForAudit = secret ? MASK : value;
         repository.insertAudit(key, oldForAudit, newForAudit, changedBy);
-        // Store plaintext in cache (only encrypted form comes from database via reload)
         cache.put(key, SettingsRecord.builder()
-                .key(key).value(value).secret(secret).updatedBy(changedBy).build());
+                .key(key).value(stored).secret(secret).updatedBy(changedBy).build());
     }
 
     public List<SettingsRecord> getAllMasked() {

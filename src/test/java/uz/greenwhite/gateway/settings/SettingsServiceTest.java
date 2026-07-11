@@ -55,7 +55,9 @@ class SettingsServiceTest {
         verify(cipher).encrypt("plain");
         verify(repo).upsert("pw", "ENC", true, "admin");
         verify(repo).insertAudit(eq("pw"), any(), eq("***"), eq("admin")); // secret masked in audit
-        assertEquals("plain", s.getSecret("pw", "x")); // cache updated with plaintext-readable path
+        // Cache holds ciphertext "ENC"; getSecret decrypts it back to "plain"
+        when(cipher.decrypt("ENC")).thenReturn("plain");
+        assertEquals("plain", s.getSecret("pw", "x"));
     }
 
     @Test
