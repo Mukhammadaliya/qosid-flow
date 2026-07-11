@@ -12,7 +12,7 @@ Read these files for full project understanding:
 - `ai-context/SAFETY-RULES.md` — **READ FIRST before modifying core pipeline code.** NEVER DO list, protected zones, checklists
 - `ai-context/EXTENSION-GUIDE.md` — Step-by-step recipes: add consumer, OAuth2 provider, API integration, metric, config, notification
 - `ai-context/CONFIGURATION.md` — All config parameters with types, defaults, env vars
-- `ai-context/DOMAIN-GLOSSARY.md` — Key terms: Biruni, CompanyId, DLQ, CB, Pipeline Stage, etc.
+- `ai-context/DOMAIN-GLOSSARY.md` — Key terms: Biruni, TenantId, DLQ, CB, Pipeline Stage, etc.
 
 ## Critical Safety Rules (Top 5)
 
@@ -61,6 +61,7 @@ Full safety rules: `ai-context/SAFETY-RULES.md`
 | GET             | `/qosid/api/v1/requests/{id}/status`             | Status + inline result (when small & JSON/text) or `resultUrl` pointer.                  |
 | GET             | `/qosid/api/v1/requests/{id}/result`             | Full response body from RocksDB, original `Content-Type` + HTTP status.                  |
 | POST            | `/qosid/api/v1/callback`                         | Inbound callback receiver (currently logs + 200).                                        |
+| POST            | `/qosid/admin/api/tenant-mapping/test`           | Admin diagnostics (session auth): paste a sample Biruni pull JSON, see the tenantId/extraTenantId the current `gateway.tenant.*` field-name config would extract. |
 | GET/POST/PUT     | `/qosid/admin/api/**`                           | Admin control-plane (B1): session auth (login/health are the only permitAll routes), CSRF-protected, isolated `SecurityFilterChain` — settings CRUD, audit log, admin login/logout. Default account `admin`/`admin` on first boot; one-shot reset via `ADMIN_RESET`/`ADMIN_PASSWORD_RESET`. See `ai-context/ARCHITECTURE.md` → Admin Control-Plane API. |
 
 Pluggable auth: implement `AuthorizationProvider` — the default `NoOpAuthorizationProvider` steps aside. See `ai-context/EXTENSION-GUIDE.md` Recipe 0.
@@ -93,3 +94,5 @@ HTTP (/qosid/api/v1/queue/**) ┤→ [Kafka] → [Consumer + Redis Lock] → [HT
 Status / result reads: `GET /qosid/api/v1/requests/{id}/{status,result}` read from Redis + RocksDB. Inline threshold `gateway.response.threshold-size` (default 1024 bytes).
 
 **B1 (Settings control-plane, v1.4.0):** a parallel, session-authenticated admin surface (`/qosid/admin/api/**`) backed by an embedded H2 DB — runtime settings (cache + AES-encrypted secrets + yaml→DB migration) and a single admin account. Isolated via its own `SecurityFilterChain` (SAFETY rule 29); the E1-E5 pipeline above is untouched.
+
+**C-faza (Tenant boundary translation, v1.5.0):** internal model renamed `companyId`/`filialId` → `tenantId`/`extraTenantId` (composite ID format unchanged, no migration). `TenantMappingService` translates at exactly two boundaries — Biruni pull ingress (`toInternal`) and Biruni save + OAuth2 fetch egress (`toExternal`) — using configurable wire field names (`gateway.tenant.field-name`/`extra-field-name`, defaults `company_id`/`filial_id`, dynamic per call). REST-sourced tenant resolves from the auth principal first, `gateway.tenant.default-rest-tenant` as fallback. See `ai-context/ARCHITECTURE.md` → Tenant boundary translation, and SAFETY rule 30.

@@ -188,15 +188,33 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 
 ## gateway.tenant.* — Tenant Field Mapping
 
-**Properties class:** `gateway.tenant.*` are forward-declared for C-faza; no pipeline class reads them yet (see `gateway.tenant.*` in `application.yml`).
+**Read by:** `TenantMappingService` (`tenant/TenantMappingService.java`) — reads `field-name`/`extra-field-name` from `SettingsService` on every call (dynamic, no restart needed). Also read by `ProxyController` (`default-rest-tenant`, `trust-extra-tenant-header`).
 
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
-| `gateway.tenant.field-name` | String | `company_id` | `TENANT_FIELD` | JSON field name read as the primary tenant/company identifier for REST (`/qosid/api/v1/queue/**`) requests. |
-| `gateway.tenant.extra-field-name` | String | `filial_id` | `EXTRA_TENANT_FIELD` | Secondary tenant field (e.g. branch/filial) read alongside the primary one. |
-| `gateway.tenant.default-rest-tenant` | String | `0` | `DEFAULT_REST_TENANT` | Fallback tenant id used for REST-sourced requests when the field is absent from the payload. |
+| `gateway.tenant.field-name` | String | `company_id` | `TENANT_FIELD` | Wire JSON field name for the primary tenant identifier. Used both at the Biruni pull ingress (`TenantMappingService.toInternal` reads this field into `tenantId`) and at the Biruni save / OAuth2 provider-fetch egress (`toExternal` writes `tenantId` back out under this key). **Must be non-blank** — `PUT /qosid/admin/api/settings/gateway.tenant.field-name` with a blank/whitespace value returns `400` (`SettingsController` validates before `SettingsService.set`). Changing it takes effect on the **next** Biruni pull/save/fetch (dynamic, no restart). |
+| `gateway.tenant.extra-field-name` | String | `filial_id` | `EXTRA_TENANT_FIELD` | Wire JSON field name for the secondary tenant identifier (e.g. branch/filial), read alongside the primary one at ingress. May be blank to disable extra-tenant extraction (`extraTenantId` stays `null`). Not used at egress — `toExternal` only ever emits the primary tenant field. |
+| `gateway.tenant.default-rest-tenant` | String | `0` | `DEFAULT_REST_TENANT` | Fallback tenant id for REST-sourced (`/qosid/api/v1/queue/**`) requests, used **only** when the authenticated principal (`AuthResult.getTenantId()`) supplies none — e.g. the default `NoOpAuthorizationProvider`, which never resolves a tenant. Principal-first: a real `AuthorizationProvider` that does resolve a tenant always wins over this default. Must parse as a `Long` — `PUT .../gateway.tenant.default-rest-tenant` with a non-numeric value returns `400`. |
+| `gateway.tenant.trust-extra-tenant-header` | boolean | `false` | — | Opt-in: when `true`, `ProxyController` honors the client-supplied `X-Extra-Tenant-Id` request header as `extraTenantId` for REST-sourced requests, but only as a fallback when the auth principal itself supplies none. **Tradeoff:** since this header is entirely client-controlled, enabling it lets any caller impersonate an arbitrary `extraTenantId` (branch/filial) — only turn it on for deployments where the REST auth layer doesn't already resolve a real `extraTenantId` and the impersonation risk is acceptable. Not present in `application.yml` and not migrated to the settings DB by `SettingsMigrationRunner` — set it explicitly via `PUT /qosid/admin/api/settings/gateway.tenant.trust-extra-tenant-header` if needed; `SettingsService.get(...)` falls back to the `false` code default until then. |
 
-Migrated into the settings DB on first boot (see `gateway.settings.*` below). Stored in the settings DB for B2+ consumers. The E1-E5 pipeline still reads these values from yaml until each component is wired to SettingsService (a later sub-phase); changing them via the admin API does not yet affect pipeline behavior.
+`field-name`, `extra-field-name`, and `default-rest-tenant` are migrated into the settings DB on first boot (see `gateway.settings.*` below) and are read dynamically by `TenantMappingService`/`ProxyController` — changing them via the admin API takes effect immediately, unlike most other B1-migrated keys which the E1-E5 pipeline still reads from yaml.
+
+### `POST /qosid/admin/api/tenant-mapping/test` — Tenant Mapping Diagnostics
+
+**Controller:** `TenantMappingController`. Session-authenticated (admin control-plane). Lets an operator paste a sample Biruni pull element and see what the *current* field-name configuration would extract, without a live pull.
+
+Request body: any JSON object (the sample payload), e.g. `{"company_id":100,"filial_id":5}`.
+
+Response `200`:
+```json
+{"tenantId":100,"extraTenantId":5,"tenantField":"company_id","extraField":"filial_id"}
+```
+
+`tenantId`/`extraTenantId` are `null` when the configured field is absent from the sample or not a number. Uses `TenantMappingService.extract()` — the same logic as the live Biruni-pull ingress path, so this endpoint reflects real behavior, not a separate implementation.
+
+### `X-Extra-Tenant-Id` header (REST proxy)
+
+Optional request header on `/qosid/api/v1/queue/**`. Only consulted when both (a) the auth principal did not resolve an `extraTenantId`, and (b) `gateway.tenant.trust-extra-tenant-header` is `true`. Otherwise ignored. See the tradeoff note above.
 
 ## gateway.settings.* — Control-Plane (B1)
 

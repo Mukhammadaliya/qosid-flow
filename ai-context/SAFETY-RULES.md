@@ -136,6 +136,16 @@ that gap.
 
 `AdminSecurityConfig` defines TWO chains: `adminSecurityChain` (order 1, `/qosid/admin/api/**`, session-required, SPA-compatible CSRF on) and `apiSecurityChain` (order 2, everything else, permitAll, CSRF disabled). Collapsing them into one, removing the `securityMatcher`, or re-enabling CSRF on the api chain, locks or breaks `/qosid/api/**` — the pipeline stops accepting requests (a re-enabled CSRF filter alone breaks every `POST /qosid/api/v1/queue/**`). Actuator runs on the separate management port (8091) with its own context, so it is not governed by this main-context chain. `SecurityIsolationTest` guards the pipeline GET **and** POST openness; keep it green.
 
+### 30. Never bypass TenantMappingService at the Biruni boundary
+
+Biruni pull ingress (`BiruniClient.pullRequests`) MUST route each element through
+`TenantMappingService.toInternal`, and Biruni save + OAuth fetch egress MUST build
+their tenant key via `toExternal`. The internal model uses `tenantId`/`extraTenantId`
+with NO `@JsonProperty("company_id")` binding — deserializing a Biruni pull directly
+into `RequestMessage` again would leave `tenantId` null (all requests → DLQ). The
+default field names are `company_id`/`filial_id` so bmb is unaffected; hardcoding the
+key instead of reading the setting breaks any deployment that reconfigures it.
+
 ---
 
 ## Protected Zones
@@ -160,6 +170,7 @@ These files contain production-critical logic. Before modifying any of them, run
 | `HttpClientConfig.java` | Netty `HttpClient` setup — pool, timeouts, **no `.compress(true)`** (see Rule 17) | Re-enabling Netty compression reintroduces Cloudflare gzip decode artifacts |
 | `GlobalExceptionHandler.java` | `@RestControllerAdvice` mapping of auth / validation / upload / not-found / generic exceptions to uniform `ErrorResponse` | Unmapped routes leak 500, validation errors become opaque stack traces to clients |
 | `AdminSecurityConfig.java` | Two isolated `SecurityFilterChain` beans (admin session-gated, pipeline permitAll) with explicit `@Order` + `securityMatcher` | Merging chains or dropping `securityMatcher` locks the pipeline/actuator behind admin auth (see Rule 29) |
+| `TenantMappingService.java` | Biruni-boundary `toInternal`/`toExternal` field-name translation (dynamic, per-call from `SettingsService`) | Bypassing it at ingress leaves `tenantId` null (all requests → DLQ); bypassing at egress or hardcoding the field name breaks any deployment with reconfigured field names (see Rule 30) |
 
 ## Required Checklist
 

@@ -246,10 +246,14 @@ For Kafka messages, use `@JsonProperty` for snake_case JSON mapping:
 @NoArgsConstructor
 @AllArgsConstructor
 public class MyMessage {
-    @JsonProperty("company_id")
-    private Long companyId;
+    @JsonProperty("device_id")
+    private Long deviceId;
 }
 ```
+Exception: `RequestMessage.tenantId`/`extraTenantId` intentionally have NO `@JsonProperty`
+binding to a wire name — the Biruni wire field (default `company_id`/`filial_id`,
+configurable) is translated at the boundary by `TenantMappingService`, not by Jackson
+annotations on the internal model. See `ai-context/SAFETY-RULES.md` rule 30.
 
 ## Anti-Patterns (Never Do)
 

@@ -101,7 +101,7 @@ The pipeline has **two entry points** that both feed `gateway.request.new`:
 | **Condition** | `@ConditionalOnProperty(name = "gateway.polling.enabled", havingValue = "true")` |
 | **Input** | HTTP GET to Biruni API (`/b/biruni/bmb/requests$pull`) |
 | **Output** | List of `RequestMessage` objects |
-| **Validation** | `RequestValidator.validate()` — checks companyId, requestId, baseUrl, method |
+| **Validation** | `RequestValidator.validate()` — checks tenantId, requestId, baseUrl, method |
 | **On Failure** | Logs error, increments `oraclePullError` metric |
 | **Flow** | Pull -> Validate each -> Send valid ones to E2 -> DLQ invalid ones |
 
@@ -111,7 +111,7 @@ The pipeline has **two entry points** that both feed `gateway.request.new`:
 |--------|--------|
 | **Input** | `RequestMessage` from E1 or E0 |
 | **Output** | Oracle → `gateway.oracle.request`, API → `gateway.api.request` |
-| **Key** | `compositeId` (companyId:requestId) for partition affinity |
+| **Key** | `compositeId` (tenantId:requestId) for partition affinity |
 | **Methods** | `sendOracleRequest()`, `sendApiRequest()`, `sendOracleResponse()`, `sendApiResponse()`, `sendToOracleDlq()`, `sendToApiDlq()` |
 | **On Failure** | After retries exhausted, sends to source-specific DLQ |
 
@@ -198,14 +198,55 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 
 First-boot default account: `admin` / `admin` (logged as WARN). One-shot reset via `ADMIN_RESET=true` or `ADMIN_PASSWORD_RESET=<value>` — see `ai-context/CONFIGURATION.md` → Admin Account & Reset.
 
+## Tenant boundary translation (C-faza)
+
+The internal core (Kafka messages, Redis keys, RocksDB, composite IDs) speaks only
+`tenantId`/`extraTenantId` — plain `Long` fields on `RequestMessage`/`ResponseMessage`
+with **no** `@JsonProperty("company_id")` binding. The main app's wire shape
+(field names configurable, default `company_id`/`filial_id`) is translated at exactly
+two boundary points by `TenantMappingService` (`tenant/TenantMappingService.java`):
+
+- **Ingress** — `BiruniClient.pullRequests()` maps every raw Biruni pull element through
+  `TenantMappingService.toInternal(JsonNode)`, which builds the `RequestMessage` (via a
+  lenient, unknown-properties-tolerant `ObjectMapper` copy) and separately extracts
+  `tenantId`/`extraTenantId` using the *configured* field names read from
+  `SettingsService` (`gateway.tenant.field-name` / `gateway.tenant.extra-field-name`).
+- **Egress** — `TenantMappingService.toExternal(Long tenantId)` builds a
+  `{configuredField: tenantId}` map, used by both `BiruniClient.saveResponse()` (Biruni
+  save) and `OAuth2ProviderFetcher.fetchFromOracle()` (OAuth2 provider-config fetch).
+
+Both directions read the field names **dynamically per call** from `SettingsService` —
+changing `gateway.tenant.field-name` via the admin API takes effect on the very next
+Biruni pull / save / OAuth2 fetch, no restart needed. Defaults (`company_id`/`filial_id`)
+reproduce the pre-C-faza wire shape exactly, so bmb (the main app) is unaffected unless
+someone reconfigures the field names.
+
+**REST-sourced tenant:** `ProxyController` resolves `tenantId` from the authenticated
+principal (`AuthResult.getTenantId()`) first, falling back to the
+`gateway.tenant.default-rest-tenant` setting only when the provider supplies none (e.g.
+the default `NoOpAuthorizationProvider`). `extraTenantId` similarly prefers
+`AuthResult.getExtraTenantId()`; only when the principal supplies none AND
+`gateway.tenant.trust-extra-tenant-header` is explicitly enabled does it fall back to the
+client-supplied `X-Extra-Tenant-Id` header (see `CONFIGURATION.md` for the
+impersonation tradeoff this opt-in accepts).
+
+**Composite ID unchanged:** `RequestMessage.getCompositeId()` still returns
+`tenantId + ":" + requestId` — same string shape as the old `companyId:requestId`, so
+Redis keys, Kafka message keys, and `/qosid/api/v1/requests/{id}/*` polling URLs need
+**no migration**.
+
+See SAFETY-RULES.md rule 30 for what breaks if this translation is bypassed.
+
 ## Data Flow
 
 ```
-Oracle/Biruni Response (JSON)
+Oracle/Biruni Response (JSON, wire field e.g. company_id/filial_id)
+    |
+    v  [TenantMappingService.toInternal — ingress boundary translation]
     |
     v
 RequestMessage (Kafka message model)
-  - companyId, requestId, baseUrl, uri, params, method, headers, body, oauth2Provider
+  - tenantId, extraTenantId, requestId, baseUrl, uri, params, method, headers, body, oauth2Provider
     |
     v  [E2: Sent to gateway.request.new topic, key = compositeId]
     |
@@ -215,15 +256,17 @@ RequestMessage (Kafka message model)
     |
     v
 ResponseMessage (Kafka message model)
-  - companyId, requestId, httpStatus, contentType, body, errorMessage, errorSource
+  - tenantId, requestId, httpStatus, contentType, body, errorMessage, errorSource
     |
     v  [Sent to gateway.request.response topic, key = compositeId]
     |
     v  [E5: Consumed, saved to Oracle]
     |
+    v  [TenantMappingService.toExternal — egress boundary translation]
+    |
     v
 ResponseSaveRequest (Oracle save payload)
-  - company_id, request_id, response {status, content_type, body}, error_message
+  - {configured tenant field}: tenantId, request_id, response {status, content_type, body}, error_message
 ```
 
 ## Cross-Cutting Concerns
@@ -241,8 +284,8 @@ ResponseSaveRequest (Oracle save payload)
 
 ### Idempotency (Redis)
 
-- **State Key:** `request:state:{companyId}:{requestId}` (TTL: 72 hours)
-- **Lock Key:** `request:lock:{companyId}:{requestId}` (TTL: 300 seconds)
+- **State Key:** `request:state:{tenantId}:{requestId}` (TTL: 72 hours)
+- **Lock Key:** `request:lock:{tenantId}:{requestId}` (TTL: 300 seconds)
 - **Dual Check:**
   1. `isCompleted(key)` — if status is COMPLETED or FAILED, skip (already processed)
   2. `tryLock(key)` — Redis `SET NX` with TTL. If fails, another instance is processing it
