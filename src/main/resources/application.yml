@@ -161,6 +161,12 @@ gateway:
     context-path: /qosid
     trusted-proxies: ${TRUSTED_PROXIES:127.0.0.1}
 
+  # --- Tenant mapping (C-faza; field names configurable, default keeps bmb working) ---
+  tenant:
+    field-name: ${TENANT_FIELD:company_id}
+    extra-field-name: ${EXTRA_TENANT_FIELD:filial_id}
+    default-rest-tenant: ${DEFAULT_REST_TENANT:0}
+
   # --- Response handling ---
   response:
     threshold-size: ${RESPONSE_THRESHOLD_SIZE:1024}
