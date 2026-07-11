@@ -92,7 +92,8 @@ public class ProxyController {
         // 1a. Resolve tenant: principal-supplied wins, else the configured default.
         Long tenantId = authResult.getTenantId();
         if (tenantId == null) {
-            tenantId = Long.parseLong(settingsService.get("gateway.tenant.default-rest-tenant", "0"));
+            Long parsed = parseLongOrNull(settingsService.get("gateway.tenant.default-rest-tenant", "0"));
+            tenantId = (parsed != null) ? parsed : 0L;
         }
         String extraTenantHeader = request.getHeader(EXTRA_TENANT_HEADER);
         Long extraTenantId = null;
