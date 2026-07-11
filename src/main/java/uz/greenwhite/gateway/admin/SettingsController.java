@@ -31,6 +31,14 @@ public class SettingsController {
 
     @PutMapping("/{key}")
     public ResponseEntity<Void> update(@PathVariable String key, @RequestBody SettingUpdateRequest req) {
+        if ("gateway.tenant.field-name".equals(key)
+                && (req.getValue() == null || req.getValue().isBlank())) {
+            throw new IllegalArgumentException("gateway.tenant.field-name must not be blank");
+        }
+        if ("gateway.tenant.default-rest-tenant".equals(key)) {
+            try { Long.parseLong(req.getValue().trim()); }
+            catch (Exception e) { throw new IllegalArgumentException("default-rest-tenant must be numeric"); }
+        }
         String admin = SecurityContextHolder.getContext().getAuthentication().getName();
         settingsService.set(key, req.getValue(), req.isSecret(), admin);
         return ResponseEntity.noContent().build();
