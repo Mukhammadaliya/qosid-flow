@@ -188,7 +188,7 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 
 ## gateway.tenant.* — Tenant Field Mapping
 
-**Properties class:** inline (`@Value` in `ProxyController`/`RequestValidator`; see `gateway.tenant.*` in `application.yml`)
+**Properties class:** `gateway.tenant.*` are forward-declared for C-faza; no pipeline class reads them yet (see `gateway.tenant.*` in `application.yml`).
 
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
@@ -196,7 +196,7 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 | `gateway.tenant.extra-field-name` | String | `filial_id` | `EXTRA_TENANT_FIELD` | Secondary tenant field (e.g. branch/filial) read alongside the primary one. |
 | `gateway.tenant.default-rest-tenant` | String | `0` | `DEFAULT_REST_TENANT` | Fallback tenant id used for REST-sourced requests when the field is absent from the payload. |
 
-Migrated into the settings DB on first boot (see `gateway.settings.*` below) — editable at runtime via the admin API without a restart once migrated.
+Migrated into the settings DB on first boot (see `gateway.settings.*` below). Stored in the settings DB for B2+ consumers. The E1-E5 pipeline still reads these values from yaml until each component is wired to SettingsService (a later sub-phase); changing them via the admin API does not yet affect pipeline behavior.
 
 ## gateway.settings.* — Control-Plane (B1)
 
@@ -208,7 +208,7 @@ Migrated into the settings DB on first boot (see `gateway.settings.*` below) —
 | `gateway.settings.encryption-key` | String | `` (blank) | `SETTINGS_ENCRYPTION_KEY` | AES-GCM master key (any length — SHA-256'd internally) for at-rest encryption of settings marked `secret=true`. **Blank disables secrets**: `SettingsCipher.isEnabled()` returns false, `SettingsService.set(..., secret=true, ...)` throws `IllegalStateException`, and `getSecret()` logs a WARN and returns the caller's default instead of decrypting. Non-secret settings are unaffected. |
 | `gateway.settings.session-ttl-minutes` | long | `480` | `ADMIN_SESSION_TTL_MIN` | Intended admin HttpSession TTL (8h). Read into `SettingsProperties` but **not yet wired** to `HttpSession.setMaxInactiveInterval` or `server.servlet.session.timeout` — the servlet container's default session timeout currently governs actual expiry. Treat as reserved/forward-looking until wired. |
 
-**Runtime settings migrated from yaml → DB on first boot** (see `SettingsMigrationRunner.MIGRATABLE_KEYS`): `gateway.api.base-url`, `gateway.retry.max-attempts`, `gateway.retry.interval-ms`, `gateway.retry.retryable-statuses`, `gateway.retry.max-message-age-ms`, `gateway.http.connect-timeout-ms`, `gateway.http.read-timeout-ms`, `gateway.response.threshold-size`, `gateway.polling.enabled`, `gateway.polling.interval-ms`, `gateway.tenant.field-name`, `gateway.tenant.extra-field-name`, `gateway.tenant.default-rest-tenant`. After migration, these are edited via `PUT /qosid/admin/api/settings/{key}` and take effect on next read (no restart) — bootstrap-only values (Kafka, Redis, ports, `gateway.settings.db-path` itself) are never migrated and stay yaml-only.
+**Runtime settings migrated from yaml → DB on first boot** (see `SettingsMigrationRunner.MIGRATABLE_KEYS`): `gateway.api.base-url`, `gateway.retry.max-attempts`, `gateway.retry.interval-ms`, `gateway.retry.retryable-statuses`, `gateway.retry.max-message-age-ms`, `gateway.http.connect-timeout-ms`, `gateway.http.read-timeout-ms`, `gateway.response.threshold-size`, `gateway.polling.enabled`, `gateway.polling.interval-ms`, `gateway.tenant.field-name`, `gateway.tenant.extra-field-name`, `gateway.tenant.default-rest-tenant`. After migration, these are edited via `PUT /qosid/admin/api/settings/{key}` and stored in the settings DB, but the E1-E5 pipeline still reads these values from yaml until each component is wired to `SettingsService` (a later sub-phase) — changing them via the admin API does not yet affect pipeline behavior. Bootstrap-only values (Kafka, Redis, ports, `gateway.settings.db-path` itself) are never migrated and stay yaml-only.
 
 ## Admin Account & Reset
 

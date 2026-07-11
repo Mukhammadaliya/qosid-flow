@@ -69,6 +69,12 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.TOO_MANY_REQUESTS, e.getMessage());
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleBadRequest(IllegalArgumentException e) {
+        log.warn("Bad request: {}", e.getMessage());
+        return build(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception e) {
         String ref = java.util.UUID.randomUUID().toString().substring(0, 8);

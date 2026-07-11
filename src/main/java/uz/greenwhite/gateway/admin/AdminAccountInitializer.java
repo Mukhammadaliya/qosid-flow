@@ -52,11 +52,18 @@ public class AdminAccountInitializer implements ApplicationRunner {
         } else if (Boolean.parseBoolean(environment.getProperty("ADMIN_RESET", "false"))) {
             directive = "DEFAULT";
         }
-        if (directive == null) return;
+        if (directive == null) {
+            // No reset env var set on this boot: clear any stale marker so that a later
+            // ADMIN_RESET=true (after the env var was removed and re-added) is not silently
+            // treated as "already applied" — recoverable, while a same-boot re-read still
+            // can't re-clobber since we never reach the marker check below in that case.
+            settingsService.set(RESET_MARKER_KEY, "", false, "admin-reset");
+            return;
+        }
 
         String marker = settingsService.get(RESET_MARKER_KEY, "");
         if (directive.equals(marker)) {
-            log.info("Admin reset directive already applied (marker match) — skipping");
+            log.warn("Admin reset directive unchanged since last apply — remove and re-add the env var to reset again");
             return;
         }
         if (directive.startsWith("PW:")) {

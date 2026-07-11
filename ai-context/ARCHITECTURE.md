@@ -187,7 +187,7 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| GET | `/qosid/admin/api/health` | permitAll | Liveness probe for the admin chain itself (also proves the chain's allowlist reaches a real handler, not a coincidental 404). Seeds the `XSRF-TOKEN` cookie for subsequent CSRF-protected calls. |
+| GET | `/qosid/admin/api/health` | permitAll | Liveness probe for the admin chain itself (also proves the chain's allowlist reaches a real handler, not a coincidental 404). Any admin-chain request (including this one) seeds the `XSRF-TOKEN` cookie via `CsrfCookieFilter`, which forces the deferred token to render on every request — not just this endpoint. |
 | POST | `/qosid/admin/api/login` | permitAll | `{username, password}` → creates an `HttpSession` + `SecurityContext` with `ROLE_ADMIN` on success. Rate-limited (`LoginRateLimiter`: 5 failures / 60s per username). Unknown usernames are not rate-limited (bounds the limiter's map to real accounts) but still return the same auth failure. |
 | POST | `/qosid/admin/api/logout` | session | Invalidates the session and clears the `SecurityContext`. |
 | GET | `/qosid/admin/api/me` | session | Returns the authenticated admin's username. |
@@ -275,9 +275,9 @@ ResponseSaveRequest (Oracle save payload)
 
 ### Admin Control-Plane Security (B1)
 
-- **Two isolated `SecurityFilterChain` beans** in `AdminSecurityConfig`: `adminSecurityChain` (`@Order(1)`, `securityMatcher("/qosid/admin/api/**")`, session-required except `/login` and `/health`, CSRF **on** via `CookieCsrfTokenRepository`) and `apiSecurityChain` (`@Order(2)`, `securityMatcher("/**")`, `permitAll`, CSRF off, `STATELESS`).
-- **Why two chains:** the pipeline (`/qosid/api/**`) and actuator must stay open regardless of admin auth state. A single merged chain (or a missing `securityMatcher`) would put everything behind session auth — pipeline requests would 401/redirect and health checks would fail. See SAFETY-RULES.md rule 29.
-- **Guard test:** `SecurityIsolationTest` asserts the pipeline/actuator paths stay reachable and the admin paths stay gated — keep it green.
+- **Two isolated `SecurityFilterChain` beans** in `AdminSecurityConfig`: `adminSecurityChain` (`@Order(1)`, `securityMatcher("/qosid/admin/api/**")`, session-required except `/login` and `/health`, CSRF **on** via `CookieCsrfTokenRepository` with a SPA-compatible `SpaCsrfTokenRequestHandler` + `CsrfCookieFilter` so real HTTP clients — curl/Postman/an SPA — can echo the raw `XSRF-TOKEN` cookie value in the `X-XSRF-TOKEN` header) and `apiSecurityChain` (`@Order(2)`, `securityMatcher("/**")`, `permitAll`, CSRF off, `STATELESS`).
+- **Why two chains:** the pipeline (`/qosid/api/**`) must stay open regardless of admin auth state. A single merged chain (or a missing `securityMatcher`) would put everything behind session auth — pipeline requests would 401/redirect. See SAFETY-RULES.md rule 29. (Actuator runs on the separate management port (8091) governed by its own auto-configuration, not by `AdminSecurityConfig` — out of scope for these chains by construction.)
+- **Guard tests:** `SecurityIsolationTest` asserts the pipeline GET/POST paths stay reachable and the admin paths stay gated (it does not assert anything about actuator, which lives on a different port). `AdminCsrfFlowTest` asserts, over a real servlet (no MockMvc `.with(csrf())` shortcut), that a real HTTP client can capture the `XSRF-TOKEN` cookie and successfully echo it in `X-XSRF-TOKEN` to log in. Keep both green.
 
 ## Request Status Lifecycle
 

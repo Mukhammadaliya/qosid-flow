@@ -62,4 +62,16 @@ class AdminApiIntegrationTest {
         mvc.perform(get("/qosid/admin/api/settings/audit").session(session))
                 .andExpect(status().isOk());
     }
+
+    @Test
+    void changePasswordWithShortNewPasswordReturns400NotStackTrace() throws Exception {
+        MockHttpSession session = login();
+
+        mvc.perform(post("/qosid/admin/api/change-password")
+                        .session(session).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("oldPassword", "admin", "newPassword", "short"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
 }
