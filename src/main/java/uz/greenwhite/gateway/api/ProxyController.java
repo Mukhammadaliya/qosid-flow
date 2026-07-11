@@ -95,13 +95,23 @@ public class ProxyController {
             Long parsed = parseLongOrNull(settingsService.get("gateway.tenant.default-rest-tenant", "0"));
             tenantId = (parsed != null) ? parsed : 0L;
         }
-        String extraTenantHeader = request.getHeader(EXTRA_TENANT_HEADER);
+        // Extra-tenant: the provider-supplied value comes from the authenticated
+        // principal and is always trusted. The client X-Extra-Tenant-Id header is a
+        // spoofable tenant-impersonation vector, so it is honored ONLY when the
+        // opt-in gateway.tenant.trust-extra-tenant-header flag is on (default off);
+        // enabling it accepts that impersonation tradeoff for trusted integrators.
         Long extraTenantId = null;
         if (authResult.getExtraTenantId() != null) {
-            // Provider-supplied extra tenant wins over the client header.
             extraTenantId = parseLongOrNull(authResult.getExtraTenantId());
-        } else if (extraTenantHeader != null && !extraTenantHeader.isBlank()) {
-            extraTenantId = parseLongOrNull(extraTenantHeader);
+        } else {
+            boolean trustHeader = Boolean.parseBoolean(
+                    settingsService.get("gateway.tenant.trust-extra-tenant-header", "false"));
+            if (trustHeader) {
+                String extraTenantHeader = request.getHeader(EXTRA_TENANT_HEADER);
+                if (extraTenantHeader != null && !extraTenantHeader.isBlank()) {
+                    extraTenantId = parseLongOrNull(extraTenantHeader);
+                }
+            }
         }
 
         // 1b. SSRF guard on client-supplied callback URL — reject at accept time
