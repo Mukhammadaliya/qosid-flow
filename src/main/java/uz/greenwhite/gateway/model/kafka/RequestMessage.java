@@ -1,5 +1,6 @@
 package uz.greenwhite.gateway.model.kafka;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import lombok.AllArgsConstructor;
@@ -18,11 +19,13 @@ import java.util.Map;
 @AllArgsConstructor
 public class RequestMessage {
 
+    @JsonAlias("company_id")
     private Long tenantId;
 
     @JsonProperty("request_id")
     private Long requestId;
 
+    @JsonAlias("filial_id")
     private Long extraTenantId;
 
     @JsonProperty("endpoint_id")

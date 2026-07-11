@@ -19,13 +19,13 @@ public class AuthResult {
     /** Resolved tenant id; null when the provider does not supply one (e.g. NoOp). */
     private final Long tenantId;
     /** Resolved extra-tenant; null when not supplied. */
-    private final String extraTenantId;
+    private final Long extraTenantId;
 
     public static AuthResult allowed() {
         return new AuthResult(true, null, 200, null, null);
     }
 
-    public static AuthResult allowed(Long tenantId, String extraTenantId) {
+    public static AuthResult allowed(Long tenantId, Long extraTenantId) {
         return new AuthResult(true, null, 200, tenantId, extraTenantId);
     }
 

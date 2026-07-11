@@ -45,6 +45,7 @@ public class ApiKeyAuthorizationProvider implements AuthorizationProvider {
 - **Client IP**: `context.getClientIp()` already resolves `X-Forwarded-For` (leftmost) / `X-Real-IP` / remote addr — don't re-parse `X-Forwarded-For` yourself.
 - **Status code**: pass a specific HTTP code on denial (`AuthResult.denied(reason, 401)`). Without it the default is 403, which is wrong for a missing-credential case.
 - **Multiple implementations**: if you register more than one `AuthorizationProvider` bean Spring will fail with a "multiple beans" error — either `@Primary` one of them or combine the logic into a single composite provider.
+- **Supplying a resolved tenant**: if your auth scheme can resolve the tenant itself (e.g. from an API-key → tenant lookup), return `AuthResult.allowed(tenantId, extraTenantId)` instead of the no-arg `allowed()` — both are `Long` (nullable); `ProxyController` uses them directly and only falls back to `gateway.tenant.default-rest-tenant` when `tenantId` is null.
 
 ---
 

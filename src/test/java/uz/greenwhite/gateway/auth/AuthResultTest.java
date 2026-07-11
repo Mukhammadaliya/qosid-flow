@@ -16,10 +16,10 @@ class AuthResultTest {
 
     @Test
     void allowedWithTenantCarriesIt() {
-        AuthResult r = AuthResult.allowed(42L, "branch-9");
+        AuthResult r = AuthResult.allowed(42L, 9L);
         assertTrue(r.isAllowed());
         assertEquals(42L, r.getTenantId());
-        assertEquals("branch-9", r.getExtraTenantId());
+        assertEquals(9L, r.getExtraTenantId());
     }
 
     @Test

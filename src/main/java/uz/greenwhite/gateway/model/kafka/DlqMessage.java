@@ -1,5 +1,6 @@
 package uz.greenwhite.gateway.model.kafka;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -13,6 +14,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class DlqMessage {
 
+    @JsonAlias("companyId")
     private Long tenantId;
     private Long requestId;
     private String originalTopic;

@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class ResponseSaveRequest {
 
+    // Wire tenant key is injected dynamically by BiruniClient.saveResponse via TenantMappingService — NEVER serialize this DTO directly (SAFETY rule 30).
     private Long tenantId;
 
     @JsonProperty("request_id")

@@ -79,4 +79,26 @@ class TenantMappingServiceTest {
         Map<String, Object> out = service().toExternal(100L);
         assertEquals(Map.of("company_id", 100L), out);
     }
+
+    @Test
+    void toInternalNonNumericTenantYieldsNull() throws Exception {
+        when(settings.get("gateway.tenant.field-name", "company_id")).thenReturn("company_id");
+        when(settings.get("gateway.tenant.extra-field-name", "filial_id")).thenReturn("filial_id");
+        var node = om.readTree("{\"company_id\":\"abc\",\"request_id\":1}");
+
+        RequestMessage msg = service().toInternal(node);
+
+        assertNull(msg.getTenantId());
+    }
+
+    @Test
+    void toInternalStringNumberTenantIsParsed() throws Exception {
+        when(settings.get("gateway.tenant.field-name", "company_id")).thenReturn("company_id");
+        when(settings.get("gateway.tenant.extra-field-name", "filial_id")).thenReturn("filial_id");
+        var node = om.readTree("{\"company_id\":\"42\",\"request_id\":1}");
+
+        RequestMessage msg = service().toInternal(node);
+
+        assertEquals(42L, msg.getTenantId());
+    }
 }

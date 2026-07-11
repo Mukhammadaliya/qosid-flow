@@ -92,7 +92,12 @@ public class ProxyController {
         // 1a. Resolve tenant: principal-supplied wins, else the configured default.
         Long tenantId = authResult.getTenantId();
         if (tenantId == null) {
-            Long parsed = parseLongOrNull(settingsService.get("gateway.tenant.default-rest-tenant", "0"));
+            String defaultSetting = settingsService.get("gateway.tenant.default-rest-tenant", "0");
+            Long parsed = parseLongOrNull(defaultSetting);
+            if (parsed == null) {
+                log.warn("Configured gateway.tenant.default-rest-tenant '{}' is not numeric — using 0",
+                        defaultSetting);
+            }
             tenantId = (parsed != null) ? parsed : 0L;
         }
         // Extra-tenant: the provider-supplied value comes from the authenticated
@@ -102,7 +107,7 @@ public class ProxyController {
         // enabling it accepts that impersonation tradeoff for trusted integrators.
         Long extraTenantId = null;
         if (authResult.getExtraTenantId() != null) {
-            extraTenantId = parseLongOrNull(authResult.getExtraTenantId());
+            extraTenantId = authResult.getExtraTenantId();
         } else {
             boolean trustHeader = Boolean.parseBoolean(
                     settingsService.get("gateway.tenant.trust-extra-tenant-header", "false"));

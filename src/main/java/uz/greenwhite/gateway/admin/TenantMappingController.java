@@ -25,6 +25,9 @@ public class TenantMappingController {
     @PostMapping("/test")
     public ResponseEntity<Map<String, Object>> test(@RequestBody JsonNode sample) {
         TenantPair pair = tenantMappingService.extract(sample);
+        // Must stay a HashMap (not Map.of(...)): tenantId/extraTenantId are
+        // legitimately null (e.g. non-numeric or missing sample field), and
+        // Map.of throws NullPointerException on a null value.
         Map<String, Object> out = new HashMap<>();
         out.put("tenantId", pair.tenantId());
         out.put("extraTenantId", pair.extraTenantId());

@@ -3,12 +3,14 @@ package uz.greenwhite.gateway.tenant;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import uz.greenwhite.gateway.settings.SettingsService;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -32,10 +34,27 @@ public class TenantMappingService {
     /**
      * Lenient copy used ONLY for the Biruni-pull ingress conversion: the configured tenant/extra
      * field names (e.g. company_id/filial_id) are unknown to RequestMessage and must be tolerated
-     * here. RequestMessage itself stays strict so the Kafka producer→consumer round-trip still
-     * fails loudly on genuinely unknown fields (no silent pipeline-data loss).
+     * here. This ingress copy-mapper tolerates unknown pull fields; the Kafka round-trip uses
+     * spring-kafka's JsonDeserializer (also lenient by default — FAIL_ON_UNKNOWN_PROPERTIES is
+     * off there too), and {@code @JsonAlias} on the tenant fields preserves back-compat with
+     * pre-rename messages already sitting in topics at deploy time.
      */
     private final ObjectMapper lenientMapper;
+
+    /**
+     * Raw JSON keys that carry {@code @JsonAlias} on {@code RequestMessage.tenantId}/
+     * {@code extraTenantId} (added for Kafka back-compat — see class javadoc). Left in place,
+     * a Biruni pull element containing one of these would make the ingress
+     * {@code convertValue} below bind it straight onto the strict {@code Long} tenantId/
+     * extraTenantId — defeating the lenient, non-numeric-tolerant {@link #readLong} and
+     * throwing on e.g. {@code {"company_id":"abc"}}. (A class-level
+     * {@code @JsonIgnoreProperties} mixin does NOT help here: Jackson matches its ignore
+     * list against a property's primary name, not its aliases.) So these two keys are
+     * stripped from a throwaway copy of the node before conversion; {@link #toInternal}
+     * always re-derives tenantId/extraTenantId from the untouched original via
+     * {@link #extract} anyway, so nothing is lost.
+     */
+    private static final List<String> ALIASED_KEYS = List.of("company_id", "filial_id");
 
     public TenantMappingService(SettingsService settings, ObjectMapper objectMapper) {
         this.settings = settings;
@@ -45,7 +64,11 @@ public class TenantMappingService {
 
     /** INGRESS: build a RequestMessage from a raw Biruni pull element. */
     public RequestMessage toInternal(JsonNode element) {
-        RequestMessage msg = lenientMapper.convertValue(element, RequestMessage.class);
+        JsonNode forConversion = element;
+        if (element instanceof ObjectNode on && (on.has("company_id") || on.has("filial_id"))) {
+            forConversion = on.deepCopy().remove(ALIASED_KEYS);
+        }
+        RequestMessage msg = lenientMapper.convertValue(forConversion, RequestMessage.class);
         TenantPair pair = extract(element);
         msg.setTenantId(pair.tenantId());
         msg.setExtraTenantId(pair.extraTenantId());
@@ -82,6 +105,15 @@ public class TenantMappingService {
     private static Long readLong(JsonNode element, String field) {
         if (field == null || field.isBlank()) return null;
         JsonNode n = element.get(field);
-        return (n != null && !n.isNull()) ? n.asLong() : null;
+        if (n == null || n.isNull()) return null;
+        if (n.isIntegralNumber()) return n.asLong();
+        if (n.isTextual()) {
+            try {
+                return Long.parseLong(n.asText().trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null; // object/array/boolean/float → not a valid tenant id
     }
 }
