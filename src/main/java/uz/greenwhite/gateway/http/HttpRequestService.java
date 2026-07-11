@@ -207,7 +207,7 @@ public class HttpRequestService {
         }
 
         try {
-            Token token = oAuth2ProviderService.getToken(request.getOauth2Provider(), request.getCompanyId());
+            Token token = oAuth2ProviderService.getToken(request.getOauth2Provider(), request.getTenantId());
             headers.put(HttpHeaders.AUTHORIZATION, token.getAuthorizationHeader());
             log.debug("OAuth2 Authorization header added for provider: {}", request.getOauth2Provider());
         } catch (Exception e) {
@@ -308,7 +308,7 @@ public class HttpRequestService {
      */
     private ResponseMessage buildCircuitBreakerResponse(RequestMessage request, String cbName) {
         return ResponseMessage.builder()
-                .companyId(request.getCompanyId())
+                .tenantId(request.getTenantId())
                 .requestId(request.getRequestId())
                 .httpStatus(503)
                 .errorMessage("Circuit breaker [" + cbName + "] is OPEN: external API unavailable")
@@ -324,7 +324,7 @@ public class HttpRequestService {
      */
     private ResponseMessage buildOAuth2ErrorResponse(RequestMessage request, String errorMessage) {
         return ResponseMessage.builder()
-                .companyId(request.getCompanyId())
+                .tenantId(request.getTenantId())
                 .requestId(request.getRequestId())
                 .httpStatus(401)
                 .errorMessage("OAuth2 authentication failed: " + errorMessage)
@@ -341,7 +341,7 @@ public class HttpRequestService {
      */
     private ResponseMessage buildSystemErrorResponse(RequestMessage request, String errorMessage) {
         return ResponseMessage.builder()
-                .companyId(request.getCompanyId())
+                .tenantId(request.getTenantId())
                 .requestId(request.getRequestId())
                 .httpStatus(0)
                 .errorMessage(errorMessage)
@@ -358,7 +358,7 @@ public class HttpRequestService {
     private ResponseMessage buildSuccessResponse(RequestMessage request, int status,
                                                  String contentType, byte[] body) {
         return ResponseMessage.builder()
-                .companyId(request.getCompanyId())
+                .tenantId(request.getTenantId())
                 .requestId(request.getRequestId())
                 .httpStatus(status)
                 .contentType(contentType)
@@ -392,7 +392,7 @@ public class HttpRequestService {
         }
 
         return ResponseMessage.builder()
-                .companyId(request.getCompanyId())
+                .tenantId(request.getTenantId())
                 .requestId(request.getRequestId())
                 .httpStatus(status)
                 .contentType(contentType)

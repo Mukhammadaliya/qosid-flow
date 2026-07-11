@@ -14,9 +14,9 @@ import java.util.Map;
 @AllArgsConstructor
 public class Request {
 
-    private Long companyId;
+    private Long tenantId;
     private Long requestId;
-    private Long filialId;
+    private Long extraTenantId;
     private Long endpointId;
 
     // HTTP details
@@ -42,10 +42,10 @@ public class Request {
     private LocalDateTime createdOn;
 
     /**
-     * Composite ID: companyId:requestId
+     * Composite ID: tenantId:requestId
      */
     public String getCompositeId() {
-        return companyId + ":" + requestId;
+        return tenantId + ":" + requestId;
     }
 
     /**

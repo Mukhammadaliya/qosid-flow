@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class ResponseMessage {
 
-    private Long companyId;
+    private Long tenantId;
     private Long requestId;
 
     // HTTP Response
@@ -41,7 +41,7 @@ public class ResponseMessage {
      * Composite ID for Kafka key
      */
     public String getCompositeId() {
-        return companyId + ":" + requestId;
+        return tenantId + ":" + requestId;
     }
 
     /**

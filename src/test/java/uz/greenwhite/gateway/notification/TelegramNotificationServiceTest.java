@@ -19,6 +19,6 @@ class TelegramNotificationServiceTest {
 
         assertFalse(service.isEnabled());
         assertDoesNotThrow(() -> service.sendDlqAlert(
-                DlqMessage.builder().companyId(1L).requestId(2L).failureReason("x").build()));
+                DlqMessage.builder().tenantId(1L).requestId(2L).failureReason("x").build()));
     }
 }

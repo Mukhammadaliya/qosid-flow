@@ -43,7 +43,7 @@ class OracleRequestConsumerTest {
                 httpRequestService, requestStateService, requestProducer,
                 retryProperties, httpExecutor, metrics, kafkaProperties, oAuth2ProviderService);
 
-        RequestMessage message = RequestMessage.builder().companyId(1L).requestId(2L).build();
+        RequestMessage message = RequestMessage.builder().tenantId(1L).requestId(2L).build();
         consumer.consumeRequest(new ConsumerRecord<>("t", 0, 0L, "1:2", message), ack);
 
         verify(ack).nack(any(Duration.class));

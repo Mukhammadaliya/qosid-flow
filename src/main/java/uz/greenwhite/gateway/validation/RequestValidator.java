@@ -28,8 +28,8 @@ public class RequestValidator {
             return errors;
         }
 
-        if (request.getCompanyId() == null) {
-            errors.add("companyId is null");
+        if (request.getTenantId() == null) {
+            errors.add("tenantId is null");
         }
 
         if (request.getRequestId() == null) {

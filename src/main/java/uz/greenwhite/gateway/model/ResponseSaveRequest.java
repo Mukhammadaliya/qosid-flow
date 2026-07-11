@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
 public class ResponseSaveRequest {
 
     @JsonProperty("company_id")
-    private Long companyId;
+    private Long tenantId;
 
     @JsonProperty("request_id")
     private Long requestId;

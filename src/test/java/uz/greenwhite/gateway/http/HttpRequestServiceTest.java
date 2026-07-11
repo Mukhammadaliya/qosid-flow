@@ -26,7 +26,7 @@ class HttpRequestServiceTest {
     @Test
     void nullMethodYieldsSystemErrorResponseInsteadOfThrowing() {
         RequestMessage request = RequestMessage.builder()
-                .companyId(1L).requestId(2L)
+                .tenantId(1L).requestId(2L)
                 .baseUrl("https://example.com")
                 .method(null)
                 .build();
@@ -43,7 +43,7 @@ class HttpRequestServiceTest {
     @Test
     void nullMethodShortCircuitsBeforeAnyCollaboratorCall() {
         RequestMessage request = RequestMessage.builder()
-                .companyId(1L).requestId(2L)
+                .tenantId(1L).requestId(2L)
                 .baseUrl("https://example.com")
                 .method(null)
                 .build();

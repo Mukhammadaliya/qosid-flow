@@ -30,8 +30,8 @@ public class OAuth2ProviderService {
     /**
      * Acquire OAuth2 token: fetch provider from Oracle (cached) → get token via Redis cache
      */
-    public Token getToken(String providerName, Long companyId) {
-        ProviderProperties properties = providerFetcher.fetch(providerName, companyId);
+    public Token getToken(String providerName, Long tenantId) {
+        ProviderProperties properties = providerFetcher.fetch(providerName, tenantId);
 
         OAuth2Client client = oAuth2ClientMap.get(properties.getType());
         if (client == null) {

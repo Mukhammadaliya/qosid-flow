@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class Response {
 
-    private Long companyId;
+    private Long tenantId;
     private Long requestId;
 
     // HTTP Response
@@ -31,10 +31,10 @@ public class Response {
     private LocalDateTime processedAt;
 
     /**
-     * Composite ID: companyId:requestId
+     * Composite ID: tenantId:requestId
      */
     public String getCompositeId() {
-        return companyId + ":" + requestId;
+        return tenantId + ":" + requestId;
     }
 
     /**

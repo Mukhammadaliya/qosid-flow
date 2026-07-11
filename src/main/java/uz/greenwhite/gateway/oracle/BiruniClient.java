@@ -94,7 +94,7 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
     @Override
     public boolean saveResponse(ResponseSaveRequest request) {
         try {
-            log.debug("Saving response for: {}:{}", request.getCompanyId(), request.getRequestId());
+            log.debug("Saving response for: {}:{}", request.getTenantId(), request.getRequestId());
 
             var response = restClient.post()
                     .uri(properties.getResponseSaveUri())
@@ -109,7 +109,7 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
                     });
 
             if (response) {
-                log.info("Response saved successfully: {}:{}", request.getCompanyId(), request.getRequestId());
+                log.info("Response saved successfully: {}:{}", request.getTenantId(), request.getRequestId());
             }
 
             return response;

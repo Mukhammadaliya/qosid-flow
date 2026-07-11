@@ -40,8 +40,8 @@ import java.util.concurrent.TimeUnit;
  * processing. Returns 202 ACCEPTED with a polling URL.
  *
  * <p>Inbound API requests are tagged {@code source="API"}. Because the existing
- * {@link RequestMessage#getCompositeId()} returns {@code companyId:requestId},
- * API requests are assigned {@code companyId=0L} and a derived non-negative
+ * {@link RequestMessage#getCompositeId()} returns {@code tenantId:requestId},
+ * API requests are assigned {@code tenantId=0L} and a derived non-negative
  * {@code long} from a fresh UUID. This is a known shortcut documented in the
  * plan; a dedicated {@code compositeId} field on {@code RequestMessage} would
  * be the cleaner long-term fix.</p>
@@ -52,7 +52,7 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class ProxyController {
 
-    private static final long API_COMPANY_ID = 0L;
+    private static final long API_DEFAULT_TENANT = 0L;
     private static final String CALLBACK_HEADER = "X-Callback-Url";
     private static final String BIRUNI_UPLOAD_HEADER = "BiruniUpload";
 
@@ -158,7 +158,7 @@ public class ProxyController {
 
         // 6. Build the Kafka message
         RequestMessage message = RequestMessage.builder()
-                .companyId(API_COMPANY_ID)
+                .tenantId(API_DEFAULT_TENANT)
                 .requestId(requestId)
                 .source("API")
                 .baseUrl(apiProperties.getBaseUrl())

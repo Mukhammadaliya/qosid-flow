@@ -40,14 +40,14 @@ public class OAuth2ProviderFetcher {
     /**
      * Fetch provider credentials: Redis cache → Oracle HTTP fallback
      */
-    public ProviderProperties fetch(String providerName, Long companyId) {
+    public ProviderProperties fetch(String providerName, Long tenantId) {
         ProviderProperties cached = getFromCache(providerName);
         if (cached != null) {
             log.debug("OAuth2 provider '{}' found in cache", providerName);
             return cached;
         }
 
-        ProviderProperties fetched = fetchFromOracle(providerName, companyId);
+        ProviderProperties fetched = fetchFromOracle(providerName, tenantId);
         if (fetched == null) {
             throw new RuntimeException("OAuth2 provider not found in Oracle: " + providerName);
         }
@@ -66,10 +66,10 @@ public class OAuth2ProviderFetcher {
         log.info("OAuth2 provider cache evicted: {}", providerName);
     }
 
-    private ProviderProperties fetchFromOracle(String providerName, Long companyId) {
+    private ProviderProperties fetchFromOracle(String providerName, Long tenantId) {
         try {
             Map<String, Object> body = Map.of(
-                    "company_id", companyId,
+                    "company_id", tenantId,
                     "oauth2_provider", providerName
             );
 

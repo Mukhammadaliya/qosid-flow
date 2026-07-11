@@ -67,7 +67,7 @@ public class TelegramNotificationService implements NotificationService {
         StringBuilder sb = new StringBuilder();
         sb.append("🔴 <b>ОПОВЕЩЕНИЕ DLQ</b>\n\n");
         sb.append("━━━━━━━━━━━━━━━━━━━━━\n");
-        sb.append("📌 <b>Компания:</b> ").append(msg.getCompanyId());
+        sb.append("📌 <b>Компания:</b> ").append(msg.getTenantId());
         sb.append(" | <b>Запрос:</b> ").append(msg.getRequestId()).append("\n");
 
         if (msg.getUrl() != null) {

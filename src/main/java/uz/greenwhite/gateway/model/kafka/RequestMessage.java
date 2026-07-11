@@ -19,13 +19,13 @@ import java.util.Map;
 public class RequestMessage {
 
     @JsonProperty("company_id")
-    private Long companyId;
+    private Long tenantId;
 
     @JsonProperty("request_id")
     private Long requestId;
 
     @JsonProperty("filial_id")
-    private Long filialId;
+    private Long extraTenantId;
 
     @JsonProperty("endpoint_id")
     private Long endpointId;
@@ -92,6 +92,6 @@ public class RequestMessage {
     }
 
     public String getCompositeId() {
-        return companyId + ":" + requestId;
+        return tenantId + ":" + requestId;
     }
 }

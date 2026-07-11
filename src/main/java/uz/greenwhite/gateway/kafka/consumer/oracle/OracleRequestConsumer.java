@@ -187,7 +187,7 @@ public class OracleRequestConsumer {
         } catch (Exception e) {
             log.error("[ORACLE] Failed to send response to Kafka for {}: {}", key, e.getMessage());
             DlqMessage dlqMessage = DlqMessage.builder()
-                    .companyId(response.getCompanyId())
+                    .tenantId(response.getTenantId())
                     .requestId(response.getRequestId())
                     .originalTopic(kafkaProperties.getTopics().getOracleResponse())
                     .failureReason("Failed to publish response to Kafka: " + e.getMessage())
@@ -263,7 +263,7 @@ public class OracleRequestConsumer {
                 key, httpStatus, errorMessage, source);
 
         ResponseMessage errorResponse = ResponseMessage.builder()
-                .companyId(message.getCompanyId())
+                .tenantId(message.getTenantId())
                 .requestId(message.getRequestId())
                 .httpStatus(httpStatus)
                 .errorMessage(errorMessage)

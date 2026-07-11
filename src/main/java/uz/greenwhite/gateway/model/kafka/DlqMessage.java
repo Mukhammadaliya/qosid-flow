@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class DlqMessage {
 
-    private Long companyId;
+    private Long tenantId;
     private Long requestId;
     private String originalTopic;
     private String failureReason;
@@ -28,7 +28,7 @@ public class DlqMessage {
      * Composite ID for Kafka key
      */
     public String getCompositeId() {
-        return companyId + ":" + requestId;
+        return tenantId + ":" + requestId;
     }
 
     /**
@@ -38,7 +38,7 @@ public class DlqMessage {
                                   String errorSource, int httpStatus, int attemptCount,
                                   String originalTopic) {
         return DlqMessage.builder()
-                .companyId(request.getCompanyId())
+                .tenantId(request.getTenantId())
                 .requestId(request.getRequestId())
                 .originalTopic(originalTopic)
                 .failureReason(failureReason)

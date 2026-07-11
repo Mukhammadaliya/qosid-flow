@@ -46,9 +46,9 @@ public class TestController {
     @PostMapping("/send")
     public ResponseEntity<Map<String, Object>> sendTestRequest() {
         RequestMessage request = RequestMessage.builder()
-                .companyId(100L)
+                .tenantId(100L)
                 .requestId(System.currentTimeMillis())
-                .filialId(1L)
+                .extraTenantId(1L)
                 .endpointId(1L)
                 .baseUrl("https://httpbin.org")
                 .uri("/post")
@@ -110,9 +110,9 @@ public class TestController {
             @RequestParam(defaultValue = "smartup") String provider) {
 
         RequestMessage request = RequestMessage.builder()
-                .companyId(100L)
+                .tenantId(100L)
                 .requestId(System.currentTimeMillis())
-                .filialId(1L)
+                .extraTenantId(1L)
                 .endpointId(1L)
                 .baseUrl("https://httpbin.org")
                 .uri("/post")
@@ -144,7 +144,7 @@ public class TestController {
     @PostMapping("/dlq")
     public ResponseEntity<Map<String, Object>> testDlqNotification() {
         DlqMessage dlqMessage = DlqMessage.builder()
-                .companyId(100L)
+                .tenantId(100L)
                 .requestId(System.currentTimeMillis())
                 .originalTopic("bmb.request.new")
                 .failureReason("HTTP 503 Service Unavailable after 3 retries")
@@ -180,7 +180,7 @@ public class TestController {
         long requestId = uuid.getMostSignificantBits() & Long.MAX_VALUE;
 
         RequestMessage request = RequestMessage.builder()
-                .companyId(0L)
+                .tenantId(0L)
                 .requestId(requestId)
                 .source("API")
                 .baseUrl("https://httpbin.org")

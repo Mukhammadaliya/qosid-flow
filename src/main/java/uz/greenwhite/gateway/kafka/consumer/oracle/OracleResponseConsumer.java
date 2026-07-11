@@ -116,7 +116,7 @@ public class OracleResponseConsumer {
     private void saveErrorResponse(ResponseMessage message, String errorMessage) {
         try {
             var errorRequest = ResponseSaveRequest.builder()
-                    .companyId(message.getCompanyId())
+                    .tenantId(message.getTenantId())
                     .requestId(message.getRequestId())
                     .response(null)
                     .errorMessage(errorMessage)
@@ -139,7 +139,7 @@ public class OracleResponseConsumer {
                     .status(message.getHttpStatus()).body(message.getErrorMessage()).build();
         }
         return ResponseSaveRequest.builder()
-                .companyId(message.getCompanyId())
+                .tenantId(message.getTenantId())
                 .requestId(message.getRequestId())
                 .response(responseData)
                 .errorMessage(message.getErrorMessage())
