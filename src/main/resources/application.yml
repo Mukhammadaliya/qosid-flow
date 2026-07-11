@@ -230,6 +230,12 @@ gateway:
     chat-id: ${TELEGRAM_CHAT_ID:0}
     message-thread-id: ${TELEGRAM_MESSAGE_THREAD_ID:}
 
+  # --- Settings control-plane (B1) ---
+  settings:
+    db-path: ${SETTINGS_DB_PATH:./data/settings}
+    encryption-key: ${SETTINGS_ENCRYPTION_KEY:}
+    session-ttl-minutes: ${ADMIN_SESSION_TTL_MIN:480}
+
 # ============================================================
 # CIRCUIT BREAKER
 # ============================================================

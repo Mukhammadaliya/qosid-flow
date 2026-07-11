@@ -61,6 +61,7 @@ Full safety rules: `ai-context/SAFETY-RULES.md`
 | GET             | `/qosid/api/v1/requests/{id}/status`             | Status + inline result (when small & JSON/text) or `resultUrl` pointer.                  |
 | GET             | `/qosid/api/v1/requests/{id}/result`             | Full response body from RocksDB, original `Content-Type` + HTTP status.                  |
 | POST            | `/qosid/api/v1/callback`                         | Inbound callback receiver (currently logs + 200).                                        |
+| GET/POST/PUT     | `/qosid/admin/api/**`                           | Admin control-plane (B1): session auth (login/health are the only permitAll routes), CSRF-protected, isolated `SecurityFilterChain` — settings CRUD, audit log, admin login/logout. Default account `admin`/`admin` on first boot; one-shot reset via `ADMIN_RESET`/`ADMIN_PASSWORD_RESET`. See `ai-context/ARCHITECTURE.md` → Admin Control-Plane API. |
 
 Pluggable auth: implement `AuthorizationProvider` — the default `NoOpAuthorizationProvider` steps aside. See `ai-context/EXTENSION-GUIDE.md` Recipe 0.
 
@@ -90,3 +91,5 @@ HTTP (/qosid/api/v1/queue/**) ┤→ [Kafka] → [Consumer + Redis Lock] → [HT
 ```
 
 Status / result reads: `GET /qosid/api/v1/requests/{id}/{status,result}` read from Redis + RocksDB. Inline threshold `gateway.response.threshold-size` (default 1024 bytes).
+
+**B1 (Settings control-plane, v1.4.0):** a parallel, session-authenticated admin surface (`/qosid/admin/api/**`) backed by an embedded H2 DB — runtime settings (cache + AES-encrypted secrets + yaml→DB migration) and a single admin account. Isolated via its own `SecurityFilterChain` (SAFETY rule 29); the E1-E5 pipeline above is untouched.

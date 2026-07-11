@@ -186,6 +186,39 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 | `gateway.s3.permanent-bucket` | String | — | `S3_PERMANENT_BUCKET` | Permanent-upload bucket (default target when `FileData.bucket` is null). |
 | `gateway.s3.link-expiration-hours` | int | `24` | `S3_LINK_EXPIRY` | Presigned GET URL lifetime (hours). |
 
+## gateway.tenant.* — Tenant Field Mapping
+
+**Properties class:** inline (`@Value` in `ProxyController`/`RequestValidator`; see `gateway.tenant.*` in `application.yml`)
+
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `gateway.tenant.field-name` | String | `company_id` | `TENANT_FIELD` | JSON field name read as the primary tenant/company identifier for REST (`/qosid/api/v1/queue/**`) requests. |
+| `gateway.tenant.extra-field-name` | String | `filial_id` | `EXTRA_TENANT_FIELD` | Secondary tenant field (e.g. branch/filial) read alongside the primary one. |
+| `gateway.tenant.default-rest-tenant` | String | `0` | `DEFAULT_REST_TENANT` | Fallback tenant id used for REST-sourced requests when the field is absent from the payload. |
+
+Migrated into the settings DB on first boot (see `gateway.settings.*` below) — editable at runtime via the admin API without a restart once migrated.
+
+## gateway.settings.* — Control-Plane (B1)
+
+**Properties class:** `SettingsProperties.java` (bootstrap-only — these three values live in yaml/env, never in the settings DB itself, since the DB doesn't exist until they're read).
+
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `gateway.settings.db-path` | String | `./data/settings` | `SETTINGS_DB_PATH` | H2 JDBC path/URL fragment (`jdbc:h2:<db-path>;MODE=LEGACY`) for the control-plane database — admin accounts, runtime settings, audit log. File-mode by default; tests use `mem:<name>`. |
+| `gateway.settings.encryption-key` | String | `` (blank) | `SETTINGS_ENCRYPTION_KEY` | AES-GCM master key (any length — SHA-256'd internally) for at-rest encryption of settings marked `secret=true`. **Blank disables secrets**: `SettingsCipher.isEnabled()` returns false, `SettingsService.set(..., secret=true, ...)` throws `IllegalStateException`, and `getSecret()` logs a WARN and returns the caller's default instead of decrypting. Non-secret settings are unaffected. |
+| `gateway.settings.session-ttl-minutes` | long | `480` | `ADMIN_SESSION_TTL_MIN` | Intended admin HttpSession TTL (8h). Read into `SettingsProperties` but **not yet wired** to `HttpSession.setMaxInactiveInterval` or `server.servlet.session.timeout` — the servlet container's default session timeout currently governs actual expiry. Treat as reserved/forward-looking until wired. |
+
+**Runtime settings migrated from yaml → DB on first boot** (see `SettingsMigrationRunner.MIGRATABLE_KEYS`): `gateway.api.base-url`, `gateway.retry.max-attempts`, `gateway.retry.interval-ms`, `gateway.retry.retryable-statuses`, `gateway.retry.max-message-age-ms`, `gateway.http.connect-timeout-ms`, `gateway.http.read-timeout-ms`, `gateway.response.threshold-size`, `gateway.polling.enabled`, `gateway.polling.interval-ms`, `gateway.tenant.field-name`, `gateway.tenant.extra-field-name`, `gateway.tenant.default-rest-tenant`. After migration, these are edited via `PUT /qosid/admin/api/settings/{key}` and take effect on next read (no restart) — bootstrap-only values (Kafka, Redis, ports, `gateway.settings.db-path` itself) are never migrated and stay yaml-only.
+
+## Admin Account & Reset
+
+| Env Var | Purpose |
+|---------|---------|
+| `ADMIN_RESET` | `true` → resets the single admin account's password back to the default (`admin`) on next boot. Applied at most once per directive (tracked via a hashed `admin.reset-marker` settings key) — leaving the var set does not re-clobber a password the admin later changed. |
+| `ADMIN_PASSWORD_RESET` | Set to a specific value → resets the admin password to that value on next boot (same one-shot-per-directive semantics as `ADMIN_RESET`, tracked by a SHA-256 signature, not the plaintext). |
+
+Default credentials on first boot (empty `admin_account` table): username `admin`, password `admin` — logged as a WARN telling the operator to change it immediately. There is exactly one admin account (`AdminAccountRepository`/`admin_account` table is single-row by design in this release).
+
 ## gateway.security.* — Content-Type Allowlist & Callback SSRF Guard
 
 | Property | Type | Default | Env Var | Description |
@@ -221,6 +254,7 @@ These **must** be set in production (no safe defaults):
 | `SOURCE_PASSWORD` | Production Biruni credentials |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot for DLQ alerts |
 | `TELEGRAM_CHAT_ID` | Telegram chat for DLQ alerts |
+| `SETTINGS_ENCRYPTION_KEY` | AES-GCM master key for settings-DB secrets. Without it, any attempt to save a `secret=true` setting via the admin API throws `IllegalStateException` — plan to set this before storing OAuth2 client secrets etc. in the control-plane DB. |
 
 Optional but recommended in production:
 

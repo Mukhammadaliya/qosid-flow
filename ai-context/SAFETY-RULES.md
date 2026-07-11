@@ -132,6 +132,10 @@ is the first line of `sendCallback`, before the retryable HTTP POST) to narrow t
 DNS-rebinding window between accept and delivery — removing either check reopens SSRF via
 that gap.
 
+### 29. Never merge the admin SecurityFilterChain with the pipeline chain
+
+`AdminSecurityConfig` defines TWO chains: `adminSecurityChain` (order 1, `/qosid/admin/api/**`, session-required, CSRF on) and `apiSecurityChain` (order 2, everything else, permitAll). Collapsing them into one, or removing the `securityMatcher`, locks `/qosid/api/**` and actuator behind admin auth — the pipeline stops accepting requests and health checks fail. `SecurityIsolationTest` guards this; keep it green.
+
 ---
 
 ## Protected Zones
@@ -155,6 +159,7 @@ These files contain production-critical logic. Before modifying any of them, run
 | `ContentTypeValidator.java` | MIME whitelist enforcement | Open file store, security exposure |
 | `HttpClientConfig.java` | Netty `HttpClient` setup — pool, timeouts, **no `.compress(true)`** (see Rule 17) | Re-enabling Netty compression reintroduces Cloudflare gzip decode artifacts |
 | `GlobalExceptionHandler.java` | `@RestControllerAdvice` mapping of auth / validation / upload / not-found / generic exceptions to uniform `ErrorResponse` | Unmapped routes leak 500, validation errors become opaque stack traces to clients |
+| `AdminSecurityConfig.java` | Two isolated `SecurityFilterChain` beans (admin session-gated, pipeline permitAll) with explicit `@Order` + `securityMatcher` | Merging chains or dropping `securityMatcher` locks the pipeline/actuator behind admin auth (see Rule 29) |
 
 ## Required Checklist
 

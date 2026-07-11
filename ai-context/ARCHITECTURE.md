@@ -178,6 +178,25 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 | `source/` | Data source interfaces | `RequestSourceClient`, `ResponseSinkClient` |
 | `health/` | Custom health checks | `SystemHealthIndicator` |
 | `controller/` | Dev-only test endpoints | `TestController` (profile: dev) |
+| `settings/` | Control-plane: H2-backed runtime settings, cache + AES secrets, yaml→DB migration | `SettingsService` (cache + `getSecret`), `SettingsRepository`, `SettingsCipher` (AES-GCM), `SettingsMigrationRunner`, `SettingsRecord` |
+| `admin/` | Control-plane: admin session auth + settings/audit CRUD API at `/qosid/admin/api/**` | `AdminAuthController`, `AdminAuthService`, `LoginRateLimiter`, `AdminAccountInitializer`, `SettingsController`, `HealthController` |
+
+**B1 note:** the settings/admin control-plane is additive — it does not touch the E1-E5 pipeline. `AdminSecurityConfig` isolates it behind its own `SecurityFilterChain` so the pipeline and actuator remain permitAll (see Cross-Cutting Concerns → Admin Control-Plane Security below).
+
+## Admin Control-Plane API
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/qosid/admin/api/health` | permitAll | Liveness probe for the admin chain itself (also proves the chain's allowlist reaches a real handler, not a coincidental 404). Seeds the `XSRF-TOKEN` cookie for subsequent CSRF-protected calls. |
+| POST | `/qosid/admin/api/login` | permitAll | `{username, password}` → creates an `HttpSession` + `SecurityContext` with `ROLE_ADMIN` on success. Rate-limited (`LoginRateLimiter`: 5 failures / 60s per username). Unknown usernames are not rate-limited (bounds the limiter's map to real accounts) but still return the same auth failure. |
+| POST | `/qosid/admin/api/logout` | session | Invalidates the session and clears the `SecurityContext`. |
+| GET | `/qosid/admin/api/me` | session | Returns the authenticated admin's username. |
+| POST | `/qosid/admin/api/change-password` | session | Changes the admin password (min 8 chars, must not be the literal `admin`); invalidates the session afterward (re-login required). |
+| GET | `/qosid/admin/api/settings` | session | Lists all settings (`SettingsService.getAllMasked()`) — secret values render as `***`. |
+| PUT | `/qosid/admin/api/settings/{key}` | session | Upserts a setting (`{value, secret}`); writes an audit row; refreshes the in-memory cache. Setting `secret=true` while `SETTINGS_ENCRYPTION_KEY` is blank throws `IllegalStateException`. |
+| GET | `/qosid/admin/api/settings/audit` | session | Last 200 rows from `settings_audit` (key, old/new value — secrets masked, changed-by, timestamp). |
+
+First-boot default account: `admin` / `admin` (logged as WARN). One-shot reset via `ADMIN_RESET=true` or `ADMIN_PASSWORD_RESET=<value>` — see `ai-context/CONFIGURATION.md` → Admin Account & Reset.
 
 ## Data Flow
 
@@ -253,6 +272,12 @@ ResponseSaveRequest (Oracle save payload)
 - **Message Expiry:** Messages older than `gateway.retry.max-message-age-ms` (default 5 min) are failed immediately to prevent infinite re-queue loops.
 - **CB-aware retry:** OAuth2 errors are NOT retried — they cause immediate DLQ. Circuit Breaker blocks (`errorSource=CIRCUIT_BREAKER`) ARE retried by transparent re-queue (no attempt count increment) — CB-blocked is transient back-pressure, not a permanent failure. The message-expiry safety net (`max-message-age-ms`) ensures genuinely down upstreams still surface in DLQ after the deadline.
 - **OAuth2-aware 401 retry (v1.1.0):** When an upstream API returns 401 to a request whose `oauth2_provider` is set, the consumer evicts the cached token (`OAuth2ProviderService.evictToken`) and re-queues the request without incrementing the attempt counter. A per-request flag (`request:token-evicted:<compositeId>`, same TTL as request state) prevents repeating the eviction more than once per request — on the second 401 the request falls through to the standard permanent-failure path. Recovers from smartup's periodic "stuck token" glitch in one Kafka round-trip instead of waiting 3h for token TTL expiry.
+
+### Admin Control-Plane Security (B1)
+
+- **Two isolated `SecurityFilterChain` beans** in `AdminSecurityConfig`: `adminSecurityChain` (`@Order(1)`, `securityMatcher("/qosid/admin/api/**")`, session-required except `/login` and `/health`, CSRF **on** via `CookieCsrfTokenRepository`) and `apiSecurityChain` (`@Order(2)`, `securityMatcher("/**")`, `permitAll`, CSRF off, `STATELESS`).
+- **Why two chains:** the pipeline (`/qosid/api/**`) and actuator must stay open regardless of admin auth state. A single merged chain (or a missing `securityMatcher`) would put everything behind session auth — pipeline requests would 401/redirect and health checks would fail. See SAFETY-RULES.md rule 29.
+- **Guard test:** `SecurityIsolationTest` asserts the pipeline/actuator paths stay reachable and the admin paths stay gated — keep it green.
 
 ## Request Status Lifecycle
 
