@@ -9,9 +9,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import uz.greenwhite.gateway.config.GatewayProperties;
 import uz.greenwhite.gateway.oauth2.model.ProviderProperties;
+import uz.greenwhite.gateway.tenant.TenantMappingService;
 import uz.greenwhite.gateway.util.AuthUtil;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Slf4j
@@ -25,13 +27,16 @@ public class OAuth2ProviderFetcher {
     private final GatewayProperties properties;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final TenantMappingService tenantMappingService;
 
     public OAuth2ProviderFetcher(GatewayProperties properties,
                                  StringRedisTemplate redisTemplate,
-                                 ObjectMapper objectMapper) {
+                                 ObjectMapper objectMapper,
+                                 TenantMappingService tenantMappingService) {
         this.properties = properties;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.tenantMappingService = tenantMappingService;
         this.restClient = RestClient.builder()
                 .baseUrl(properties.getBaseUrl())
                 .build();
@@ -68,10 +73,8 @@ public class OAuth2ProviderFetcher {
 
     private ProviderProperties fetchFromOracle(String providerName, Long tenantId) {
         try {
-            Map<String, Object> body = Map.of(
-                    "company_id", tenantId,
-                    "oauth2_provider", providerName
-            );
+            Map<String, Object> body = new LinkedHashMap<>(tenantMappingService.toExternal(tenantId));
+            body.put("oauth2_provider", providerName);
 
             String response = restClient.post()
                     .uri(properties.getOauth2ProviderUri())

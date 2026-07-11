@@ -12,7 +12,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class ResponseSaveRequest {
 
-    @JsonProperty("company_id")
     private Long tenantId;
 
     @JsonProperty("request_id")

@@ -19,7 +19,9 @@ import uz.greenwhite.gateway.util.AuthUtil;
 
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Component
@@ -105,12 +107,18 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
         try {
             log.debug("Saving response for: {}:{}", request.getTenantId(), request.getRequestId());
 
+            Map<String, Object> body = new LinkedHashMap<>(
+                    tenantMappingService.toExternal(request.getTenantId()));
+            body.put("request_id", request.getRequestId());
+            body.put("response", request.getResponse());
+            body.put("error_message", request.getErrorMessage());
+
             var response = restClient.post()
                     .uri(properties.getResponseSaveUri())
                     .header(HttpHeaders.AUTHORIZATION,
                             AuthUtil.generateBasicAuth(properties.getUsername(), properties.getPassword()))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(List.of(request))
+                    .body(List.of(body))
                     .exchange((req, resp) -> {
                         int status = resp.getStatusCode().value();
                         log.debug("Save response status: {}", status);
