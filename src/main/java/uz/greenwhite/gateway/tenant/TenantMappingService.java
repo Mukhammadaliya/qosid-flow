@@ -1,8 +1,8 @@
 package uz.greenwhite.gateway.tenant;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
@@ -21,7 +21,6 @@ import java.util.Map;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class TenantMappingService {
 
     private static final String FIELD_KEY = "gateway.tenant.field-name";
@@ -30,11 +29,23 @@ public class TenantMappingService {
     private static final String DEFAULT_EXTRA = "filial_id";
 
     private final SettingsService settings;
-    private final ObjectMapper objectMapper;
+    /**
+     * Lenient copy used ONLY for the Biruni-pull ingress conversion: the configured tenant/extra
+     * field names (e.g. company_id/filial_id) are unknown to RequestMessage and must be tolerated
+     * here. RequestMessage itself stays strict so the Kafka producer→consumer round-trip still
+     * fails loudly on genuinely unknown fields (no silent pipeline-data loss).
+     */
+    private final ObjectMapper lenientMapper;
+
+    public TenantMappingService(SettingsService settings, ObjectMapper objectMapper) {
+        this.settings = settings;
+        this.lenientMapper = objectMapper.copy()
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    }
 
     /** INGRESS: build a RequestMessage from a raw Biruni pull element. */
     public RequestMessage toInternal(JsonNode element) {
-        RequestMessage msg = objectMapper.convertValue(element, RequestMessage.class);
+        RequestMessage msg = lenientMapper.convertValue(element, RequestMessage.class);
         TenantPair pair = extract(element);
         msg.setTenantId(pair.tenantId());
         msg.setExtraTenantId(pair.extraTenantId());
