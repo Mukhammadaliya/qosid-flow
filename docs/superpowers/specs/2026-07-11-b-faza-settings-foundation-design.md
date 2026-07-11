@@ -26,7 +26,7 @@ Runtime sozlamalarni `.yaml`dan UI/DB'ga ko'chirish poydevorini qurish — shund
 | Sub-faza | Ko'lam | Bog'liqlik | Holat |
 |---|---|---|---|
 | **B1** | H2 + SettingsService + audit + admin login + `/qosid/admin/api` asosi | — | **Bu hujjat (to'liq)** |
-| **B2** | TenantMappingService sozlamalari UI/Settings'da | B1 | Skelet (§9) |
+| ~~**B2**~~ | ~~TenantMappingService sozlamalari UI/Settings'da~~ | — | **BEKOR — C-fazaga qo'shildi** (2026-07-12): B1 tenant sozlamalarini allaqachon saqlaydi/serve qiladi; qolgan ish (tipli validatsiya + sinash endpointi) C-faza spec'iga o'tdi |
 | **B3** | Outbound global auth (Basic/API-KEY/OAuth2), per-request umumlashtirish, AES credential | B1 | Skelet (§9) |
 | **B4** | Inbound auth (API-key + OAuth2 issuer), UI-tanlanadigan, `AuthResult.tenantId` | B1 | Skelet (§9) |
 
@@ -125,7 +125,7 @@ Barcha runtime sozlamalar uchun yagona kirish nuqtasi. Mavjud `*Properties` klas
 
 ## 9. B2/B3/B4 skelet (keyin to'liq brainstorm)
 
-**B2 — Tenant-mapping config:** C-faza `TenantMappingService`ning sozlamalari (`gateway.tenant.field-name`=company_id, `extra-field-name`=filial_id, `default-rest-tenant`=0) UI/Settings'da. Admin API: shu kalitlarni ko'rish/o'zgartirish. Kichik, B1 ustiga. C-faza buni kutadi.
+**B2 — BEKOR (2026-07-12):** B1 tenant sozlamalarini (`gateway.tenant.*`) allaqachon DB'da saqlaydi va generic settings API orqali tahrirlash imkonini beradi. Qolgan ish (tipli validatsiya + "sinash" endpointi) C-faza spec'iga (§5a/§5b) qo'shildi. C-faza endi faqat B1'ni kutadi.
 
 **B3 — Outbound global auth:** bitta global config `gateway.outbound.auth.type` ∈ {basic, apikey, oauth2} + tipга mos credential (basic: login/parol; apikey: header nomi + kalit; oauth2: client_id/secret/token_url/grant). Credential'lar AES. `HttpRequestService` global config'ga qarab auth qo'shadi; ichki-provider (`oauth2_provider` bor) requestlar mustasno (mavjud logika). `oauth2_providers` jadvali (agar per-target kengaytirilsa). Mavjud `BiruniOAuth2Client`/`StandardOAuth2Client` machinery'sini umumlashtirish.
 

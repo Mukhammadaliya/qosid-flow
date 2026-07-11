@@ -1,9 +1,11 @@
 # C-faza: Tenant Rename + Chegara-Tarjima — Dizayn hujjati
 
-**Sana:** 2026-07-11
+**Sana:** 2026-07-11 (2026-07-12 yangilandi — B2 C-fazaga qo'shildi)
 **Holat:** Tasdiqlangan (brainstorming sessiyasi asosida)
 **Muallif:** Muxammadali + Claude
-**Bog'liq:** [2026-07-10-qosid-flow-upgrade-design.md](2026-07-10-qosid-flow-upgrade-design.md) (asosiy upgrade spec, C-faza addendum §7a)
+**Bog'liq:** [2026-07-10-qosid-flow-upgrade-design.md](2026-07-10-qosid-flow-upgrade-design.md) (asosiy upgrade spec, C-faza addendum §7a); [2026-07-11-b-faza-settings-foundation-design.md](2026-07-11-b-faza-settings-foundation-design.md) (B1 tayyor; B2 shu C-fazaga qo'shildi)
+
+> **2026-07-12 yangilanish:** B1 (Settings poydevori) yakunlandi va tenant sozlamalarini (`gateway.tenant.*`) allaqachon DB'da saqlaydi + generic settings API orqali tahrirlash imkonini beradi. Shuning uchun alohida B2 bekor qilindi — uning ishi (tipli validatsiya + "sinash" endpointi) shu C-fazaga qo'shildi. **C-faza endi faqat B1'ni kutadi (tayyor).**
 
 ## 1. Maqsad
 
@@ -79,7 +81,25 @@ Default'lar `company_id`/`filial_id` — sozlama tegilmasa bmb hozirgidek ishlay
 - `toInternal(JsonNode pullElement) → TenantPair(tenantId, extraTenantId)` *(ingress)*: sozlangan kalitlardan o'qiydi. `BiruniClient.pullRequests` raw JSON element'larni oladi; mapper tenant/extra ajratadi; qolgan maydonlar `ObjectMapper.convertValue` bilan `RequestMessage`ga o'tadi.
 - `toExternal(tenantId) → Map<String,Object>` *(egress)*: sozlangan tenant kaliti bilan Map (`{"company_id":100}`). **Extra-tenant egress'da qaytarilmaydi** (§3 sababi) — shuning uchun `toExternal` faqat tenant'ni oladi. `extra-field-name` sozlamasi faqat INGRESS parsing'ni boshqaradi.
 
-**Sozlama manbai:** `SettingsService.get(key, default)` (B-faza). C-faza B'dan keyin bajarilgani uchun mavjud.
+**Sozlama manbai:** `SettingsService.get(key, default)` (B1'da tayyor). `TenantMappingService` sozlamalarni **har so'rovda** o'qiydi (kesh SettingsService ichida) — UI'da o'zgarsa darhol ta'sir qiladi, restart shart emas.
+
+## 5a. Tipli validatsiya (B2'dan qo'shildi)
+
+Tenant sozlamalari generic settings API orqali tahrirlanadi, lekin ikkita footgun'ni oldini olish uchun `SettingsController.update`ga tenant kalitlari uchun maxsus tekshiruv qo'shiladi:
+
+- `gateway.tenant.field-name` **bo'sh saqlanishi bloklanadi** (400) — bo'sh field-name → har pull elementida tenant `null` → hamma so'rov DLQ'ga tushadi. Majburiy, bo'sh bo'lolmaydi.
+- `gateway.tenant.extra-field-name` bo'sh bo'lishi mumkin (extra ixtiyoriy — bo'sh bo'lsa extra-tenant hech qachon ajratilmaydi).
+- `gateway.tenant.default-rest-tenant` — raqamli qiymat bo'lishi tekshiriladi.
+
+Tekshiruv `SettingsController`da (yoki kichik `TenantSettingsValidator` yordamchisida) shu uchta kalit uchun ishlaydi; boshqa kalitlarga tegmaydi.
+
+## 5b. Mapping'ni sinash endpointi (B2'dan qo'shildi)
+
+`POST /qosid/admin/api/tenant-mapping/test` — admin sessiya bilan (himoyalangan chain). Developer sozlamani UI'siz tekshiradi:
+
+- **Body:** namuna Biruni pull JSON element (masalan `{"company_id":100,"filial_id":5,"base_url":"..."}`).
+- **Javob:** `{"tenantId": 100, "extraTenantId": 5, "tenantField": "company_id", "extraField": "filial_id"}` — `TenantMappingService.toInternal` orqali joriy sozlama bilan ajratilgan qiymatlar + qaysi kalit nomlari ishlatilgani. Tenant topilmasa `tenantId: null` va ogohlantirish qaytadi.
+- Yangi kichik controller `TenantMappingController` (`admin` paketda), mavjud B1 admin-security bilan.
 
 ## 6. REST `/queue` yo'lida tenant
 
@@ -93,8 +113,10 @@ Default'lar `company_id`/`filial_id` — sozlama tegilmasa bmb hozirgidek ishlay
 - `TenantMappingService` unit: `toInternal` (default kalitlar; o'zgartirilgan kalitlar; extra yo'q; null qiymat), `toExternal` (faqat tenant kaliti chiqishi).
 - Kontrakt/serialization: Biruni pull JSON → `RequestMessage` (tenant ajratildi); `ResponseSaveRequest` → JSON (`company_id` chiqadi).
 - `ProxyController`: principal tenant → `RequestMessage`; `X-Extra-Tenant-Id` override.
-- Regressiya: mavjud 28 test yashil qoladi (rename kompilyatsiya darajasida).
-- Lokal smoke: Biruni pull → save aylanishi smartup24 bilan (default mapping bilan bmb ishlashini isbotlash).
+- **Tipli validatsiya (5a):** `SettingsController.update` bo'sh `field-name`ni 400 bilan rad etishi; extra-field bo'sh o'tishi; default-rest-tenant raqam tekshiruvi.
+- **Sinash endpointi (5b):** `POST /tenant-mapping/test` — namuna JSON → to'g'ri tenant/extra; tenant topilmagan holat; auth talab (401 sessiyasiz).
+- Regressiya: mavjud **58 test** yashil qoladi (rename kompilyatsiya darajasida; B1 testlari ham).
+- Lokal smoke: Biruni pull → save aylanishi smartup24 bilan (default mapping bilan bmb ishlashini isbotlash) + `/tenant-mapping/test` endpointini curl bilan sinash.
 
 ## 8. Risklar
 
@@ -105,11 +127,15 @@ Default'lar `company_id`/`filial_id` — sozlama tegilmasa bmb hozirgidek ishlay
 | Sozlama noto'g'ri kalit → pull'da tenant null | `toInternal` null → DLQ aniq xabar bilan (jim NPE emas); `RequestValidator` |
 | B-faza `AuthResult`da tenant bermasligi | C B kontraktini talab qiladi; `default-rest-tenant` fallback |
 
-## 9. B-fazaga bog'liqlik (majburiy)
+## 9. B-fazaga bog'liqlik
 
-C-faza B-fazadan **keyin** bajariladi. B'dan ikki narsa talab qilinadi (B-faza dizaynida qayd etilishi kerak):
-1. `SettingsService.get(key, default)` — mapping kalitlarini o'qish.
-2. `AuthResult.tenantId` (+ ixtiyoriy `extraTenantId`) — REST tenant.
+C-faza **B1'dan keyin** bajariladi (B1 tayyor). B1'dan olinadi:
+1. `SettingsService.get(key, default)` — mapping kalitlarini o'qish (**tayyor**, tenant kalitlari migratsiya qilingan).
+2. Admin API + himoyalangan security chain — `/tenant-mapping/test` va validatsiya shu yerga o'tiradi (**tayyor**).
+
+**B4 (inbound auth) hali yo'q** — `AuthResult.tenantId` REST tenant uchun kerak. C-faza B4'siz ham to'liq ishlaydi: REST yo'lida tenant `default-rest-tenant` fallback bilan boradi; B4 kelganda `AuthResult.tenantId` fallback'ni almashtiradi. Oracle pull oqimi (asosiy bmb integratsiyasi) B4'ga bog'liq emas — u to'liq ishlaydi.
+
+**B2 bekor:** alohida B2 yo'q — uning ishi (5a validatsiya + 5b sinash endpointi) shu C-fazaga qo'shildi.
 
 ## 10. Ko'lamdan tashqarida
 
