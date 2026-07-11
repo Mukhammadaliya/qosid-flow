@@ -70,6 +70,13 @@
             <version>${oracle.version}</version>
         </dependency>
 
+        <!-- H2 — embedded settings DB (control-plane), file mode -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.2.224</version>
+        </dependency>
+
         <!-- HTTP Client -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
