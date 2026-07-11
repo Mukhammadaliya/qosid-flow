@@ -76,6 +76,9 @@ management:
   endpoint:
     health:
       show-details: always
+  health:
+    db:
+      enabled: false   # control-plane H2 must not affect gateway health
 
 # ============================================================
 # GATEWAY CONFIGURATION
