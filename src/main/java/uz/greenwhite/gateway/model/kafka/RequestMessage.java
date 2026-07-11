@@ -1,5 +1,6 @@
 package uz.greenwhite.gateway.model.kafka;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import lombok.AllArgsConstructor;
@@ -16,15 +17,14 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true) // tenant/extra field names are UI-configurable (see TenantMappingService); Jackson can't know them statically
 public class RequestMessage {
 
-    @JsonProperty("company_id")
     private Long tenantId;
 
     @JsonProperty("request_id")
     private Long requestId;
 
-    @JsonProperty("filial_id")
     private Long extraTenantId;
 
     @JsonProperty("endpoint_id")

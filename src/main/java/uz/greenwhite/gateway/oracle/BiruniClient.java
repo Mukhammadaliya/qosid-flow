@@ -1,5 +1,6 @@
 package uz.greenwhite.gateway.oracle;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
@@ -13,6 +14,7 @@ import uz.greenwhite.gateway.model.ResponseSaveRequest;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import uz.greenwhite.gateway.source.RequestSourceClient;
 import uz.greenwhite.gateway.source.ResponseSinkClient;
+import uz.greenwhite.gateway.tenant.TenantMappingService;
 import uz.greenwhite.gateway.util.AuthUtil;
 
 import java.time.Duration;
@@ -25,9 +27,11 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
 
     private final RestClient restClient;
     private final GatewayProperties properties;
+    private final TenantMappingService tenantMappingService;
 
-    public BiruniClient(GatewayProperties properties) {
+    public BiruniClient(GatewayProperties properties, TenantMappingService tenantMappingService) {
         this.properties = properties;
+        this.tenantMappingService = tenantMappingService;
 
         var httpClient = java.net.http.HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(properties.getConnectionTimeout()))
@@ -62,19 +66,24 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
         try {
             log.debug("Pulling requests from: {}{}", properties.getBaseUrl(), properties.getRequestPullUri());
 
-            List<RequestMessage> requests = restClient.get()
+            List<JsonNode> raw = restClient.get()
                     .uri(properties.getRequestPullUri())
                     .header(HttpHeaders.AUTHORIZATION,
                             AuthUtil.generateBasicAuth(properties.getUsername(), properties.getPassword()))
                     .retrieve()
-                    .toEntity(new ParameterizedTypeReference<List<RequestMessage>>() {})
+                    .toEntity(new ParameterizedTypeReference<List<JsonNode>>() {})
                     .getBody();
 
-            if (requests != null && !requests.isEmpty()) {
-                log.info("Pulled {} requests from data source", requests.size());
+            if (raw == null || raw.isEmpty()) {
+                return List.of();
             }
 
-            return requests != null ? requests : List.of();
+            List<RequestMessage> requests = raw.stream()
+                    .map(tenantMappingService::toInternal)
+                    .toList();
+
+            log.info("Pulled {} requests from data source", requests.size());
+            return requests;
 
         } catch (Exception e) {
             log.error("Error pulling requests from data source: {}", e.getMessage(), e);
