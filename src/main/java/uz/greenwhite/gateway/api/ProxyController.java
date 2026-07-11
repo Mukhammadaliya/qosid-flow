@@ -21,6 +21,7 @@ import uz.greenwhite.gateway.file.FileService;
 import uz.greenwhite.gateway.file.ServletFileUploadEntity;
 import uz.greenwhite.gateway.kafka.producer.RequestProducer;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
+import uz.greenwhite.gateway.settings.SettingsService;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -41,10 +42,11 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>Inbound API requests are tagged {@code source="API"}. Because the existing
  * {@link RequestMessage#getCompositeId()} returns {@code tenantId:requestId},
- * API requests are assigned {@code tenantId=0L} and a derived non-negative
- * {@code long} from a fresh UUID. This is a known shortcut documented in the
- * plan; a dedicated {@code compositeId} field on {@code RequestMessage} would
- * be the cleaner long-term fix.</p>
+ * API requests carry the tenant resolved from the auth principal
+ * ({@link AuthResult#getTenantId()}), falling back to the
+ * {@code gateway.tenant.default-rest-tenant} setting when the provider does
+ * not supply one (e.g. {@code NoOpAuthorizationProvider}), plus a derived
+ * non-negative {@code long} from a fresh UUID.</p>
  */
 @Slf4j
 @RestController
@@ -52,9 +54,9 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class ProxyController {
 
-    private static final long API_DEFAULT_TENANT = 0L;
     private static final String CALLBACK_HEADER = "X-Callback-Url";
     private static final String BIRUNI_UPLOAD_HEADER = "BiruniUpload";
+    private static final String EXTRA_TENANT_HEADER = "X-Extra-Tenant-Id";
 
     private final AuthorizationProvider authorizationProvider;
     private final RequestProducer requestProducer;
@@ -62,6 +64,7 @@ public class ProxyController {
     private final ProxyProperties proxyProperties;
     private final ApiProperties apiProperties;
     private final uz.greenwhite.gateway.validation.CallbackUrlValidator callbackUrlValidator;
+    private final SettingsService settingsService;
 
     @RequestMapping(
             value = "/**",
@@ -84,6 +87,20 @@ public class ProxyController {
         AuthResult authResult = authorizationProvider.authorize(authContext);
         if (!authResult.isAllowed()) {
             throw new AuthorizationDeniedException(authResult.getReason(), authResult.getHttpStatus());
+        }
+
+        // 1a. Resolve tenant: principal-supplied wins, else the configured default.
+        Long tenantId = authResult.getTenantId();
+        if (tenantId == null) {
+            tenantId = Long.parseLong(settingsService.get("gateway.tenant.default-rest-tenant", "0"));
+        }
+        String extraTenantHeader = request.getHeader(EXTRA_TENANT_HEADER);
+        Long extraTenantId = null;
+        if (authResult.getExtraTenantId() != null) {
+            // Provider-supplied extra tenant wins over the client header.
+            extraTenantId = parseLongOrNull(authResult.getExtraTenantId());
+        } else if (extraTenantHeader != null && !extraTenantHeader.isBlank()) {
+            extraTenantId = parseLongOrNull(extraTenantHeader);
         }
 
         // 1b. SSRF guard on client-supplied callback URL — reject at accept time
@@ -158,7 +175,8 @@ public class ProxyController {
 
         // 6. Build the Kafka message
         RequestMessage message = RequestMessage.builder()
-                .tenantId(API_DEFAULT_TENANT)
+                .tenantId(tenantId)
+                .extraTenantId(extraTenantId)
                 .requestId(requestId)
                 .source("API")
                 .baseUrl(apiProperties.getBaseUrl())
@@ -196,6 +214,14 @@ public class ProxyController {
     }
 
     // ==================== HELPERS ====================
+
+    private static Long parseLongOrNull(String s) {
+        try {
+            return Long.parseLong(s.trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /**
      * Build a JSON array of file metadata for Biruni's {@code OracleHeader.getFiles()}.

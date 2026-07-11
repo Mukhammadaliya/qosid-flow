@@ -16,7 +16,7 @@ class ProxyControllerIpTest {
         ProxyProperties props = mock(ProxyProperties.class);
         when(props.getTrustedProxies()).thenReturn(trusted);
         // Only getClientIp is exercised — other deps may be null.
-        return new ProxyController(null, null, null, props, null, null);
+        return new ProxyController(null, null, null, props, null, null, null);
     }
 
     @Test

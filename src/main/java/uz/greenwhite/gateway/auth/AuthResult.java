@@ -5,30 +5,35 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 
 /**
- * Outcome of an {@link AuthorizationProvider#authorize(AuthContext)} call.
- * Construct via the static factories — the all-args constructor is private.
+ * Outcome of an authorize() call. Carries the resolved tenant (nullable) so the
+ * proxy can tag the request without trusting a client-supplied value. Construct
+ * via the static factories.
  */
 @Data
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class AuthResult {
 
     private boolean allowed;
-
-    /** Reason for denial; {@code null} when allowed. */
     private String reason;
-
-    /** HTTP status to return on denial; 200 when allowed. */
     private int httpStatus;
+    /** Resolved tenant id; null when the provider does not supply one (e.g. NoOp). */
+    private Long tenantId;
+    /** Resolved extra-tenant; null when not supplied. */
+    private String extraTenantId;
 
     public static AuthResult allowed() {
-        return new AuthResult(true, null, 200);
+        return new AuthResult(true, null, 200, null, null);
+    }
+
+    public static AuthResult allowed(Long tenantId, String extraTenantId) {
+        return new AuthResult(true, null, 200, tenantId, extraTenantId);
     }
 
     public static AuthResult denied(String reason) {
-        return new AuthResult(false, reason, 403);
+        return new AuthResult(false, reason, 403, null, null);
     }
 
     public static AuthResult denied(String reason, int httpStatus) {
-        return new AuthResult(false, reason, httpStatus);
+        return new AuthResult(false, reason, httpStatus, null, null);
     }
 }
