@@ -21,7 +21,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AdminAuthController {
 
-    private static final String PRINCIPAL = "admin";
     private final AdminAuthService authService;
 
     @PostMapping("/login")
@@ -34,6 +33,8 @@ public class AdminAuthController {
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(auth);
         SecurityContextHolder.setContext(context);
+        HttpSession existing = request.getSession(false);
+        if (existing != null) existing.invalidate();
         HttpSession session = request.getSession(true);
         session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, context);
         return ResponseEntity.ok(Map.of("username", req.getUsername(), "status", "AUTHENTICATED"));
@@ -54,9 +55,11 @@ public class AdminAuthController {
     }
 
     @PostMapping("/change-password")
-    public ResponseEntity<Void> changePassword(@RequestBody ChangePasswordRequest req) {
+    public ResponseEntity<Void> changePassword(@RequestBody ChangePasswordRequest req, HttpServletRequest request) {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         authService.changePassword(auth.getName(), req.getOldPassword(), req.getNewPassword());
+        HttpSession session = request.getSession(false);
+        if (session != null) session.invalidate();
         return ResponseEntity.noContent().build();
     }
 }

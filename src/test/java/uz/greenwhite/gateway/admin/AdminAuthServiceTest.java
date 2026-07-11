@@ -54,8 +54,8 @@ class AdminAuthServiceTest {
         when(repo.findByUsername("admin")).thenReturn(Optional.of(
                 AdminAccount.builder().username("admin").passwordHash(encoder.encode("admin")).build()));
         AdminAuthService s = service();
-        assertThrows(IllegalArgumentException.class, () -> s.changePassword("admin", "wrong", "newpass"));
-        s.changePassword("admin", "admin", "newpass");
+        assertThrows(IllegalArgumentException.class, () -> s.changePassword("admin", "wrong", "newpass1"));
+        s.changePassword("admin", "admin", "newpass1");
         verify(repo).updatePassword(eq("admin"), anyString());
     }
 }

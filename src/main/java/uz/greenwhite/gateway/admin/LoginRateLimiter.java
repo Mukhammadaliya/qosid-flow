@@ -27,6 +27,7 @@ public class LoginRateLimiter {
 
     public void recordFailure(String key) {
         long now = Instant.now().toEpochMilli();
+        attempts.entrySet().removeIf(e -> now - e.getValue().windowStart() >= WINDOW_MS);
         attempts.compute(key, (k, a) -> {
             if (a == null || now - a.windowStart() >= WINDOW_MS) return new Attempt(1, now);
             return new Attempt(a.count() + 1, a.windowStart());

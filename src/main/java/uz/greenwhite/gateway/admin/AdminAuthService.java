@@ -15,9 +15,12 @@ public class AdminAuthService {
     private final LoginRateLimiter rateLimiter;
 
     public boolean authenticate(String username, String password) {
-        rateLimiter.checkAllowed(username);
         var account = repository.findByUsername(username);
-        if (account.isPresent() && passwordEncoder.matches(password, account.get().getPasswordHash())) {
+        if (account.isEmpty()) {
+            return false; // unknown user: no rate-limit state (bounds the map to real accounts)
+        }
+        rateLimiter.checkAllowed(username);
+        if (passwordEncoder.matches(password, account.get().getPasswordHash())) {
             rateLimiter.reset(username);
             repository.updateLastLogin(username);
             return true;
@@ -32,8 +35,11 @@ public class AdminAuthService {
         if (!passwordEncoder.matches(oldPassword, account.getPasswordHash())) {
             throw new IllegalArgumentException("Current password is incorrect");
         }
-        if (newPassword == null || newPassword.length() < 4) {
-            throw new IllegalArgumentException("New password too short (min 4 chars)");
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new IllegalArgumentException("New password too short (min 8 chars)");
+        }
+        if ("admin".equalsIgnoreCase(newPassword)) {
+            throw new IllegalArgumentException("New password must not be the default");
         }
         repository.updatePassword(username, passwordEncoder.encode(newPassword));
         log.info("Admin password changed for {}", username);
