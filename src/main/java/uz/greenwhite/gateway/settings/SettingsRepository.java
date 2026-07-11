@@ -1,6 +1,5 @@
 package uz.greenwhite.gateway.settings;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -11,10 +10,13 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-@RequiredArgsConstructor
 public class SettingsRepository {
 
-    private final @Qualifier("settingsJdbcTemplate") JdbcTemplate jdbc;
+    private final JdbcTemplate jdbc;
+
+    public SettingsRepository(@Qualifier("settingsJdbcTemplate") JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
 
     private static final RowMapper<SettingsRecord> MAPPER = (rs, n) -> SettingsRecord.builder()
             .key(rs.getString("skey"))
