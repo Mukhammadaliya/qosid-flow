@@ -20,6 +20,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SettingsMigrationRunner implements ApplicationRunner {
 
+    /** Marker key written LAST after a successful migration — makes the run resumable. */
+    private static final String MIGRATION_MARKER = "gateway.settings.migration-completed";
+
     /** settings key -> yaml property name. Non-secret runtime settings only. */
     static final Map<String, String> MIGRATABLE_KEYS = new LinkedHashMap<>() {{
         put("gateway.api.base-url", "gateway.api.base-url");
@@ -43,8 +46,8 @@ public class SettingsMigrationRunner implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (!repository.findAll().isEmpty()) {
-            log.info("Settings DB already populated — skipping yaml→DB migration");
+        if (repository.find(MIGRATION_MARKER).isPresent()) {
+            log.info("Settings migration already completed — skipping");
             return;
         }
         int migrated = 0;
@@ -55,6 +58,9 @@ public class SettingsMigrationRunner implements ApplicationRunner {
                 migrated++;
             }
         }
+        // Write the marker LAST — a partial failure leaves it absent so the next boot re-runs
+        // (idempotent upsert-by-key re-applies cleanly). Resumable.
+        settingsService.set(MIGRATION_MARKER, "true", false, "migration");
         log.info("yaml→DB settings migration complete: {} keys migrated", migrated);
     }
 }

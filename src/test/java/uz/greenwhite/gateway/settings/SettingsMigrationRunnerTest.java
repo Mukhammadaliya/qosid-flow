@@ -6,7 +6,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.env.Environment;
 
-import java.util.List;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -19,8 +19,8 @@ class SettingsMigrationRunnerTest {
     @Mock Environment env;
 
     @Test
-    void migratesWhenSettingsEmpty() throws Exception {
-        when(repo.findAll()).thenReturn(List.of()); // empty → migrate
+    void migratesWhenMarkerAbsent() throws Exception {
+        when(repo.find("gateway.settings.migration-completed")).thenReturn(Optional.empty()); // marker absent → migrate
         when(env.getProperty(anyString())).thenReturn(null);
         when(env.getProperty("gateway.retry.max-attempts")).thenReturn("3");
 
@@ -31,9 +31,9 @@ class SettingsMigrationRunnerTest {
     }
 
     @Test
-    void skipsWhenSettingsPopulated() throws Exception {
-        when(repo.findAll()).thenReturn(List.of(
-                SettingsRecord.builder().key("x").value("1").build())); // non-empty → skip
+    void skipsWhenMarkerPresent() throws Exception {
+        when(repo.find("gateway.settings.migration-completed")).thenReturn(Optional.of(
+                SettingsRecord.builder().key("gateway.settings.migration-completed").value("true").build())); // marker present → skip
 
         SettingsMigrationRunner runner = new SettingsMigrationRunner(repo, service, env);
         runner.run(null);
