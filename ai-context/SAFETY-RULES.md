@@ -134,7 +134,7 @@ that gap.
 
 ### 29. Never merge the admin SecurityFilterChain with the pipeline chain
 
-`AdminSecurityConfig` defines TWO chains: `adminSecurityChain` (order 1, `/qosid/admin/api/**`, session-required, CSRF on) and `apiSecurityChain` (order 2, everything else, permitAll). Collapsing them into one, or removing the `securityMatcher`, locks `/qosid/api/**` and actuator behind admin auth — the pipeline stops accepting requests and health checks fail. `SecurityIsolationTest` guards this; keep it green.
+`AdminSecurityConfig` defines TWO chains: `adminSecurityChain` (order 1, `/qosid/admin/api/**`, session-required, SPA-compatible CSRF on) and `apiSecurityChain` (order 2, everything else, permitAll, CSRF disabled). Collapsing them into one, removing the `securityMatcher`, or re-enabling CSRF on the api chain, locks or breaks `/qosid/api/**` — the pipeline stops accepting requests (a re-enabled CSRF filter alone breaks every `POST /qosid/api/v1/queue/**`). Actuator runs on the separate management port (8091) with its own context, so it is not governed by this main-context chain. `SecurityIsolationTest` guards the pipeline GET **and** POST openness; keep it green.
 
 ---
 
