@@ -22,5 +22,5 @@ test('login then view statistics KPIs', async ({ page }) => {
   await page.getByRole('button', { name: 'Kirish' }).click();
   await expect(page.getByText('Sozlamalar')).toBeVisible();
   await page.goto('/statistics');
-  await expect(page.getByText('req/s')).toBeVisible();
+  await expect(page.locator('.ant-statistic', { hasText: 'req/s' })).toContainText('7');
 });
