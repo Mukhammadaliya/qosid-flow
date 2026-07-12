@@ -44,8 +44,10 @@ public class SourceAuthService {
     private String basicHeader() {
         String user = settings.get("gateway.source.auth.basic.username", "");
         String pass = settings.getSecret("gateway.source.auth.basic.password", "");
-        if (user == null || user.isBlank()) {
-            // Fallback to yaml GatewayProperties (dev / pre-migration).
+        if (user == null || user.isBlank() || pass == null || pass.isBlank()) {
+            // Fallback to yaml GatewayProperties when EITHER credential is blank (dev /
+            // pre-migration / blank-encryption-key deploy where the username migrated but
+            // the secret password did not — never send Basic with an empty password).
             user = gatewayProperties.getUsername();
             pass = gatewayProperties.getPassword();
         }

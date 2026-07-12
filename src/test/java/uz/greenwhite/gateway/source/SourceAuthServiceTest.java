@@ -46,6 +46,23 @@ class SourceAuthServiceTest {
     }
 
     @Test
+    void basicFallsBackToYamlWhenOnlyPasswordBlank() {
+        // C1: username migrated to DB (non-secret) but password did not (secret, skipped on
+        // a blank-encryption-key deploy) — must still fall back to yaml, not send Basic user:<empty>.
+        when(settings.get("gateway.source.auth.type", "basic")).thenReturn("basic");
+        when(settings.get("gateway.source.auth.basic.username", "")).thenReturn("dbUser");
+        when(settings.getSecret("gateway.source.auth.basic.password", "")).thenReturn("");
+        when(gatewayProperties.getUsername()).thenReturn("yamlU");
+        when(gatewayProperties.getPassword()).thenReturn("yamlP");
+
+        Map<String, String> h = service().authHeaders();
+
+        verify(gatewayProperties).getUsername();
+        verify(gatewayProperties).getPassword();
+        assertEquals(uz.greenwhite.gateway.util.AuthUtil.generateBasicAuth("yamlU", "yamlP"), h.get("Authorization"));
+    }
+
+    @Test
     void apikeyUsesConfiguredHeaderAndValue() {
         when(settings.get("gateway.source.auth.type", "basic")).thenReturn("apikey");
         when(settings.get("gateway.source.auth.apikey.header", "X-Api-Key")).thenReturn("X-Api-Key");

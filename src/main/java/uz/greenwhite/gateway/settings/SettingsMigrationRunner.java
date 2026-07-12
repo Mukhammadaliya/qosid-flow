@@ -38,7 +38,6 @@ public class SettingsMigrationRunner implements ApplicationRunner {
         put("gateway.tenant.field-name", "gateway.tenant.field-name");
         put("gateway.tenant.extra-field-name", "gateway.tenant.extra-field-name");
         put("gateway.tenant.default-rest-tenant", "gateway.tenant.default-rest-tenant");
-        put("gateway.source.auth.basic.username", "gateway.source.username");
     }};
 
     private final SettingsRepository repository;
@@ -47,6 +46,12 @@ public class SettingsMigrationRunner implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        // Always runs, regardless of the marker: an UPGRADED deployment (marker already
+        // present from before B3 existed) must still pick up the source basic credentials
+        // on first boot after upgrade. Idempotent — only writes rows that are still absent,
+        // so it never overwrites an admin edit made via the settings UI.
+        ensureSourceBasicCreds();
+
         if (repository.find(MIGRATION_MARKER).isPresent()) {
             log.info("Settings migration already completed — skipping");
             return;
@@ -60,22 +65,37 @@ public class SettingsMigrationRunner implements ApplicationRunner {
             }
         }
 
-        // Basic password is a secret — the generic loop above can't set secret=true, so migrate
-        // it separately here. Guarded: if encryption is disabled, settingsService.set(..., true, ...)
-        // throws — degrade to a WARN so a blank encryption key never fails startup (yaml fallback
-        // in SourceAuthService still applies in that case).
-        String sourcePassword = environment.getProperty("gateway.source.password");
-        if (sourcePassword != null && !sourcePassword.isBlank()) {
-            try {
-                settingsService.set("gateway.source.auth.basic.password", sourcePassword, true, "migration");
-            } catch (Exception e) {
-                log.warn("Skipped source basic-password migration (encryption disabled?): {} — yaml fallback applies", e.getMessage());
-            }
-        }
-
         // Write the marker LAST — a partial failure leaves it absent so the next boot re-runs
         // (idempotent upsert-by-key re-applies cleanly). Resumable.
         settingsService.set(MIGRATION_MARKER, "true", false, "migration");
         log.info("yaml→DB settings migration complete: {} keys migrated", migrated);
+    }
+
+    /**
+     * Migrates the B3 source-channel basic credentials outside the one-shot marker gate.
+     * Runs on every boot but only writes a key when its row is still absent, so it's safe
+     * both on a fresh deploy and on an already-migrated (upgraded) deployment where the
+     * generic {@link #MIGRATION_MARKER} was written before B3 existed.
+     */
+    private void ensureSourceBasicCreds() {
+        if (repository.find("gateway.source.auth.basic.username").isEmpty()) {
+            String u = environment.getProperty("gateway.source.username");
+            if (u != null && !u.isBlank()) {
+                settingsService.set("gateway.source.auth.basic.username", u, false, "migration");
+            }
+        }
+        if (repository.find("gateway.source.auth.basic.password").isEmpty()) {
+            String p = environment.getProperty("gateway.source.password");
+            if (p != null && !p.isBlank()) {
+                try {
+                    settingsService.set("gateway.source.auth.basic.password", p, true, "migration");
+                } catch (Exception e) {
+                    // Guarded: if encryption is disabled, settingsService.set(..., true, ...) throws —
+                    // degrade to a WARN so a blank encryption key never fails startup (yaml fallback
+                    // in SourceAuthService still applies in that case).
+                    log.warn("Source basic-password migration skipped (encryption disabled?): {} — yaml fallback applies", e.getMessage());
+                }
+            }
+        }
     }
 }

@@ -65,4 +65,64 @@ class SourceAuthApiTest {
                         .content(om.writeValueAsString(Map.of("type", "oauth2", "oauth2ClientId", "cid"))))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void putBasicWithoutPasswordAndNoneStoredIs400() throws Exception {
+        // I2: fresh config (no password row yet) — username-only save must not silently
+        // persist an empty-password Basic auth.
+        MockHttpSession s = login();
+        mvc.perform(put("/qosid/admin/api/source-auth").session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("type", "basic", "basicUsername", "u"))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void putBasicWithoutPasswordButAlreadyStoredKeepsExisting() throws Exception {
+        // Keep-existing-password semantics: once a password row exists, a later save that
+        // only changes the username must succeed without requiring the password again.
+        MockHttpSession s = login();
+        mvc.perform(put("/qosid/admin/api/source-auth").session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of(
+                                "type", "basic", "basicUsername", "u1", "basicPassword", "p1"))))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(put("/qosid/admin/api/source-auth").session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("type", "basic", "basicUsername", "u2"))))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void putOauth2NonNumericCacheTtlIs400() throws Exception {
+        // Minor(b): oauth2CacheTtlSeconds is optional but must parse as a long when present.
+        MockHttpSession s = login();
+        mvc.perform(put("/qosid/admin/api/source-auth").session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of(
+                                "type", "oauth2",
+                                "oauth2TokenUrl", "http://x",
+                                "oauth2ClientId", "cid",
+                                "oauth2ClientSecret", "secret",
+                                "oauth2CacheTtlSeconds", "notANumber"))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void testEndpointDoesNotConsumePullEndpointAndReturnsOkForApikey() throws Exception {
+        // I3: /test must never hit the source pull URI (it consumes pending requests) —
+        // it only needs to resolve the configured auth headers.
+        MockHttpSession s = login();
+        mvc.perform(put("/qosid/admin/api/source-auth").session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of(
+                                "type", "apikey", "apikeyHeader", "X-Api-Key", "apikeyValue", "secret-k"))))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(post("/qosid/admin/api/source-auth/test").session(s).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ok").value(true))
+                .andExpect(jsonPath("$.type").value("apikey"));
+    }
 }
