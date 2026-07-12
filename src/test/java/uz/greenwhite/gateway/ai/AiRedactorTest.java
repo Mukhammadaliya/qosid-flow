@@ -19,6 +19,20 @@ class AiRedactorTest {
     }
 
     @Test
+    void masksJsonQuotedKeys() {
+        String out = AiRedactor.redact("{\n  \"password\" : \"hunter2\",\n  \"api_key\": \"k-42\"\n}");
+        assertThat(out)
+                .contains("password").contains("api_key")
+                .doesNotContain("hunter2").doesNotContain("k-42");
+    }
+
+    @Test
+    void masksBasicAuthFullValue() {
+        assertThat(AiRedactor.redact("authorization: Basic dXNlcjpwYXNz"))
+                .contains("Basic ***").doesNotContain("dXNlcjpwYXNz");
+    }
+
+    @Test
     void leavesOrdinaryTextUntouched() {
         assertThat(AiRedactor.redact("connection timeout to supplier37 after 30s"))
                 .isEqualTo("connection timeout to supplier37 after 30s");
