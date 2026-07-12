@@ -21,10 +21,17 @@ describe('AppLayout', () => {
     expect(screen.getByText('Sozlamalar')).toBeInTheDocument();
   });
 
-  it('shows future nav items (Errors) as disabled', () => {
+  it('renders the Errors nav as an enabled submenu', () => {
     renderLayout();
-    const errors = screen.getByText('Xatolar').closest('.ant-menu-item');
-    expect(errors?.className).toContain('ant-menu-item-disabled');
+    const errors = screen.getByText('Xatolar').closest('.ant-menu-submenu');
+    expect(errors).not.toBeNull();
+    expect(errors?.className).not.toContain('ant-menu-submenu-disabled');
+  });
+
+  it('shows future nav items (Statistics) as disabled', () => {
+    renderLayout();
+    const statistics = screen.getByText('Statistika').closest('.ant-menu-item');
+    expect(statistics?.className).toContain('ant-menu-item-disabled');
   });
 
   it('shows the logged-in username', () => {

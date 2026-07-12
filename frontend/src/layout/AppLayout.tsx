@@ -18,7 +18,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   const navItems = [
     { key: '/settings', icon: <SettingOutlined />, label: t('nav.settings') },
-    { key: 'errors', icon: <WarningOutlined />, disabled: true, label: <Tooltip title={t('nav.comingSoon')}>{t('nav.errors')}</Tooltip> },
+    { key: '/errors', icon: <WarningOutlined />, label: t('nav.errors'), children: [
+        { key: '/errors/dlq', label: t('errors.dlqNav') },
+        { key: '/errors/jar', label: t('errors.jarNav') },
+        { key: '/errors/docker', label: t('errors.dockerNav') },
+    ] },
     { key: 'statistics', icon: <BarChartOutlined />, disabled: true, label: <Tooltip title={t('nav.comingSoon')}>{t('nav.statistics')}</Tooltip> },
     { key: 'logs', icon: <FileTextOutlined />, disabled: true, label: <Tooltip title={t('nav.comingSoon')}>{t('nav.logs')}</Tooltip> },
   ];
@@ -44,7 +48,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             mode="inline"
             selectedKeys={[selectedKey]}
             items={navItems}
-            onClick={({ key }) => { if (key === '/settings') navigate('/settings'); }}
+            onClick={({ key }) => { if (key === '/settings' || key.startsWith('/errors/')) navigate(key); }}
             style={{ height: '100%', borderRight: 0 }}
           />
         </Sider>

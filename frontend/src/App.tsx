@@ -6,6 +6,9 @@ import { RequireAuth } from './auth/RequireAuth';
 import { LoginPage } from './auth/LoginPage';
 import { AppLayout } from './layout/AppLayout';
 import { SettingsPage } from './pages/settings/SettingsPage';
+import { DlqPage } from './pages/errors/DlqPage';
+import { JarPage } from './pages/errors/JarPage';
+import { DockerPage } from './pages/errors/DockerPage';
 
 export default function App() {
   return (
@@ -20,6 +23,9 @@ export default function App() {
                   <Routes>
                     <Route index element={<Navigate to="/settings" replace />} />
                     <Route path="settings/*" element={<SettingsPage />} />
+                    <Route path="errors/dlq" element={<DlqPage />} />
+                    <Route path="errors/jar" element={<JarPage />} />
+                    <Route path="errors/docker" element={<DockerPage />} />
                     <Route path="*" element={<Navigate to="/settings" replace />} />
                   </Routes>
                 </AppLayout>
