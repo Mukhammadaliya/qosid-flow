@@ -24,8 +24,8 @@ public final class StatPresets {
     static {
         PRESETS.put("kpi", new StatPreset(StatPreset.Kind.INSTANT, q(
             "throughput", "sum(rate(gateway_kafka_produce_total{result=\"success\"}[5m]))",
-            "successRate", "sum(rate(gateway_http_request_total{result=\"success\"}[5m])) / clamp_min(sum(rate(gateway_http_request_total[5m])),1) * 100",
-            "errorRate", "sum(rate(gateway_http_request_total{result=~\"error_4xx|error_5xx|timeout\"}[5m])) / clamp_min(sum(rate(gateway_http_request_total[5m])),1) * 100",
+            "successRate", "sum(rate(gateway_http_request_total{result=\"success\"}[5m])) / sum(rate(gateway_http_request_total[5m])) * 100",
+            "errorRate", "sum(rate(gateway_http_request_total{result=~\"error_4xx|error_5xx|timeout\"}[5m])) / sum(rate(gateway_http_request_total[5m])) * 100",
             "dlq", "sum(increase(gateway_dlq_sent_total[${window}]))",
             "e2eP95", "histogram_quantile(0.95, sum(rate(gateway_request_e2e_duration_seconds_bucket[5m])) by (le)) * 1000"
         )));

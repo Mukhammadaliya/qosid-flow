@@ -44,7 +44,7 @@ public class StatsQueryService {
         long end = (toMs != null) ? toMs : System.currentTimeMillis();
         long start = (fromMs != null) ? fromMs : end - 3_600_000L;
         int step = (stepSec == null) ? 30 : Math.max(stepSec, 1);
-        long windowSec = Math.max((end - start) / 1000L, 60L);
+        long windowSec = Math.min(Math.max((end - start) / 1000L, 60L), 2_592_000L); // cap 30d
         try {
             if (preset.kind() == StatPreset.Kind.INSTANT) {
                 Map<String, Double> kpis = new LinkedHashMap<>();
