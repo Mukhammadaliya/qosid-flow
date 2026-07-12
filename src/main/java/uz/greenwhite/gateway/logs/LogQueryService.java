@@ -18,7 +18,7 @@ import java.util.List;
 @Service
 public class LogQueryService {
 
-    private static final String DEFAULT_URL = "http://loki:3100";
+    private static final String DEFAULT_URL = "http://localhost:3100";
     private static final int MAX_LIMIT = 1000;
 
     private final RestClient lokiRestClient;

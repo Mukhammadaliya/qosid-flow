@@ -23,7 +23,7 @@ class LogQueryServiceTest {
     private LogQueryService serviceBackedBy(MockRestServiceServer[] holder) {
         RestClient.Builder builder = RestClient.builder();
         holder[0] = MockRestServiceServer.bindTo(builder).build();
-        when(settings.get("gateway.loki.url", "http://loki:3100")).thenReturn("http://loki:3100");
+        when(settings.get("gateway.loki.url", "http://localhost:3100")).thenReturn("http://localhost:3100");
         return new LogQueryService(builder.build(), new LokiResponseParser(mapper), settings);
     }
 
