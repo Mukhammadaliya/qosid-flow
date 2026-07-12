@@ -9,6 +9,7 @@ import { SettingsPage } from './pages/settings/SettingsPage';
 import { DlqPage } from './pages/errors/DlqPage';
 import { JarPage } from './pages/errors/JarPage';
 import { DockerPage } from './pages/errors/DockerPage';
+import { StatisticsPage } from './pages/stats/StatisticsPage';
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
                     <Route path="errors/dlq" element={<DlqPage />} />
                     <Route path="errors/jar" element={<JarPage />} />
                     <Route path="errors/docker" element={<DockerPage />} />
+                    <Route path="statistics" element={<StatisticsPage />} />
                     <Route path="*" element={<Navigate to="/settings" replace />} />
                   </Routes>
                 </AppLayout>

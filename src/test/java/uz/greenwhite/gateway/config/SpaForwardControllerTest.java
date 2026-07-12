@@ -33,6 +33,12 @@ class SpaForwardControllerTest {
     }
 
     @Test
+    void statisticsDeepLinkForwardsToIndex() throws Exception {
+        mvc.perform(get("/statistics")).andExpect(status().isOk())
+                .andExpect(forwardedUrl("/index.html"));
+    }
+
+    @Test
     void assetPathIsNotForwarded() throws Exception {
         // A path whose last segment contains a dot (bundle.js) must NOT be forwarded —
         // the resource handler serves it. standaloneSetup has no such handler, so 404.

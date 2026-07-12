@@ -23,7 +23,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         { key: '/errors/jar', label: t('errors.jarNav') },
         { key: '/errors/docker', label: t('errors.dockerNav') },
     ] },
-    { key: 'statistics', icon: <BarChartOutlined />, disabled: true, label: <Tooltip title={t('nav.comingSoon')}>{t('nav.statistics')}</Tooltip> },
+    { key: '/statistics', icon: <BarChartOutlined />, label: t('nav.statistics') },
     { key: 'logs', icon: <FileTextOutlined />, disabled: true, label: <Tooltip title={t('nav.comingSoon')}>{t('nav.logs')}</Tooltip> },
   ];
 
@@ -48,7 +48,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             mode="inline"
             selectedKeys={[selectedKey]}
             items={navItems}
-            onClick={({ key }) => { if (key === '/settings' || key.startsWith('/errors/')) navigate(key); }}
+            onClick={({ key }) => { if (key === '/settings' || key === '/statistics' || key.startsWith('/errors/')) navigate(key); }}
             style={{ height: '100%', borderRight: 0 }}
           />
         </Sider>

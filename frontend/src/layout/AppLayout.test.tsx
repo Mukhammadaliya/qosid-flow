@@ -28,10 +28,17 @@ describe('AppLayout', () => {
     expect(errors?.className).not.toContain('ant-menu-submenu-disabled');
   });
 
-  it('shows future nav items (Statistics) as disabled', () => {
+  it('renders the Statistics nav item as enabled (D3)', () => {
     renderLayout();
     const statistics = screen.getByText('Statistika').closest('.ant-menu-item');
-    expect(statistics?.className).toContain('ant-menu-item-disabled');
+    expect(statistics).not.toBeNull();
+    expect(statistics?.className).not.toContain('ant-menu-item-disabled');
+  });
+
+  it('shows future nav items (Logs) as disabled', () => {
+    renderLayout();
+    const logs = screen.getByText('Loglar').closest('.ant-menu-item');
+    expect(logs?.className).toContain('ant-menu-item-disabled');
   });
 
   it('shows the logged-in username', () => {
