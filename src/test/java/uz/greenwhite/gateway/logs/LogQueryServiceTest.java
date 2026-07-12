@@ -20,11 +20,13 @@ class LogQueryServiceTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private final SettingsService settings = mock(SettingsService.class);
 
+    private static final String YAML_URL = "http://localhost:3100";
+
     private LogQueryService serviceBackedBy(MockRestServiceServer[] holder) {
         RestClient.Builder builder = RestClient.builder();
         holder[0] = MockRestServiceServer.bindTo(builder).build();
-        when(settings.get("gateway.loki.url", "http://localhost:3100")).thenReturn("http://localhost:3100");
-        return new LogQueryService(builder.build(), new LokiResponseParser(mapper), settings);
+        when(settings.get("gateway.loki.url", YAML_URL)).thenReturn(YAML_URL);
+        return new LogQueryService(builder.build(), new LokiResponseParser(mapper), settings, YAML_URL);
     }
 
     @Test
@@ -50,5 +52,37 @@ class LogQueryServiceTest {
         LogQueryResult result = service.query("jar", null, null, null, null, "ERROR", 200);
         assertThat(result.entries()).isEmpty();
         assertThat(result.error()).isNotNull();
+    }
+
+    @Test
+    void settingsOverrideUrlWinsOverYamlFallback() {
+        MockRestServiceServer[] holder = new MockRestServiceServer[1];
+        LogQueryService service = serviceBackedBy(holder);
+        when(settings.get("gateway.loki.url", YAML_URL)).thenReturn("http://other:3100"); // H2 override
+        holder[0].expect(requestTo(Matchers.containsString("other:3100")))
+                .andRespond(withSuccess("{\"data\":{\"result\":[]}}", MediaType.APPLICATION_JSON));
+        LogQueryResult result = service.query("jar", null, null, null, null, "ERROR", 200);
+        assertThat(result.error()).isNull();
+        holder[0].verify();
+    }
+
+    @Test
+    void unknownSourceDegradesToErrorResultNotException() {
+        MockRestServiceServer[] holder = new MockRestServiceServer[1];
+        LogQueryService service = serviceBackedBy(holder);
+        // no server expectation: Loki must not be called for a bad source
+        LogQueryResult result = service.query("bogus", null, null, null, null, null, 200);
+        assertThat(result.entries()).isEmpty();
+        assertThat(result.error()).isNotNull();
+    }
+
+    @Test
+    void labelValuesRejectsInvalidLabelNameWithoutCallingLoki() {
+        MockRestServiceServer[] holder = new MockRestServiceServer[1];
+        LogQueryService service = serviceBackedBy(holder);
+        // no server expectation set: any HTTP call would fail this test
+        assertThat(service.labelValues("bad/name")).isEmpty();
+        assertThat(service.labelValues("bad?name={x}")).isEmpty();
+        assertThat(service.labelValues(null)).isEmpty();
     }
 }

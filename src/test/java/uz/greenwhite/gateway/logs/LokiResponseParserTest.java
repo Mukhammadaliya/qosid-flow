@@ -39,6 +39,22 @@ class LokiResponseParserTest {
     }
 
     @Test
+    void sortsByRawNanosNotIsoString() {
+        // Same second, mixed sub-second precision: Instant.toString() drops a zero fraction,
+        // so ".000" renders "...:20Z" and ".500" renders "...:20.500Z". As strings,
+        // 'Z' > '.' puts the OLDER whole-second entry first; the raw-nanos sort must not.
+        String json = """
+            {"data":{"result":[
+              {"stream":{},
+               "values":[["1700000000000000000","older whole-second"],["1700000000500000000","newer 500ms"]]}
+            ]}}""";
+        List<LogEntry> entries = parser.parse(json);
+        assertThat(entries).hasSize(2);
+        assertThat(entries.get(0).line()).isEqualTo("newer 500ms");
+        assertThat(entries.get(1).line()).isEqualTo("older whole-second");
+    }
+
+    @Test
     void parseLabelValuesReturnsData() {
         assertThat(parser.parseLabelValues("{\"data\":[\"redis\",\"redpanda\"]}"))
                 .containsExactly("redis", "redpanda");

@@ -17,8 +17,11 @@ public class LokiResponseParser {
 
     private final ObjectMapper objectMapper;
 
+    /** LogEntry plus its raw nanosecond timestamp, kept only for exact newest-first ordering. */
+    private record TimedEntry(long ns, LogEntry entry) {}
+
     public List<LogEntry> parse(String lokiJson) {
-        List<LogEntry> out = new ArrayList<>();
+        List<TimedEntry> out = new ArrayList<>();
         try {
             JsonNode result = objectMapper.readTree(lokiJson).path("data").path("result");
             for (JsonNode stream : result) {
@@ -26,16 +29,18 @@ public class LokiResponseParser {
                 stream.path("stream").fields().forEachRemaining(e -> labels.put(e.getKey(), e.getValue().asText()));
                 String level = labels.getOrDefault("level", "");
                 for (JsonNode value : stream.path("values")) {
-                    String tsNs = value.get(0).asText();
+                    long ns = Long.parseLong(value.get(0).asText());
                     String line = value.get(1).asText();
-                    out.add(new LogEntry(nsToIso(tsNs), level, line, labels, tryParseJson(line)));
+                    out.add(new TimedEntry(ns, new LogEntry(nsToIso(ns), level, line, labels, tryParseJson(line))));
                 }
             }
         } catch (Exception e) {
             return List.of();
         }
-        out.sort(Comparator.comparing(LogEntry::timestamp).reversed()); // newest first
-        return out;
+        // Sort by the raw nanosecond value, not the ISO string: Instant.toString() drops
+        // trailing zero fraction digits, so string comparison mis-orders mixed precision.
+        out.sort(Comparator.comparingLong(TimedEntry::ns).reversed()); // newest first
+        return out.stream().map(TimedEntry::entry).toList();
     }
 
     public List<String> parseLabelValues(String lokiJson) {
@@ -48,8 +53,7 @@ public class LokiResponseParser {
         return out;
     }
 
-    private String nsToIso(String tsNs) {
-        long ns = Long.parseLong(tsNs);
+    private String nsToIso(long ns) {
         return Instant.ofEpochSecond(ns / 1_000_000_000L, ns % 1_000_000_000L).toString();
     }
 

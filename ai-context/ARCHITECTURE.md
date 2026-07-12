@@ -205,6 +205,19 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 
 First-boot default account: `admin` / `admin` (logged as WARN). One-shot reset via `ADMIN_RESET=true` or `ADMIN_PASSWORD_RESET=<value>` — see `ai-context/CONFIGURATION.md` → Admin Account & Reset.
 
+## Errors module — Loki log aggregation (D2)
+
+The Errors module gives admins read-only visibility into three log sources without SSH. The DLQ
+consumers write a best-effort structured-JSON audit line per dead-lettered message to `dlq.log`;
+Promtail ships `gateway.log` (JAR), `dlq.log`, and Docker container logs to Loki (7-day retention,
+bound to `127.0.0.1` — never exposed publicly). The gateway proxies Loki server-side:
+`GET /qosid/admin/api/logs` (session auth) builds a LogQL query per source (`dlq`/`jar`/`docker`)
+via `LogQlBuilder` (user input escaped), `LogQueryService` resolves the Loki base URL per request
+(`gateway.loki.url` setting, yaml/`LOKI_URL` fallback) and degrades Loki-down or bad input to
+`{entries: [], error}` — never a 500. `/logs/labels` lists label values (e.g. container names).
+The SPA renders three pages (DLQ, JAR, Docker). D2 absorbed the originally-planned D4 (Loki)
+scope, so there is no separate D4 phase.
+
 ## Tenant boundary translation (C-faza)
 
 The internal core (Kafka messages, Redis keys, RocksDB, composite IDs) speaks only

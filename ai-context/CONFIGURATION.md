@@ -237,6 +237,12 @@ Response `200`:
 
 Optional request header on `/qosid/api/v1/queue/**`. Only consulted when both (a) the auth principal did not resolve an `extraTenantId`, and (b) `gateway.tenant.trust-extra-tenant-header` is `true`. Otherwise ignored. See the tradeoff note above.
 
+## gateway.loki.* — Errors Log Proxy (D2)
+
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `gateway.loki.url` | String | `http://localhost:3100` | `LOKI_URL` | Loki base URL for the Errors log-query proxy (`/qosid/admin/api/logs`); settings-overridable — `LogQueryService` resolves it per request via `SettingsService` with this yaml/env value as the fallback. |
+
 ## gateway.settings.* — Control-Plane (B1)
 
 **Properties class:** `SettingsProperties.java` (bootstrap-only — these three values live in yaml/env, never in the settings DB itself, since the DB doesn't exist until they're read).

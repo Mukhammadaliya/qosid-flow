@@ -26,6 +26,23 @@ class LogQlBuilderTest {
     }
 
     @Test
+    void textFilterEscapesQuotesAndBackslashes() {
+        // JSON fragments (common on the DLQ page) must not break out of the |= "..." string
+        assertThat(LogQlBuilder.build("dlq", "\"failureReason\":\"timeout\"", null, null))
+                .isEqualTo("{stream=\"dlq\"} |= \"\\\"failureReason\\\":\\\"timeout\\\"\"");
+        assertThat(LogQlBuilder.build("dlq", "back\\slash", null, null))
+                .isEqualTo("{stream=\"dlq\"} |= \"back\\\\slash\"");
+    }
+
+    @Test
+    void levelAndContainerAreEscaped() {
+        assertThat(LogQlBuilder.build("jar", null, null, "ERR\"OR"))
+                .isEqualTo("{job=\"qosid-jar\",level=\"ERR\\\"OR\"}");
+        assertThat(LogQlBuilder.build("docker", null, "red\"is", "err\"or"))
+                .isEqualTo("{container=~\"red\\\"is\"} |~ \"(?i)err\\\"or\"");
+    }
+
+    @Test
     void unknownSourceThrows() {
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
                 () -> LogQlBuilder.build("bogus", null, null, null));
