@@ -177,6 +177,36 @@ services:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
     restart: unless-stopped
 
+  # ============================================================
+  # LOKI (Log Aggregation)
+  # ============================================================
+  loki:
+    image: grafana/loki:3.1.0
+    container_name: loki
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./docker/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+
+  # ============================================================
+  # PROMTAIL (Log Shipper)
+  # ============================================================
+  promtail:
+    image: grafana/promtail:3.1.0
+    container_name: promtail
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./docker/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /host/qosid-logs:/var/log/qosid:ro          # <-- host LOG_DIR (gateway.log, dlq.log)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
+
 volumes:
   redpanda_data:
     name: redpanda_data
@@ -186,3 +216,4 @@ volumes:
     name: prometheus_data
   grafana_data:
     name: grafana_data
+  loki_data:
