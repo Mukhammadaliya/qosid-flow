@@ -24,6 +24,23 @@
         </encoder>
     </appender>
 
+    <appender name="DLQ_JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/dlq.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/dlq.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>${MAX_FILE_SIZE}</maxFileSize>
+            <maxHistory>${MAX_HISTORY}</maxHistory>
+            <totalSizeCap>${TOTAL_SIZE_CAP}</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="dlq-audit" level="ERROR" additivity="false">
+        <appender-ref ref="DLQ_JSON"/>
+    </logger>
+
     <logger name="org.apache.kafka" level="WARN"/>
     <logger name="org.springframework.kafka" level="INFO"/>
     <logger name="uz.greenwhite.gateway" level="${LOG_LEVEL:-DEBUG}"/>

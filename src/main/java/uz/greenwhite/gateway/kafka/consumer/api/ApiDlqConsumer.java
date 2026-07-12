@@ -15,6 +15,7 @@ import uz.greenwhite.gateway.notification.NotificationService;
 public class ApiDlqConsumer {
 
     private final NotificationService notificationService;
+    private final uz.greenwhite.gateway.logging.DlqAuditLogger dlqAuditLogger;
 
     @KafkaListener(
             id = "apiDlqConsumer",
@@ -33,6 +34,8 @@ public class ApiDlqConsumer {
         } catch (Exception e) {
             log.error("[API-DLQ] Failed to process message {}: {}", key, e.getMessage());
         }
+
+        dlqAuditLogger.record(message);
 
         ack.acknowledge();
     }
