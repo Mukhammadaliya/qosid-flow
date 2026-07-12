@@ -26,6 +26,13 @@ class SpaForwardControllerTest {
     }
 
     @Test
+    void errorsDeepLinkForwardsToIndex() throws Exception {
+        // D2 added /errors/dlq|jar|docker SPA routes — deep-link/reload must fall back to index.html.
+        mvc.perform(get("/errors/dlq")).andExpect(status().isOk())
+                .andExpect(forwardedUrl("/index.html"));
+    }
+
+    @Test
     void assetPathIsNotForwarded() throws Exception {
         // A path whose last segment contains a dot (bundle.js) must NOT be forwarded —
         // the resource handler serves it. standaloneSetup has no such handler, so 404.
