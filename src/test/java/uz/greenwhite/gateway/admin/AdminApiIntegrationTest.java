@@ -64,6 +64,27 @@ class AdminApiIntegrationTest {
     }
 
     @Test
+    void auditRowsUseLowercaseJsonKeys() throws Exception {
+        // H2 upper-cases unquoted column labels; the frontend audit table binds to lowercase
+        // dataIndex keys ('skey', 'old_value', ...) — the API must preserve them.
+        MockHttpSession session = login();
+
+        mvc.perform(put("/qosid/admin/api/settings/gateway.retry.max-attempts")
+                        .session(session).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("value", "7", "secret", false))))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(get("/qosid/admin/api/settings/audit").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.skey == 'gateway.retry.max-attempts' && @.new_value == '7')]").exists())
+                .andExpect(jsonPath("$[0].skey").exists())
+                .andExpect(jsonPath("$[0].changed_by").value("admin"))
+                .andExpect(jsonPath("$[0].SKEY").doesNotExist())
+                .andExpect(jsonPath("$[0].OLD_VALUE").doesNotExist());
+    }
+
+    @Test
     void changePasswordWithShortNewPasswordReturns400NotStackTrace() throws Exception {
         MockHttpSession session = login();
 

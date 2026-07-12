@@ -12,12 +12,15 @@ export function SourceAuthPage() {
   const [loaded, setLoaded] = useState<SourceAuth | null>(null);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    getSourceAuth().then((d) => {
-      setLoaded(d); setType(d.type);
-      form.setFieldsValue(d);
-    });
+    getSourceAuth()
+      .then((d) => {
+        setLoaded(d); setType(d.type);
+        form.setFieldsValue(d);
+      })
+      .catch((e: any) => setLoadError(e?.response?.data?.message ?? t('common.loadError')));
   }, [form]);
 
   const onSave = async () => {
@@ -48,10 +51,18 @@ export function SourceAuthPage() {
     }
   };
 
-  const onTest = async () => setTestResult(await testSourceAuth());
+  const onTest = async () => {
+    try {
+      setTestResult(await testSourceAuth());
+    } catch (e: any) {
+      // Network drop / non-2xx must not reject unhandled — surface it in the result Alert.
+      setTestResult({ ok: false, message: e?.response?.data?.message ?? t('common.loadError') });
+    }
+  };
 
   return (
-    <Card title={t('settings.sourceAuth')} loading={!loaded}>
+    <Card title={t('settings.sourceAuth')} loading={!loaded && !loadError}>
+      {loadError && <Alert style={{ marginBottom: 16 }} type="error" showIcon message={loadError} />}
       <Form form={form} layout="vertical" style={{ maxWidth: 480 }}>
         <Form.Item label={t('settings.type')}>
           <Select

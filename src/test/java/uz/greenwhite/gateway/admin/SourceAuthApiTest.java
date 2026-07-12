@@ -28,6 +28,15 @@ class SourceAuthApiTest {
 
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper om;
+    @Autowired uz.greenwhite.gateway.settings.SettingsService settingsService;
+
+    /** Blanks a setting so a test can start from a "nothing stored" state (H2 mem DB is shared per class). */
+    private void clearSetting(MockHttpSession s, String key) throws Exception {
+        mvc.perform(put("/qosid/admin/api/settings/" + key).session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("value", "", "secret", false))))
+                .andExpect(status().isNoContent());
+    }
 
     private MockHttpSession login() throws Exception {
         var res = mvc.perform(post("/qosid/admin/api/login").with(csrf())
@@ -92,6 +101,86 @@ class SourceAuthApiTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("type", "basic", "basicUsername", "u2"))))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void putOauth2WithoutSecretButAlreadyStoredKeepsExisting() throws Exception {
+        // Blocker 2: UI omits the secret when the masked field is untouched — editing e.g.
+        // scope/TTL with a stored secret must succeed AND keep the stored secret.
+        MockHttpSession s = login();
+        mvc.perform(put("/qosid/admin/api/source-auth").session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of(
+                                "type", "oauth2",
+                                "oauth2TokenUrl", "http://x/token",
+                                "oauth2ClientId", "cid",
+                                "oauth2ClientSecret", "sekret-1"))))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(put("/qosid/admin/api/source-auth").session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of(
+                                "type", "oauth2",
+                                "oauth2TokenUrl", "http://x/token2",
+                                "oauth2ClientId", "cid2",
+                                "oauth2Scope", "read"))))
+                .andExpect(status().isNoContent());
+
+        org.assertj.core.api.Assertions.assertThat(
+                settingsService.getSecret("gateway.source.auth.oauth2.client-secret", ""))
+                .isEqualTo("sekret-1"); // stored secret untouched by the secret-less update
+
+        mvc.perform(get("/qosid/admin/api/source-auth").session(s))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.oauth2ClientId").value("cid2"))
+                .andExpect(jsonPath("$.oauth2ClientSecret").value("***"));
+    }
+
+    @Test
+    void putApikeyWithoutValueButAlreadyStoredKeepsExisting() throws Exception {
+        // Blocker 2, apikey shape: header-only update must succeed once a value is stored.
+        MockHttpSession s = login();
+        mvc.perform(put("/qosid/admin/api/source-auth").session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of(
+                                "type", "apikey", "apikeyHeader", "X-Api-Key", "apikeyValue", "key-1"))))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(put("/qosid/admin/api/source-auth").session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of(
+                                "type", "apikey", "apikeyHeader", "X-Custom-Key"))))
+                .andExpect(status().isNoContent());
+
+        org.assertj.core.api.Assertions.assertThat(
+                settingsService.getSecret("gateway.source.auth.apikey.value", ""))
+                .isEqualTo("key-1");
+
+        mvc.perform(get("/qosid/admin/api/source-auth").session(s))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.apikeyHeader").value("X-Custom-Key"))
+                .andExpect(jsonPath("$.apikeyValue").value("***"));
+    }
+
+    @Test
+    void putApikeyWithoutValueAndNoneStoredIs400() throws Exception {
+        MockHttpSession s = login();
+        clearSetting(s, "gateway.source.auth.apikey.value"); // other tests in this class may have stored one
+        mvc.perform(put("/qosid/admin/api/source-auth").session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of("type", "apikey", "apikeyHeader", "X-Api-Key"))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void putOauth2WithoutSecretAndNoneStoredIs400() throws Exception {
+        MockHttpSession s = login();
+        clearSetting(s, "gateway.source.auth.oauth2.client-secret");
+        mvc.perform(put("/qosid/admin/api/source-auth").session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(om.writeValueAsString(Map.of(
+                                "type", "oauth2", "oauth2TokenUrl", "http://x", "oauth2ClientId", "cid"))))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

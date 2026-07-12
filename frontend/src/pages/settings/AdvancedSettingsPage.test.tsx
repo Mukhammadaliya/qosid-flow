@@ -50,4 +50,24 @@ describe('AdvancedSettingsPage', () => {
     // Blank-means-keep: putSetting must NOT fire, so the stored secret is preserved.
     expect(put).not.toHaveBeenCalled();
   });
+
+  it('does not overwrite a stored secret with a whitespace-only value', async () => {
+    vi.spyOn(settingsApi, 'getSettings').mockResolvedValue(rows as any);
+    vi.spyOn(settingsApi, 'getAudit').mockResolvedValue([]);
+    const put = vi.spyOn(settingsApi, 'putSetting').mockResolvedValue({} as any);
+    render(<AdvancedSettingsPage />);
+    await waitFor(() => expect(screen.getByText('gateway.source.auth.basic.password')).toBeInTheDocument());
+    await userEvent.click(screen.getAllByRole('button', { name: 'Saqlash' })[1]);
+    const input = await screen.findByLabelText('Qiymat');
+    await userEvent.type(input, ' '); // whitespace-only — backend isBlank would treat it as blank
+    await userEvent.click(screen.getByRole('button', { name: 'OK' }));
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('shows an error instead of spinning forever when the initial load fails', async () => {
+    vi.spyOn(settingsApi, 'getSettings').mockRejectedValue({ response: { data: { message: 'boom' } } });
+    vi.spyOn(settingsApi, 'getAudit').mockRejectedValue({ response: { data: { message: 'boom' } } });
+    render(<AdvancedSettingsPage />);
+    await waitFor(() => expect(screen.getByText('boom')).toBeInTheDocument());
+  });
 });

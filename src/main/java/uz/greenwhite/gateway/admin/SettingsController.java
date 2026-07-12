@@ -46,8 +46,11 @@ public class SettingsController {
 
     @GetMapping("/audit")
     public ResponseEntity<List<Map<String, Object>>> audit() {
+        // Quoted-lowercase aliases: H2 upper-cases unquoted labels (SKEY, OLD_VALUE, ...),
+        // which would break the documented lowercase JSON contract the frontend relies on.
         return ResponseEntity.ok(jdbc.queryForList(
-                "SELECT skey, old_value, new_value, changed_by, changed_at " +
+                "SELECT skey AS \"skey\", old_value AS \"old_value\", new_value AS \"new_value\", " +
+                "changed_by AS \"changed_by\", changed_at AS \"changed_at\" " +
                 "FROM settings_audit ORDER BY changed_at DESC FETCH FIRST 200 ROWS ONLY"));
     }
 }

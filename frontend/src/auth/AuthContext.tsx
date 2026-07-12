@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
-import { api } from '../api/client';
+import { api, setUnauthorizedHandler } from '../api/client';
 
 interface AuthState {
   user: string | null;
@@ -41,6 +41,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await api.post(`${BASE}/logout`).catch(() => {});
     setUser(null);
   }, []);
+
+  // Mid-session 401 (expired/invalidated session) clears the user so RequireAuth
+  // redirects to /login. Harmless on login-failure 401s — the user is already null.
+  useEffect(() => { setUnauthorizedHandler(() => setUser(null)); }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
 

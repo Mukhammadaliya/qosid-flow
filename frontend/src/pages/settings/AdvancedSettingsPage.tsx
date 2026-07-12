@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, Table, Button, Modal, Input, Tag, Tabs, message } from 'antd';
+import { Alert, Card, Table, Button, Modal, Input, Tag, Tabs, message } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { getSettings, putSetting, getAudit, SettingRow } from '../../api/settings';
 
@@ -15,12 +15,15 @@ export function AdvancedSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<SettingRow | null>(null);
   const [draft, setDraft] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
-    Promise.all([getSettings(), getAudit()]).then(([s, a]) => {
-      setRows(s); setAudit(a); setLoading(false);
-    });
+    setLoadError(null);
+    Promise.all([getSettings(), getAudit()])
+      .then(([s, a]) => { setRows(s); setAudit(a); })
+      .catch((e: any) => setLoadError(e?.response?.data?.message ?? t('common.loadError')))
+      .finally(() => setLoading(false));
   };
   useEffect(load, []);
 
@@ -37,8 +40,9 @@ export function AdvancedSettingsPage() {
 
   const save = async () => {
     if (!editing) return;
-    // Blank-means-keep for secrets: closing without a new value must NOT wipe the stored secret.
-    if (editing.secret && draft === '') { setEditing(null); return; }
+    // Blank-means-keep for secrets: closing without a new value must NOT wipe the stored
+    // secret. trim() matches the backend's isBlank so whitespace-only doesn't overwrite either.
+    if (editing.secret && draft.trim() === '') { setEditing(null); return; }
     try {
       await putSetting(editing.key, draft, editing.secret);
       message.success(t('settings.saved'));
@@ -69,15 +73,16 @@ export function AdvancedSettingsPage() {
   );
 
   const auditColumns = [
-    { title: 'key', dataIndex: 'skey', key: 'skey' },
-    { title: 'old', dataIndex: 'old_value', key: 'old_value' },
-    { title: 'new', dataIndex: 'new_value', key: 'new_value' },
-    { title: 'by', dataIndex: 'changed_by', key: 'changed_by' },
-    { title: 'at', dataIndex: 'changed_at', key: 'changed_at' },
+    { title: t('settings.auditKey'), dataIndex: 'skey', key: 'skey' },
+    { title: t('settings.auditOld'), dataIndex: 'old_value', key: 'old_value' },
+    { title: t('settings.auditNew'), dataIndex: 'new_value', key: 'new_value' },
+    { title: t('settings.auditBy'), dataIndex: 'changed_by', key: 'changed_by' },
+    { title: t('settings.auditAt'), dataIndex: 'changed_at', key: 'changed_at' },
   ];
 
   return (
     <>
+      {loadError && <Alert style={{ marginBottom: 16 }} type="error" showIcon message={loadError} />}
       <Tabs items={[
         { key: 'settings', label: t('settings.advanced'), children: settingsTab },
         { key: 'audit', label: t('settings.audit'),
@@ -87,7 +92,7 @@ export function AdvancedSettingsPage() {
       <Modal
         open={!!editing}
         title={editing?.key}
-        okText="OK"
+        okText={t('common.ok')}
         onOk={save}
         onCancel={() => setEditing(null)}
       >

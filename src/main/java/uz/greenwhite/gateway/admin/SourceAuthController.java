@@ -66,18 +66,31 @@ public class SourceAuthController {
             }
             case "apikey" -> {
                 requireNonBlank(req.getApikeyHeader(), "apikeyHeader");
-                requireNonBlank(req.getApikeyValue(), "apikeyValue");
+                boolean hasStoredApikey = !settings.get("gateway.source.auth.apikey.value", "").isBlank();
+                if (!hasStoredApikey) {
+                    // Same keep-stored-secret semantics as the basic branch: the UI sends no
+                    // apikeyValue when the admin leaves the masked field untouched.
+                    requireNonBlank(req.getApikeyValue(), "apikeyValue");
+                }
                 set("gateway.source.auth.apikey.header", req.getApikeyHeader(), false, admin);
-                setSecret("gateway.source.auth.apikey.value", req.getApikeyValue(), admin);
+                if (req.getApikeyValue() != null && !req.getApikeyValue().isBlank()) {
+                    setSecret("gateway.source.auth.apikey.value", req.getApikeyValue(), admin);
+                }
             }
             case "oauth2" -> {
                 requireNonBlank(req.getOauth2TokenUrl(), "oauth2TokenUrl");
                 requireNonBlank(req.getOauth2ClientId(), "oauth2ClientId");
-                requireNonBlank(req.getOauth2ClientSecret(), "oauth2ClientSecret");
+                boolean hasStoredClientSecret = !settings.get("gateway.source.auth.oauth2.client-secret", "").isBlank();
+                if (!hasStoredClientSecret) {
+                    // Keep-stored-secret: only require a client secret when none exists yet.
+                    requireNonBlank(req.getOauth2ClientSecret(), "oauth2ClientSecret");
+                }
                 requireNumericIfPresent(req.getOauth2CacheTtlSeconds(), "oauth2CacheTtlSeconds");
                 set("gateway.source.auth.oauth2.token-url", req.getOauth2TokenUrl(), false, admin);
                 set("gateway.source.auth.oauth2.client-id", req.getOauth2ClientId(), false, admin);
-                setSecret("gateway.source.auth.oauth2.client-secret", req.getOauth2ClientSecret(), admin);
+                if (req.getOauth2ClientSecret() != null && !req.getOauth2ClientSecret().isBlank()) {
+                    setSecret("gateway.source.auth.oauth2.client-secret", req.getOauth2ClientSecret(), admin);
+                }
                 set("gateway.source.auth.oauth2.scope", nullToEmpty(req.getOauth2Scope()), false, admin);
                 set("gateway.source.auth.oauth2.cache-ttl-seconds", nullToEmpty(req.getOauth2CacheTtlSeconds()), false, admin);
             }

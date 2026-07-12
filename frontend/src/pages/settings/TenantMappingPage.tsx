@@ -18,18 +18,21 @@ export function TenantMappingPage() {
   const [result, setResult] = useState<TenantTestResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    getSettings().then((all) => {
-      const byKey = Object.fromEntries(all.map((r) => [r.key, r.value]));
-      form.setFieldsValue({
-        field: byKey[KEYS.field] ?? 'company_id',
-        extra: byKey[KEYS.extra] ?? 'filial_id',
-        def: byKey[KEYS.def] ?? '0',
-        trust: (byKey[KEYS.trust] ?? 'false') === 'true',
-      });
-      setLoaded(true);
-    });
+    getSettings()
+      .then((all) => {
+        const byKey = Object.fromEntries(all.map((r) => [r.key, r.value]));
+        form.setFieldsValue({
+          field: byKey[KEYS.field] ?? 'company_id',
+          extra: byKey[KEYS.extra] ?? 'filial_id',
+          def: byKey[KEYS.def] ?? '0',
+          trust: (byKey[KEYS.trust] ?? 'false') === 'true',
+        });
+        setLoaded(true);
+      })
+      .catch((e: any) => setLoadError(e?.response?.data?.message ?? t('common.loadError')));
   }, [form]);
 
   const onSave = async () => {
@@ -58,7 +61,8 @@ export function TenantMappingPage() {
   };
 
   return (
-    <Card title={t('settings.tenantMapping')} loading={!loaded}>
+    <Card title={t('settings.tenantMapping')} loading={!loaded && !loadError}>
+      {loadError && <Alert style={{ marginBottom: 16 }} type="error" showIcon message={loadError} />}
       <Form form={form} layout="vertical" style={{ maxWidth: 480 }}>
         <Form.Item name="field" label="field-name"><Input /></Form.Item>
         <Form.Item name="extra" label="extra-field-name"><Input /></Form.Item>
