@@ -38,6 +38,7 @@ public class SettingsMigrationRunner implements ApplicationRunner {
         put("gateway.tenant.field-name", "gateway.tenant.field-name");
         put("gateway.tenant.extra-field-name", "gateway.tenant.extra-field-name");
         put("gateway.tenant.default-rest-tenant", "gateway.tenant.default-rest-tenant");
+        put("gateway.source.auth.basic.username", "gateway.source.username");
     }};
 
     private final SettingsRepository repository;
@@ -58,6 +59,20 @@ public class SettingsMigrationRunner implements ApplicationRunner {
                 migrated++;
             }
         }
+
+        // Basic password is a secret — the generic loop above can't set secret=true, so migrate
+        // it separately here. Guarded: if encryption is disabled, settingsService.set(..., true, ...)
+        // throws — degrade to a WARN so a blank encryption key never fails startup (yaml fallback
+        // in SourceAuthService still applies in that case).
+        String sourcePassword = environment.getProperty("gateway.source.password");
+        if (sourcePassword != null && !sourcePassword.isBlank()) {
+            try {
+                settingsService.set("gateway.source.auth.basic.password", sourcePassword, true, "migration");
+            } catch (Exception e) {
+                log.warn("Skipped source basic-password migration (encryption disabled?): {} — yaml fallback applies", e.getMessage());
+            }
+        }
+
         // Write the marker LAST — a partial failure leaves it absent so the next boot re-runs
         // (idempotent upsert-by-key re-applies cleanly). Resumable.
         settingsService.set(MIGRATION_MARKER, "true", false, "migration");

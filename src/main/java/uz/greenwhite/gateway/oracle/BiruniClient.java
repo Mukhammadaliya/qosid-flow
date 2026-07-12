@@ -3,7 +3,6 @@ package uz.greenwhite.gateway.oracle;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -14,8 +13,8 @@ import uz.greenwhite.gateway.model.ResponseSaveRequest;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import uz.greenwhite.gateway.source.RequestSourceClient;
 import uz.greenwhite.gateway.source.ResponseSinkClient;
+import uz.greenwhite.gateway.source.SourceAuthService;
 import uz.greenwhite.gateway.tenant.TenantMappingService;
-import uz.greenwhite.gateway.util.AuthUtil;
 
 import java.time.Duration;
 import java.util.Arrays;
@@ -30,10 +29,13 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
     private final RestClient restClient;
     private final GatewayProperties properties;
     private final TenantMappingService tenantMappingService;
+    private final SourceAuthService sourceAuthService;
 
-    public BiruniClient(GatewayProperties properties, TenantMappingService tenantMappingService) {
+    public BiruniClient(GatewayProperties properties, TenantMappingService tenantMappingService,
+                         SourceAuthService sourceAuthService) {
         this.properties = properties;
         this.tenantMappingService = tenantMappingService;
+        this.sourceAuthService = sourceAuthService;
 
         var httpClient = java.net.http.HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(properties.getConnectionTimeout()))
@@ -68,10 +70,10 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
         try {
             log.debug("Pulling requests from: {}{}", properties.getBaseUrl(), properties.getRequestPullUri());
 
+            Map<String, String> authHeaders = sourceAuthService.authHeaders();
             List<JsonNode> raw = restClient.get()
                     .uri(properties.getRequestPullUri())
-                    .header(HttpHeaders.AUTHORIZATION,
-                            AuthUtil.generateBasicAuth(properties.getUsername(), properties.getPassword()))
+                    .headers(h -> authHeaders.forEach(h::add))
                     .retrieve()
                     .toEntity(new ParameterizedTypeReference<List<JsonNode>>() {})
                     .getBody();
@@ -113,10 +115,10 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
             body.put("response", request.getResponse());
             body.put("error_message", request.getErrorMessage());
 
+            Map<String, String> authHeaders = sourceAuthService.authHeaders();
             var response = restClient.post()
                     .uri(properties.getResponseSaveUri())
-                    .header(HttpHeaders.AUTHORIZATION,
-                            AuthUtil.generateBasicAuth(properties.getUsername(), properties.getPassword()))
+                    .headers(h -> authHeaders.forEach(h::add))
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(List.of(body))
                     .exchange((req, resp) -> {
