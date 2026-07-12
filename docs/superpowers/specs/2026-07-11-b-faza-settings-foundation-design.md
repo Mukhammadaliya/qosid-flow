@@ -27,7 +27,7 @@ Runtime sozlamalarni `.yaml`dan UI/DB'ga ko'chirish poydevorini qurish — shund
 |---|---|---|---|
 | **B1** | H2 + SettingsService + audit + admin login + `/qosid/admin/api` asosi | — | **Bu hujjat (to'liq)** |
 | ~~**B2**~~ | ~~TenantMappingService sozlamalari UI/Settings'da~~ | — | **BEKOR — C-fazaga qo'shildi** (2026-07-12): B1 tenant sozlamalarini allaqachon saqlaydi/serve qiladi; qolgan ish (tipli validatsiya + sinash endpointi) C-faza spec'iga o'tdi |
-| **B3** | Outbound global auth (Basic/API-KEY/OAuth2), per-request umumlashtirish, AES credential | B1 | Skelet (§9) |
+| **B3** | Source kanali (Biruni pull+save) auth: Basic/API-KEY/OAuth2, UI-sozlanadigan; so'rov-forwarding TEGILMAYDI | B1 | **To'liq dizayn:** [2026-07-12-b3-source-auth-design.md](2026-07-12-b3-source-auth-design.md) |
 | **B4** | Inbound auth (API-key + OAuth2 issuer), UI-tanlanadigan, `AuthResult.tenantId` | B1 | Skelet (§9) |
 
 C-faza faqat **B1 + B2** ni kutadi (REST tenant fallback bor, shuning uchun B4'siz ham ishlaydi).
