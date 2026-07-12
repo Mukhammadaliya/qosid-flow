@@ -79,6 +79,11 @@ management:
   health:
     db:
       enabled: false   # control-plane H2 must not affect gateway health
+  metrics:
+    distribution:
+      percentiles-histogram:
+        gateway.request.e2e.duration: true
+        gateway.http.request.duration: true
 
 # ============================================================
 # GATEWAY CONFIGURATION
@@ -233,6 +238,10 @@ gateway:
   # --- Loki (Errors UI log source, D2) ---
   loki:
     url: ${LOKI_URL:http://localhost:3100}
+
+  # --- Prometheus (Stats dashboard metrics source, D3) ---
+  prometheus:
+    url: ${PROMETHEUS_URL:http://localhost:9090}
 
   # --- Settings control-plane (B1) ---
   settings:
