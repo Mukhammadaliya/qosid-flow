@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { SourceAuthPage } from './SourceAuthPage';
 import { TenantMappingPage } from './TenantMappingPage';
 import { AdvancedSettingsPage } from './AdvancedSettingsPage';
+import { AiConfigPage } from './AiConfigPage';
 
 export function SettingsPage() {
   const { t } = useTranslation();
@@ -13,6 +14,7 @@ export function SettingsPage() {
         { key: 'source-auth', label: t('settings.sourceAuth'), children: <SourceAuthPage /> },
         { key: 'tenant', label: t('settings.tenantMapping'), children: <TenantMappingPage /> },
         { key: 'advanced', label: t('settings.advanced'), children: <AdvancedSettingsPage /> },
+        { key: 'ai', label: t('ai.settingsTitle'), children: <AiConfigPage /> },
       ]}
     />
   );

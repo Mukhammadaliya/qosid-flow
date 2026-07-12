@@ -12,3 +12,8 @@ export const analyzeError = (entry: LogEntry) =>
   api.post<AiAnalysisResult>(`${BASE}/analyze`, {
     line: entry.line, level: entry.level, labels: entry.labels, parsed: entry.parsed ?? null,
   }).then(r => r.data);
+
+export interface AiConfig { baseUrl: string; apiKey: string; model: string }
+
+export const getAiConfig = () => api.get<AiConfig>(`${BASE}/config`).then(r => r.data);
+export const putAiConfig = (body: Partial<AiConfig>) => api.put(`${BASE}/config`, body);
