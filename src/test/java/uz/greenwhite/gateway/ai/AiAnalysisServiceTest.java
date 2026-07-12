@@ -11,6 +11,7 @@ import org.hamcrest.Matchers;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -49,6 +50,8 @@ class AiAnalysisServiceTest {
         MockRestServiceServer[] h = new MockRestServiceServer[1];
         AiAnalysisService s = service(h);
         h[0].expect(requestTo(Matchers.containsString("/chat/completions")))
+                // Decrypted key (getSecret) must be sent, not the masked/stored value.
+                .andExpect(header("Authorization", "Bearer sk-real"))
                 .andRespond(withSuccess(
                         "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Root cause: timeout. Fix: raise the client timeout.\"}}]}",
                         MediaType.APPLICATION_JSON));
