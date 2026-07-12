@@ -218,6 +218,23 @@ via `LogQlBuilder` (user input escaped), `LogQueryService` resolves the Loki bas
 The SPA renders three pages (DLQ, JAR, Docker). D2 absorbed the originally-planned D4 (Loki)
 scope, so there is no separate D4 phase.
 
+## Statistics module — Prometheus metrics dashboard (D3)
+
+The Statistics module gives admins a read-only metrics dashboard over the internal Prometheus
+(loopback-bound — never exposed publicly). The browser never sends PromQL: `GET
+/qosid/admin/api/stats?preset=<name>` (session auth) maps one of 5 fixed presets
+(`StatPresets.java`) — `kpi`, `funnel`, `throughput`, `errors`, `latency` — to preset PromQL,
+which `StatsQueryService` runs against Prometheus (`gateway.prometheus.url` setting,
+yaml/`PROMETHEUS_URL` fallback) via instant (`/query`) or range (`/query_range`) calls.
+Prometheus-down or unknown-preset degrade to an empty result + error string — never a 500.
+p95 latencies come from `histogram_quantile` over the percentile histograms enabled for
+`gateway.request.e2e.duration` and `gateway.http.request.duration` (see CONFIGURATION.md).
+The SPA renders `/statistics` with @ant-design/plots charts.
+
+Note: within the `kpi` preset, `dlq` uses the range-dependent `${window}` token (service-computed
+from `to-from`, clamped 60s..30d) while the rate KPIs use a fixed `[5m]` — this asymmetry is
+intentional (DLQ counts accumulate over the selected range; rates are a current snapshot), not a bug.
+
 ## Tenant boundary translation (C-faza)
 
 The internal core (Kafka messages, Redis keys, RocksDB, composite IDs) speaks only

@@ -243,6 +243,14 @@ Optional request header on `/qosid/api/v1/queue/**`. Only consulted when both (a
 |----------|------|---------|---------|-------------|
 | `gateway.loki.url` | String | `http://localhost:3100` | `LOKI_URL` | Loki base URL for the Errors log-query proxy (`/qosid/admin/api/logs`); settings-overridable — `LogQueryService` resolves it per request via `SettingsService` with this yaml/env value as the fallback. |
 
+## gateway.prometheus.* — Statistics Dashboard Proxy (D3)
+
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `gateway.prometheus.url` | String | `http://localhost:9090` | `PROMETHEUS_URL` | Prometheus base URL for the Statistics dashboard proxy (`/qosid/admin/api/stats`); settings-overridable — `StatsQueryService` resolves it per request via `SettingsService` with this yaml/env value as the fallback. |
+
+**Note:** `management.metrics.distribution.percentiles-histogram` is enabled for `gateway.request.e2e.duration` and `gateway.http.request.duration` (`application.yml`) so the dashboard can compute p95 via `histogram_quantile`. This adds roughly ~70 `_bucket` series per timer to `/actuator/prometheus`.
+
 ## gateway.settings.* — Control-Plane (B1)
 
 **Properties class:** `SettingsProperties.java` (bootstrap-only — these three values live in yaml/env, never in the settings DB itself, since the DB doesn't exist until they're read).
