@@ -105,6 +105,8 @@ The pipeline has **two entry points** that both feed `gateway.request.new`:
 | **On Failure** | Logs error, increments `oraclePullError` metric |
 | **Flow** | Pull -> Validate each -> Send valid ones to E2 -> DLQ invalid ones |
 
+**Source channel auth (B3):** `BiruniClient.pullRequests()` resolves the outbound auth header via `SourceAuthService.authHeaders()` — `basic` (default, yaml fallback), `apikey`, or `oauth2` per the `gateway.source.auth.type` setting. OAuth2 tokens are minted by `SourceTokenService` (RFC 6749 `client_credentials` via `StandardOAuth2Client`) and cached under the Redis key `source:oauth2:token`, kept isolated from the per-request forwarding cache (`oauth2:token:<provider>`) — see SAFETY-RULES.md rule 31.
+
 ### E2: Kafka Produce — `RequestProducer.java`
 
 | Aspect | Detail |
@@ -154,6 +156,8 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 | **Oracle save** | `saveWithRetry()` → Biruni API | Yo'q |
 | **Ack** | MANUAL | MANUAL |
 
+**Source channel auth (B3):** `BiruniClient.saveResponse()` (the Oracle-save leg) applies the same `SourceAuthService.authHeaders()` resolution as the E1 pull — same `gateway.source.auth.type` setting, same isolated OAuth2 cache. See CONFIGURATION.md → `gateway.source.auth.*` and SAFETY-RULES.md rule 31.
+
 ## Component Map
 
 | Package | Responsibility | Key Classes |
@@ -175,7 +179,7 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 | `config/` | All configuration and bean definitions | `KafkaConfig`, `RedisConfig`, `HttpClientConfig`, `ThreadPoolConfig`, `*Properties` |
 | `notification/` | Alert notifications | `NotificationService` (interface), `TelegramNotificationService`, `NoOpNotificationService` |
 | `validation/` | Validation logic | `RequestValidator` |
-| `source/` | Data source interfaces | `RequestSourceClient`, `ResponseSinkClient` |
+| `source/` | Data source interfaces + source-channel outbound auth (B3) | `RequestSourceClient`, `ResponseSinkClient`, `SourceAuthService` (resolves basic\|apikey\|oauth2 per `gateway.source.auth.type`), `SourceTokenService` (isolated `source:oauth2:token` cache) |
 | `health/` | Custom health checks | `SystemHealthIndicator` |
 | `controller/` | Dev-only test endpoints | `TestController` (profile: dev) |
 | `settings/` | Control-plane: H2-backed runtime settings, cache + AES secrets, yaml→DB migration | `SettingsService` (cache + `getSecret`), `SettingsRepository`, `SettingsCipher` (AES-GCM), `SettingsMigrationRunner`, `SettingsRecord` |
@@ -195,6 +199,9 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 | GET | `/qosid/admin/api/settings` | session | Lists all settings (`SettingsService.getAllMasked()`) — secret values render as `***`. |
 | PUT | `/qosid/admin/api/settings/{key}` | session | Upserts a setting (`{value, secret}`); writes an audit row; refreshes the in-memory cache. Setting `secret=true` while `SETTINGS_ENCRYPTION_KEY` is blank throws `IllegalStateException`. |
 | GET | `/qosid/admin/api/settings/audit` | session | Last 200 rows from `settings_audit` (key, old/new value — secrets masked, changed-by, timestamp). |
+| GET | `/qosid/admin/api/source-auth` | session | Current source-channel auth config (`SourceAuthController`) — `type` + per-scheme fields, secrets masked (`***`). |
+| PUT | `/qosid/admin/api/source-auth` | session | Upserts the source-channel auth config (`{type, basic*/apikey*/oauth2*}`); validates required fields per `type`, writes via `SettingsService.set` (secrets AES-encrypted). |
+| POST | `/qosid/admin/api/source-auth/test` | session | Fires one bounded (5s connect/read) GET against the configured source pull URI using the resolved auth headers; always returns `200` with `{ok, httpStatus, message}` — never throws on an unreachable/misconfigured source. |
 
 First-boot default account: `admin` / `admin` (logged as WARN). One-shot reset via `ADMIN_RESET=true` or `ADMIN_PASSWORD_RESET=<value>` — see `ai-context/CONFIGURATION.md` → Admin Account & Reset.
 

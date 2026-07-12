@@ -146,6 +146,15 @@ into `RequestMessage` again would leave `tenantId` null (all requests → DLQ). 
 default field names are `company_id`/`filial_id` so bmb is unaffected; hardcoding the
 key instead of reading the setting breaks any deployment that reconfigures it.
 
+### 31. Never cache the source OAuth2 token under the per-request namespace
+
+`SourceTokenService` caches the source-channel token under `source:oauth2:token`,
+deliberately isolated from the per-request forwarding cache (`oauth2:token:<provider>`,
+`OAuth2TokenRedisCache`). Using the shared namespace would let a per-request provider
+eviction wipe the source token (stalling all pulls) or a "source"-named provider
+collide with it. Keep the two caches separate; keep the source cache TTL capped at
+the token's own `expires_in` so an expired token is never served on the pull/save channel.
+
 ---
 
 ## Protected Zones
@@ -171,6 +180,7 @@ These files contain production-critical logic. Before modifying any of them, run
 | `GlobalExceptionHandler.java` | `@RestControllerAdvice` mapping of auth / validation / upload / not-found / generic exceptions to uniform `ErrorResponse` | Unmapped routes leak 500, validation errors become opaque stack traces to clients |
 | `AdminSecurityConfig.java` | Two isolated `SecurityFilterChain` beans (admin session-gated, pipeline permitAll) with explicit `@Order` + `securityMatcher` | Merging chains or dropping `securityMatcher` locks the pipeline/actuator behind admin auth (see Rule 29) |
 | `TenantMappingService.java` | Biruni-boundary `toInternal`/`toExternal` field-name translation (dynamic, per-call from `SettingsService`) | Bypassing it at ingress leaves `tenantId` null (all requests → DLQ); bypassing at egress or hardcoding the field name breaks any deployment with reconfigured field names (see Rule 30) |
+| `SourceTokenService.java` | Isolated `source:oauth2:token` cache key + TTL capped at token's `expires_in` | Sharing the per-request `oauth2:token:*` namespace lets a provider eviction stall all Biruni pulls, or serves an expired token on the source channel (see Rule 31) |
 
 ## Required Checklist
 

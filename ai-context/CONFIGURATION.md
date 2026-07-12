@@ -16,6 +16,27 @@ Complete reference for all configuration parameters. Every property has a defaul
 | `gateway.source.oauth2-provider-uri` | String | `/b/biruni/bmb/requests$get_oauth_provider_data` | `SOURCE_OAUTH2_PROVIDER_URI` | URI for OAuth2 provider config |
 | `gateway.source.connection-timeout` | int | `60` | `SOURCE_TIMEOUT` | Connection timeout in seconds |
 
+## gateway.source.auth.* — Source Channel Outbound Auth (B3)
+
+**No static `*Properties` class** — these 10 keys live only in the settings DB, read per-call via `SettingsService.get`/`getSecret` by `SourceAuthService` (`source/SourceAuthService.java`) and `SourceTokenService` (`source/SourceTokenService.java`). **UI-managed** exclusively via `GET/PUT /qosid/admin/api/source-auth` and `POST /qosid/admin/api/source-auth/test` (`SourceAuthController`) — there is no yaml/env equivalent for these keys except the basic-auth fallback noted below. Applied by `BiruniClient` on both `pullRequests()` (E1) and `saveResponse()` (E5) via `sourceAuthService.authHeaders()`.
+
+| Property | Type | Default | Secret | Description |
+|----------|------|---------|--------|-------------|
+| `gateway.source.auth.type` | String | `basic` | no | Selects the auth scheme: `basic`, `apikey`, or `oauth2`. |
+| `gateway.source.auth.basic.username` | String | `` (empty) | no | Basic Auth username for the source channel. Migrated once from `gateway.source.username` (`SOURCE_USERNAME`) on first boot. |
+| `gateway.source.auth.basic.password` | String | `` (empty) | **yes** | Basic Auth password. Migrated once from `gateway.source.password` (`SOURCE_PASSWORD`) on first boot (skipped with a WARN if `SETTINGS_ENCRYPTION_KEY` is blank). |
+| `gateway.source.auth.apikey.header` | String | `X-Api-Key` | no | Header name used to carry the API key. |
+| `gateway.source.auth.apikey.value` | String | `` (empty) | **yes** | API key value. |
+| `gateway.source.auth.oauth2.token-url` | String | `` (empty) | no | Token endpoint for the source-channel OAuth2 client (`client_credentials`, RFC 6749 form-urlencoded via `StandardOAuth2Client`). |
+| `gateway.source.auth.oauth2.client-id` | String | `` (empty) | no | OAuth2 client id. |
+| `gateway.source.auth.oauth2.client-secret` | String | `` (empty) | **yes** | OAuth2 client secret. |
+| `gateway.source.auth.oauth2.scope` | String | `` (empty) | no | Optional OAuth2 scope. |
+| `gateway.source.auth.oauth2.cache-ttl-seconds` | String | `` (empty = use token's own `expires_in` minus 15s margin) | no | Optional cap on the cached-token TTL; the effective TTL is always `min(configured, token's expires_in - 15s)` — never longer than the token's own lifetime. |
+
+**Basic yaml fallback:** if `gateway.source.auth.basic.username` is blank (encryption disabled at first boot, or the settings row was never populated), `SourceAuthService.basicHeader()` falls back to `GatewayProperties.getUsername()`/`getPassword()` — i.e. the original `gateway.source.username`/`gateway.source.password` (`SOURCE_USERNAME`/`SOURCE_PASSWORD`) yaml/env values above. This is what keeps prod pull/save working unchanged for deployments that never touch the new admin UI (default `type=basic` + fallback).
+
+**Isolated OAuth2 token cache:** when `type=oauth2`, `SourceTokenService` caches the minted token under the Redis key `source:oauth2:token` — a namespace deliberately separate from the per-request forwarding cache (`oauth2:token:<provider>`, `OAuth2TokenRedisCache`). See SAFETY-RULES.md rule 31.
+
 ## gateway.kafka.* — Kafka Settings
 
 **Properties class:** `KafkaProperties.java`
