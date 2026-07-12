@@ -85,7 +85,15 @@ public class SourceAuthController {
         Map<String, Object> out = new HashMap<>();
         try {
             Map<String, String> authHeaders = sourceAuthService.authHeaders();
-            int status = RestClient.create().get()
+            // Bounded timeouts: an unreachable source host must fail fast into {ok:false},
+            // never hang the admin request thread indefinitely.
+            var httpClient = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(5))
+                    .build();
+            var factory = new org.springframework.http.client.JdkClientHttpRequestFactory(httpClient);
+            factory.setReadTimeout(java.time.Duration.ofSeconds(5));
+            var restClient = RestClient.builder().requestFactory(factory).build();
+            int status = restClient.get()
                     .uri(gatewayProperties.getBaseUrl() + gatewayProperties.getRequestPullUri())
                     .headers(h -> authHeaders.forEach(h::add))
                     .retrieve()
@@ -97,6 +105,7 @@ public class SourceAuthController {
             out.put("message", "Reached source with configured auth");
         } catch (Exception e) {
             out.put("ok", false);
+            out.put("httpStatus", null); // keep response shape consistent {ok, httpStatus, message}
             out.put("message", e.getMessage());
         }
         return ResponseEntity.ok(out);
