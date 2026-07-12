@@ -35,4 +35,19 @@ describe('AdvancedSettingsPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'OK' }));
     await waitFor(() => expect(put).toHaveBeenCalledWith('gateway.response.threshold-size', '2048', false));
   });
+
+  it('does not wipe a stored secret when the edit is left blank', async () => {
+    vi.spyOn(settingsApi, 'getSettings').mockResolvedValue(rows as any);
+    vi.spyOn(settingsApi, 'getAudit').mockResolvedValue([]);
+    const put = vi.spyOn(settingsApi, 'putSetting').mockResolvedValue({} as any);
+    render(<AdvancedSettingsPage />);
+    await waitFor(() => expect(screen.getByText('gateway.source.auth.basic.password')).toBeInTheDocument());
+    // Open the SECRET row's editor (second "Saqlash" button), leave blank, confirm.
+    await userEvent.click(screen.getAllByRole('button', { name: 'Saqlash' })[1]);
+    const input = await screen.findByLabelText('Qiymat');
+    expect(input).toHaveValue(''); // secret editor starts blank by design
+    await userEvent.click(screen.getByRole('button', { name: 'OK' }));
+    // Blank-means-keep: putSetting must NOT fire, so the stored secret is preserved.
+    expect(put).not.toHaveBeenCalled();
+  });
 });

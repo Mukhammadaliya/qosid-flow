@@ -37,6 +37,8 @@ export function AdvancedSettingsPage() {
 
   const save = async () => {
     if (!editing) return;
+    // Blank-means-keep for secrets: closing without a new value must NOT wipe the stored secret.
+    if (editing.secret && draft === '') { setEditing(null); return; }
     try {
       await putSetting(editing.key, draft, editing.secret);
       message.success(t('settings.saved'));
