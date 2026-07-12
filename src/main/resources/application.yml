@@ -230,6 +230,10 @@ gateway:
     chat-id: ${TELEGRAM_CHAT_ID:0}
     message-thread-id: ${TELEGRAM_MESSAGE_THREAD_ID:}
 
+  # --- Loki (Errors UI log source, D2) ---
+  loki:
+    url: ${LOKI_URL:http://loki:3100}
+
   # --- Settings control-plane (B1) ---
   settings:
     db-path: ${SETTINGS_DB_PATH:./data/settings}
