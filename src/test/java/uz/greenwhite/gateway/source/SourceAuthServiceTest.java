@@ -66,6 +66,16 @@ class SourceAuthServiceTest {
     }
 
     @Test
+    void typeMatchIsCaseInsensitive() {
+        when(settings.get("gateway.source.auth.type", "basic")).thenReturn("APIKEY");
+        when(settings.get("gateway.source.auth.apikey.header", "X-Api-Key")).thenReturn("X-Api-Key");
+        when(settings.getSecret("gateway.source.auth.apikey.value", "")).thenReturn("k");
+
+        Map<String, String> h = service().authHeaders();
+        assertEquals("k", h.get("X-Api-Key"));   // "APIKEY" resolved to the apikey branch
+    }
+
+    @Test
     void unknownTypeFallsBackToBasic() {
         when(settings.get("gateway.source.auth.type", "basic")).thenReturn("weird");
         when(settings.get("gateway.source.auth.basic.username", "")).thenReturn("");
