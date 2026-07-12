@@ -251,6 +251,18 @@ Optional request header on `/qosid/api/v1/queue/**`. Only consulted when both (a
 
 **Note:** `management.metrics.distribution.percentiles-histogram` is enabled for `gateway.request.e2e.duration` and `gateway.http.request.duration` (`application.yml`) so the dashboard can compute p95 via `histogram_quantile`. This adds roughly ~70 `_bucket` series per timer to `/actuator/prometheus`.
 
+## gateway.ai.* — AI Error Analysis (D5)
+
+Settings-DB-only keys (no yaml/env counterpart) — managed via `GET/PUT /qosid/admin/api/ai/config` (session auth) and read at request time by `AiAnalysisService` through `SettingsService`.
+
+| Property | Type | Default | Secret | Description |
+|----------|------|---------|--------|-------------|
+| `gateway.ai.base-url` | String | `` (empty = disabled) | no | Base URL of an OpenAI-compatible LLM endpoint (`<base-url>/chat/completions` is called). |
+| `gateway.ai.api-key` | String | `` (empty) | **yes** (AES) | Bearer key for the LLM endpoint. Masked as `***` on GET; a `***` PUT value never overwrites the stored key. Requires `SETTINGS_ENCRYPTION_KEY`. |
+| `gateway.ai.model` | String | `` (empty) | no | Model name sent in the chat-completion request (e.g. `gpt-4o-mini`). |
+
+**Opt-in / default OFF:** the feature is enabled only when all three values are set — otherwise `/ai/status` reports `enabled=false` and `/ai/analyze` returns `{analysis: null, error: "AI not configured"}`. Secrets are redacted (`AiRedactor`) before any context leaves the gateway, and every failure degrades to a structured error — never a 500. The LLM call is bounded (connect 5s / read 30s, `AiClientConfig`).
+
 ## gateway.settings.* — Control-Plane (B1)
 
 **Properties class:** `SettingsProperties.java` (bootstrap-only — these three values live in yaml/env, never in the settings DB itself, since the DB doesn't exist until they're read).

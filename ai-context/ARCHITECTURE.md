@@ -235,6 +235,20 @@ Note: within the `kpi` preset, `dlq` uses the range-dependent `${window}` token 
 from `to-from`, clamped 60s..30d) while the rate KPIs use a fixed `[5m]` — this asymmetry is
 intentional (DLQ counts accumulate over the selected range; rates are a current snapshot), not a bug.
 
+## AI error analysis (D5)
+
+Opt-in, on-demand AI analysis of a single error/log entry — the final D-phase, completing the
+5-part admin upgrade (D1 UI shell, D2 Errors/Loki, D3 Statistics, D5 AI; D4 was absorbed into D2).
+Dormant by default: `AiAnalysisService.enabled()` is true only when all three `gateway.ai.*`
+settings (base-url, api-key, model) are configured via `PUT /qosid/admin/api/ai/config`.
+`POST /qosid/admin/api/ai/analyze` (session auth) builds a compact context from the entry,
+passes it through `AiRedactor` (bearer/basic tokens and key/value or JSON-quoted secrets masked)
+BEFORE anything leaves the gateway, then calls a configurable OpenAI-compatible
+`/chat/completions` endpoint (bounded RestClient: connect 5s / read 30s). Any failure —
+unconfigured, unreachable, bad key — degrades to `{analysis: null, error}`, never a 500.
+The SPA exposes an "AI tahlil" button in the shared error drawer (Errors pages) plus an AI tab
+in Settings (config form + status gate). D5 absorbs nothing from other phases.
+
 ## Tenant boundary translation (C-faza)
 
 The internal core (Kafka messages, Redis keys, RocksDB, composite IDs) speaks only
