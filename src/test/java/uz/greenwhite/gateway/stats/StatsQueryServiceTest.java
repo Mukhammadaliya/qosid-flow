@@ -63,6 +63,19 @@ class StatsQueryServiceTest {
     }
 
     @Test
+    void settingsOverrideUrlWinsOverYamlFallback() {
+        MockRestServiceServer[] h = new MockRestServiceServer[1];
+        StatsQueryService s = service(h);
+        // H2 override (last-stub-wins over the helper's default): must beat the @Value yaml fallback.
+        when(settings.get("gateway.prometheus.url", "http://localhost:9090")).thenReturn("http://other:9090");
+        h[0].expect(manyTimes(), requestTo(Matchers.containsString("other:9090")))
+                .andRespond(withSuccess("{\"data\":{\"result\":[{\"value\":[1,\"1\"]}]}}", MediaType.APPLICATION_JSON));
+        StatsResult r = s.query("kpi", null, null, null);
+        assertThat(r.error()).isNull();
+        h[0].verify(); // enforce that the request actually hit the overridden host
+    }
+
+    @Test
     void unknownPresetReturnsErrorNotException() {
         MockRestServiceServer[] h = new MockRestServiceServer[1];
         StatsQueryService s = service(h);
