@@ -83,4 +83,26 @@ public class SettingsService {
         out.sort((a, b) -> a.getKey().compareTo(b.getKey()));
         return out;
     }
+
+    /** Internal flag key: some requires-restart setting changed since the last boot. */
+    public static final String RESTART_PENDING_KEY = "gateway._meta.restart-pending";
+
+    /** Set the restart-pending flag (no audit row — it is an internal flag, not a user edit). */
+    public void markRestartPending() {
+        setFlag(RESTART_PENDING_KEY, "true");
+    }
+
+    /** Clear the flag — called on boot once DB values have already been applied. */
+    public void clearRestartPending() {
+        setFlag(RESTART_PENDING_KEY, "false");
+    }
+
+    public boolean isRestartPending() {
+        return "true".equals(get(RESTART_PENDING_KEY, "false"));
+    }
+
+    private void setFlag(String key, String value) {
+        repository.upsert(key, value, false, "system");
+        cache.put(key, SettingsRecord.builder().key(key).value(value).secret(false).updatedBy("system").build());
+    }
 }
