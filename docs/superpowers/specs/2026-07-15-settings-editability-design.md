@@ -58,6 +58,8 @@ Admin UI'dagi `gateway.*` sozlamalarini **haqiqatan tahrirlanadigan** va **ta'si
 
 **Aniq to'liq ro'yxat** implementatsiyada `application.yml`'ni to'liq sanab qat'iylashtiriladi; yuqoridagi — tasdiqlangan tamoyil va asosiy kalitlar. Reyestrda bo'lmagan `gateway.*` kalit default `requires-restart` sifatida qaraladi (xavfsiz taxmin).
 
+> **Implementatsiya og'ishi (final review, KEEP):** `gateway.response.threshold-size` yuqoridagi jadvalda 🟢 live deb rejalangan edi, lekin implementatsiyada **REQUIRES_RESTART** deb tasniflandi — u `StatusController`/`CallbackService`'da `@Value` orqali boot-time bog'lanadi va `SettingsService`'dan jonli o'qishga o'tkazilmadi. Reyestr haqiqatni aks ettirishi kerak, shuning uchun 🟡 saqlanadi (kod live qilinmaydi). Shuningdek, `gateway.polling.batch-size` reyestrdan olib tashlandi — uni hech qanday kod o'qimaydi (`RequestPuller` faqat `polling.enabled` + `polling.interval-ms` ishlatadi).
+
 ## 5. Restart-pending bayrog'i
 
 - Settings-DB'da meta kalit: `gateway._meta.restart-pending` (boolean).

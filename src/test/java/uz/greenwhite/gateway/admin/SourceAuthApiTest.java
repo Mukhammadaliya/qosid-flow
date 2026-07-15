@@ -30,12 +30,14 @@ class SourceAuthApiTest {
     @Autowired ObjectMapper om;
     @Autowired uz.greenwhite.gateway.settings.SettingsService settingsService;
 
-    /** Blanks a setting so a test can start from a "nothing stored" state (H2 mem DB is shared per class). */
-    private void clearSetting(MockHttpSession s, String key) throws Exception {
-        mvc.perform(put("/qosid/admin/api/settings/" + key).session(s).with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(om.writeValueAsString(Map.of("value", "", "secret", false))))
-                .andExpect(status().isNoContent());
+    /**
+     * Blanks a setting so a test can start from a "nothing stored" state (H2 mem DB is
+     * shared per class). Goes through SettingsService directly — the generic
+     * PUT /settings/{key} now only accepts editable registry keys, and source-auth keys
+     * are managed by their own endpoint, not the generic one.
+     */
+    private void clearSetting(MockHttpSession s, String key) {
+        settingsService.set(key, "", false, "test");
     }
 
     private MockHttpSession login() throws Exception {

@@ -10,7 +10,10 @@ import org.springframework.stereotype.Component;
  * On every successful boot the DB settings have already been applied
  * (SettingsEnvironmentPostProcessor + fresh @ConfigurationProperties binding),
  * so any pending "restart required" flag is now satisfied. Clear it.
- * Ordered after SettingsMigrationRunner so first-boot migration finishes first.
+ * Note on ordering: @Order(100) makes this run BEFORE the unordered
+ * SettingsMigrationRunner (unordered = LOWEST_PRECEDENCE). That is harmless:
+ * first-boot migration only seeds yaml values into an empty DB and never sets
+ * the restart-pending flag, so there is nothing for this runner to miss.
  */
 @Component
 @Order(100)

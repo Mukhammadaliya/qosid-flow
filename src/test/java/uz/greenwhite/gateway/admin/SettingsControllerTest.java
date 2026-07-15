@@ -67,6 +67,17 @@ class SettingsControllerTest {
     }
 
     @Test
+    void putRejectsUnknownKey() {
+        // F1b: a key not in the registry (e.g. an infra key an attacker hand-crafts a PUT
+        // for) must be rejected — otherwise the PostProcessor would inject it on next boot.
+        SettingUpdateRequest req = new SettingUpdateRequest();
+        req.setValue("evil:9092");
+        assertThrows(IllegalArgumentException.class,
+                () -> controller().update("gateway.kafka.bootstrap-servers", req));
+        verify(settings, never()).set(any(), any(), anyBoolean(), any());
+    }
+
+    @Test
     void putRequiresRestartKeySetsPendingFlag() {
         SettingUpdateRequest req = new SettingUpdateRequest();
         req.setValue("5");

@@ -28,6 +28,19 @@ class SettingsRegistryTest {
     }
 
     @Test
+    void isEditableIsAnAllowlistOverRegistryKeys() {
+        // Editable: registry keys with LIVE / REQUIRES_RESTART effect class
+        assertTrue(SettingsRegistry.isEditable("gateway.api.base-url"));
+        assertTrue(SettingsRegistry.isEditable("gateway.retry.max-attempts"));
+        assertTrue(SettingsRegistry.isEditable("gateway.tenant.trust-extra-tenant-header"));
+        // Not editable: READ_ONLY registry keys AND unknown keys
+        assertFalse(SettingsRegistry.isEditable("server.port"));
+        assertFalse(SettingsRegistry.isEditable("spring.kafka.bootstrap-servers"));
+        assertFalse(SettingsRegistry.isEditable("gateway.kafka.bootstrap-servers")); // unknown
+        assertFalse(SettingsRegistry.isEditable("gateway.polling.batch-size"));      // ghost key removed
+    }
+
+    @Test
     void allEntriesHaveGroupAndLabel() {
         assertFalse(SettingsRegistry.all().isEmpty());
         SettingsRegistry.all().forEach(m -> {

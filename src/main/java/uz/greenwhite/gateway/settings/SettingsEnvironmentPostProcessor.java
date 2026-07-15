@@ -23,6 +23,12 @@ import java.util.Map;
  * GatewayProperties, retry/http/polling) thus picks up DB overrides on boot,
  * WITHOUT per-consumer changes — this is what makes "requires-restart" settings apply.
  *
+ * ALLOWLIST: only EDITABLE registry keys (SettingsRegistry with effect-class LIVE or
+ * REQUIRES_RESTART) are injected. READ_ONLY keys (ports, Kafka, Redis, db-path) and
+ * unknown keys are never injected, even if a row somehow lands in the DB — so the
+ * settings DB can never repoint infra. (SettingsRegistry is pure static, no Spring —
+ * safe to call before the context exists.)
+ *
  * Secrets are NOT loaded here (they are read at runtime via SettingsService.getSecret).
  * Any failure (first boot, no table, no file) is swallowed: yaml defaults then apply.
  * Runs after ConfigData so gateway.settings.db-path is already resolved.
@@ -48,8 +54,10 @@ public class SettingsEnvironmentPostProcessor implements EnvironmentPostProcesso
             while (rs.next()) {
                 if (rs.getBoolean("secret")) continue;            // secrets stay out of the environment
                 String key = rs.getString("skey");
-                if (key.startsWith("gateway.settings.")) continue; // never re-inject bootstrap keys
-                if (key.startsWith("gateway._meta.")) continue;    // internal flags are not properties
+                // Allowlist: only editable registry keys (LIVE/REQUIRES_RESTART) are injected.
+                // Covers the old gateway.settings.* / gateway._meta.* skips AND blocks
+                // read-only/unknown keys (e.g. spring.kafka.bootstrap-servers) outright.
+                if (!SettingsRegistry.isEditable(key)) continue;
                 String value = rs.getString("svalue");
                 if (value != null) props.put(key, value);
             }
@@ -60,9 +68,12 @@ public class SettingsEnvironmentPostProcessor implements EnvironmentPostProcesso
         if (props.isEmpty()) return;
         MutablePropertySources sources = environment.getPropertySources();
         MapPropertySource source = new MapPropertySource(SOURCE_NAME, props);
-        // Rank below systemEnvironment (env vars / -D win → read-only infra protected),
-        // above application.yml. Config-data appended the yaml sources below systemEnvironment,
-        // so inserting immediately after systemEnvironment puts settings-db above yaml.
+        // Rank below systemEnvironment, above application.yml. Read-only infra is protected
+        // by the isEditable allowlist above, not by ranking. For editable keys the DB value
+        // outranks yaml — including yaml's ${ENV:default} placeholders, so once a key has a
+        // DB row its systemd env var no longer takes effect (DB/UI is the source of truth).
+        // Config-data appended the yaml sources below systemEnvironment, so inserting
+        // immediately after systemEnvironment puts settings-db above yaml.
         if (sources.contains(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME)) {
             sources.addAfter(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME, source);
         } else {

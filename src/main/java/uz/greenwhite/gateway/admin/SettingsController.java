@@ -54,8 +54,12 @@ public class SettingsController {
 
     @PutMapping("/{key}")
     public ResponseEntity<Void> update(@PathVariable String key, @RequestBody SettingUpdateRequest req) {
-        if (SettingsRegistry.isReadOnly(key)) {
-            throw new IllegalArgumentException("Setting '" + key + "' is read-only and cannot be changed");
+        // Allowlist: only editable registry keys (LIVE/REQUIRES_RESTART) may be written.
+        // Rejects both READ_ONLY infra keys AND unknown keys (e.g. a hand-crafted PUT of
+        // spring.kafka.bootstrap-servers), which would otherwise be injected into the
+        // Environment on next boot. Source-auth/AI keys have their own endpoints.
+        if (!SettingsRegistry.isEditable(key)) {
+            throw new IllegalArgumentException("Setting '" + key + "' is not editable");
         }
         if ("gateway.tenant.field-name".equals(key)
                 && (req.getValue() == null || req.getValue().isBlank())) {
