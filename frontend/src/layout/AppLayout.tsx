@@ -1,6 +1,6 @@
-import { ReactNode } from 'react';
-import { Layout, Menu, Dropdown, Space, Tooltip } from 'antd';
-import { UserOutlined, SettingOutlined, WarningOutlined, BarChartOutlined, FileTextOutlined, DownOutlined } from '@ant-design/icons';
+import { ReactNode, useState } from 'react';
+import { Layout, Menu, Dropdown, Space, Tooltip, Button } from 'antd';
+import { UserOutlined, SettingOutlined, WarningOutlined, BarChartOutlined, FileTextOutlined, DownOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../auth/AuthContext';
@@ -13,6 +13,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [collapsed, setCollapsed] = useState(false);
 
   const selectedKey = location.pathname.startsWith('/settings') ? '/settings' : location.pathname;
 
@@ -35,15 +36,32 @@ export function AppLayout({ children }: { children: ReactNode }) {
   };
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ height: '100vh' }}>
       <Header style={{ background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingInline: 16, borderBottom: '1px solid #E6EDF3' }}>
-        <Logo />
+        <Space>
+          <Button
+            type="text"
+            aria-label={t('nav.toggleMenu')}
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setCollapsed((c) => !c)}
+          />
+          <Logo />
+        </Space>
         <Dropdown menu={userMenu}>
           <Space style={{ cursor: 'pointer' }}><UserOutlined /> {user} <DownOutlined /></Space>
         </Dropdown>
       </Header>
       <Layout>
-        <Sider theme="light" width={220} breakpoint="lg" collapsedWidth={0}>
+        <Sider
+          theme="light"
+          width={220}
+          breakpoint="lg"
+          collapsedWidth={0}
+          collapsible
+          trigger={null}
+          collapsed={collapsed}
+          onCollapse={setCollapsed}
+        >
           <Menu
             mode="inline"
             selectedKeys={[selectedKey]}
@@ -52,7 +70,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             style={{ height: '100%', borderRight: 0 }}
           />
         </Sider>
-        <Content style={{ margin: 24 }}>{children}</Content>
+        <Content style={{ padding: 24, overflow: 'auto' }}>{children}</Content>
       </Layout>
     </Layout>
   );
