@@ -23,13 +23,14 @@ public final class SettingsRegistry {
         new SettingMeta("gateway.source.base-url", "Endpointlar", "Source base-url", "url", EffectClass.LIVE, false),
         new SettingMeta("gateway.source.request-pull-uri", "Endpointlar", "Source pull URI", "text", EffectClass.LIVE, false),
         new SettingMeta("gateway.source.response-save-uri", "Endpointlar", "Source save URI", "text", EffectClass.LIVE, false),
-        new SettingMeta("gateway.response.threshold-size", "Umumiy", "Inline javob chegarasi (bayt)", "number", EffectClass.LIVE, false),
         new SettingMeta("gateway.loki.url", "Observability", "Loki URL", "url", EffectClass.LIVE, false),
         new SettingMeta("gateway.prometheus.url", "Observability", "Prometheus URL", "url", EffectClass.LIVE, false),
         new SettingMeta("gateway.tenant.field-name", "Tenant", "Tenant field name", "text", EffectClass.LIVE, false),
         new SettingMeta("gateway.tenant.extra-field-name", "Tenant", "Extra tenant field name", "text", EffectClass.LIVE, false),
         new SettingMeta("gateway.tenant.default-rest-tenant", "Tenant", "Default REST tenant", "number", EffectClass.LIVE, false),
         // 🟡 REQUIRES_RESTART — bound into beans at startup; persisted, applied on next boot
+        // (threshold-size is @Value-bound in StatusController/CallbackService — boot-time, not live)
+        new SettingMeta("gateway.response.threshold-size", "Umumiy", "Inline javob chegarasi (bayt)", "number", EffectClass.REQUIRES_RESTART, false),
         new SettingMeta("gateway.retry.max-attempts", "Retry/HTTP", "Max attempts", "number", EffectClass.REQUIRES_RESTART, false),
         new SettingMeta("gateway.retry.interval-ms", "Retry/HTTP", "Retry interval (ms)", "number", EffectClass.REQUIRES_RESTART, false),
         new SettingMeta("gateway.retry.retryable-statuses", "Retry/HTTP", "Retryable statuses", "text", EffectClass.REQUIRES_RESTART, false),

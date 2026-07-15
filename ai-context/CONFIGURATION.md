@@ -8,11 +8,11 @@ Complete reference for all configuration parameters. Every property has a defaul
 
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
-| `gateway.source.base-url` | String | `http://localhost:8080/smartup24` | `SOURCE_BASE_URL` | Biruni API base URL |
+| `gateway.source.base-url` | String | `http://localhost:8080/smartup24` | `SOURCE_BASE_URL` | Biruni API base URL. **LIVE-editable** via the Settings UI — `BiruniClient` resolves it per call through `SettingsService` (yaml/env value is the fallback). |
 | `gateway.source.username` | String | `` (empty, mandatory env var) | `SOURCE_USERNAME` | Basic Auth username |
 | `gateway.source.password` | String | `` (empty, mandatory env var) | `SOURCE_PASSWORD` | Basic Auth password |
-| `gateway.source.request-pull-uri` | String | `/b/biruni/bmb/requests$pull` | `SOURCE_PULL_URI` | URI for pulling requests |
-| `gateway.source.response-save-uri` | String | `/b/biruni/bmb/requests$save` | `SOURCE_SAVE_URI` | URI for saving responses |
+| `gateway.source.request-pull-uri` | String | `/b/biruni/bmb/requests$pull` | `SOURCE_PULL_URI` | URI for pulling requests. **LIVE-editable** (resolved per call via `SettingsService`). |
+| `gateway.source.response-save-uri` | String | `/b/biruni/bmb/requests$save` | `SOURCE_SAVE_URI` | URI for saving responses. **LIVE-editable** (resolved per call via `SettingsService`). |
 | `gateway.source.oauth2-provider-uri` | String | `/b/biruni/bmb/requests$get_oauth_provider_data` | `SOURCE_OAUTH2_PROVIDER_URI` | URI for OAuth2 provider config |
 | `gateway.source.connection-timeout` | int | `60` | `SOURCE_TIMEOUT` | Connection timeout in seconds |
 
@@ -167,7 +167,7 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
-| `gateway.api.base-url` | String | `http://localhost:8080/smartup24/b` | `API_BASE_URL` | Upstream base URL, **including any path prefix** (e.g. `/b`). API proxy requests are forwarded to `{baseUrl}{stripped client URI}`. Client URIs therefore omit the `/b` prefix — e.g. client sends `/qosid/api/v1/queue/sb/sbr/…` and qosid-flow calls `https://app.smartup24.com/b/sb/sbr/…`. Prod: `https://app.smartup24.com/b` (env var must include `/b`). |
+| `gateway.api.base-url` | String | `http://localhost:8080/smartup24/b` | `API_BASE_URL` | Upstream base URL, **including any path prefix** (e.g. `/b`). API proxy requests are forwarded to `{baseUrl}{stripped client URI}`. Client URIs therefore omit the `/b` prefix — e.g. client sends `/qosid/api/v1/queue/sb/sbr/…` and qosid-flow calls `https://app.smartup24.com/b/sb/sbr/…`. Prod: `https://app.smartup24.com/b` (env var must include `/b`). **LIVE-editable** — `ProxyController` resolves it per request via `SettingsService`. |
 
 ## gateway.proxy.* — REST Proxy Layout
 
@@ -273,7 +273,15 @@ Settings-DB-only keys (no yaml/env counterpart) — managed via `GET/PUT /qosid/
 | `gateway.settings.encryption-key` | String | `` (blank) | `SETTINGS_ENCRYPTION_KEY` | AES-GCM master key (any length — SHA-256'd internally) for at-rest encryption of settings marked `secret=true`. **Blank disables secrets**: `SettingsCipher.isEnabled()` returns false, `SettingsService.set(..., secret=true, ...)` throws `IllegalStateException`, and `getSecret()` logs a WARN and returns the caller's default instead of decrypting. Non-secret settings are unaffected. |
 | `gateway.settings.session-ttl-minutes` | long | `480` | `ADMIN_SESSION_TTL_MIN` | Intended admin HttpSession TTL (8h). Read into `SettingsProperties` but **not yet wired** to `HttpSession.setMaxInactiveInterval` or `server.servlet.session.timeout` — the servlet container's default session timeout currently governs actual expiry. Treat as reserved/forward-looking until wired. |
 
-**Runtime settings migrated from yaml → DB on first boot** (see `SettingsMigrationRunner.MIGRATABLE_KEYS`): `gateway.api.base-url`, `gateway.retry.max-attempts`, `gateway.retry.interval-ms`, `gateway.retry.retryable-statuses`, `gateway.retry.max-message-age-ms`, `gateway.http.connect-timeout-ms`, `gateway.http.read-timeout-ms`, `gateway.response.threshold-size`, `gateway.polling.enabled`, `gateway.polling.interval-ms`, `gateway.tenant.field-name`, `gateway.tenant.extra-field-name`, `gateway.tenant.default-rest-tenant`. After migration, these are edited via `PUT /qosid/admin/api/settings/{key}` and stored in the settings DB, but the E1-E5 pipeline still reads these values from yaml until each component is wired to `SettingsService` (a later sub-phase) — changing them via the admin API does not yet affect pipeline behavior. Bootstrap-only values (Kafka, Redis, ports, `gateway.settings.db-path` itself) are never migrated and stay yaml-only.
+**Runtime settings migrated from yaml → DB on first boot** (see `SettingsMigrationRunner.MIGRATABLE_KEYS`): `gateway.api.base-url`, `gateway.retry.max-attempts`, `gateway.retry.interval-ms`, `gateway.retry.retryable-statuses`, `gateway.retry.max-message-age-ms`, `gateway.http.connect-timeout-ms`, `gateway.http.read-timeout-ms`, `gateway.response.threshold-size`, `gateway.polling.enabled`, `gateway.polling.interval-ms`, `gateway.tenant.field-name`, `gateway.tenant.extra-field-name`, `gateway.tenant.default-rest-tenant`. After migration, these are edited via `PUT /qosid/admin/api/settings/{key}` and stored in the settings DB. DB values now DO take effect: LIVE keys are read per-use via `SettingsService`, and REQUIRES_RESTART keys are injected into the Spring `Environment` on the next boot by `SettingsEnvironmentPostProcessor` (see Settings Editability below). Bootstrap-only values (Kafka, Redis, ports, `gateway.settings.db-path` itself) are never migrated and stay yaml/env-only.
+
+## Settings Editability — Effect Classes (Registry)
+
+`SettingsRegistry.java` classifies every UI-editable key by how a change takes effect; `GET /qosid/admin/api/settings/registry` serves this to the SPA (color-coded), and `PUT /qosid/admin/api/settings/{key}` enforces it (READ_ONLY rejected; REQUIRES_RESTART sets the restart-pending flag). Keys not in the registry default to `REQUIRES_RESTART`.
+
+- **LIVE** (🟢 applied immediately — read per-use via `SettingsService`): `gateway.api.base-url`, `gateway.source.base-url`, `gateway.source.request-pull-uri`, `gateway.source.response-save-uri`, `gateway.loki.url`, `gateway.prometheus.url`, `gateway.tenant.field-name`, `gateway.tenant.extra-field-name`, `gateway.tenant.default-rest-tenant`.
+- **REQUIRES_RESTART** (🟡 persisted now, applied on next boot via `SettingsEnvironmentPostProcessor` — the DB `settings-db` property source ranks above `application.yml`, below env vars): `gateway.response.threshold-size` (`@Value`-bound in `StatusController`/`CallbackService`), `gateway.retry.max-attempts`, `gateway.retry.interval-ms`, `gateway.retry.retryable-statuses`, `gateway.retry.max-message-age-ms`, `gateway.http.connect-timeout-ms`, `gateway.http.read-timeout-ms`, `gateway.polling.enabled`, `gateway.polling.interval-ms`. Saving one sets the `restartPending` flag (banner in the UI); `RestartPendingResetRunner` clears it on the next successful boot.
+- **READ_ONLY** (⚪ bootstrap/infra — greyed in the UI, `PUT` rejected; controlled only by yaml/env, which always outrank the settings DB): `gateway.settings.db-path`, `server.port`, `management.server.port`, `spring.kafka.bootstrap-servers`, `spring.data.redis.host`, `spring.data.redis.port`, `spring.profiles.active`. (`gateway.settings.encryption-key` is intentionally NOT in the registry at all.)
 
 ## Admin Account & Reset
 

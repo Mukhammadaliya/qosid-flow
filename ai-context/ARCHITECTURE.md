@@ -182,7 +182,7 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 | `source/` | Data source interfaces + source-channel outbound auth (B3) | `RequestSourceClient`, `ResponseSinkClient`, `SourceAuthService` (resolves basic\|apikey\|oauth2 per `gateway.source.auth.type`), `SourceTokenService` (isolated `source:oauth2:token` cache) |
 | `health/` | Custom health checks | `SystemHealthIndicator` |
 | `controller/` | Dev-only test endpoints | `TestController` (profile: dev) |
-| `settings/` | Control-plane: H2-backed runtime settings, cache + AES secrets, yaml→DB migration | `SettingsService` (cache + `getSecret`), `SettingsRepository`, `SettingsCipher` (AES-GCM), `SettingsMigrationRunner`, `SettingsRecord` |
+| `settings/` | Control-plane: H2-backed runtime settings, cache + AES secrets, yaml→DB migration, editability registry + boot-time DB→Environment layer | `SettingsService` (cache + `getSecret` + restart-pending flag), `SettingsRepository`, `SettingsCipher` (AES-GCM), `SettingsMigrationRunner`, `SettingsRecord`, `SettingsRegistry` (per-key effect-class metadata), `SettingsEnvironmentPostProcessor` (boot-time DB→Environment property source), `RestartPendingResetRunner` |
 | `admin/` | Control-plane: admin session auth + settings/audit CRUD API at `/qosid/admin/api/**` | `AdminAuthController`, `AdminAuthService`, `LoginRateLimiter`, `AdminAccountInitializer`, `SettingsController`, `HealthController` |
 
 **B1 note:** the settings/admin control-plane is additive — it does not touch the E1-E5 pipeline. `AdminSecurityConfig` isolates it behind its own `SecurityFilterChain` so the pipeline and actuator remain permitAll (see Cross-Cutting Concerns → Admin Control-Plane Security below).
@@ -197,13 +197,22 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 | GET | `/qosid/admin/api/me` | session | Returns the authenticated admin's username. |
 | POST | `/qosid/admin/api/change-password` | session | Changes the admin password (min 8 chars, must not be the literal `admin`); invalidates the session afterward (re-login required). |
 | GET | `/qosid/admin/api/settings` | session | Lists all settings (`SettingsService.getAllMasked()`) — secret values render as `***`. |
-| PUT | `/qosid/admin/api/settings/{key}` | session | Upserts a setting (`{value, secret}`); writes an audit row; refreshes the in-memory cache. Setting `secret=true` while `SETTINGS_ENCRYPTION_KEY` is blank throws `IllegalStateException`. |
+| GET | `/qosid/admin/api/settings/registry` | session | Registry-driven view for the Settings UI: every `SettingsRegistry` key with group, label, input type, effect-class (`LIVE`/`REQUIRES_RESTART`/`READ_ONLY`), current value (DB override → `Environment` fallback), plus the global `restartPending` flag. |
+| PUT | `/qosid/admin/api/settings/{key}` | session | Upserts a setting (`{value, secret}`); writes an audit row; refreshes the in-memory cache. `READ_ONLY` registry keys are rejected (`IllegalArgumentException`); `gateway.tenant.field-name` must be non-blank and `gateway.tenant.default-rest-tenant` numeric; a `REQUIRES_RESTART` key additionally sets the restart-pending flag. Setting `secret=true` while `SETTINGS_ENCRYPTION_KEY` is blank throws `IllegalStateException`. |
 | GET | `/qosid/admin/api/settings/audit` | session | Last 200 rows from `settings_audit` (key, old/new value — secrets masked, changed-by, timestamp). |
 | GET | `/qosid/admin/api/source-auth` | session | Current source-channel auth config (`SourceAuthController`) — `type` + per-scheme fields, secrets masked (`***`). |
 | PUT | `/qosid/admin/api/source-auth` | session | Upserts the source-channel auth config (`{type, basic*/apikey*/oauth2*}`); validates required fields per `type`, writes via `SettingsService.set` (secrets AES-encrypted). |
 | POST | `/qosid/admin/api/source-auth/test` | session | Fires one bounded (5s connect/read) GET against the configured source pull URI using the resolved auth headers; always returns `200` with `{ok, httpStatus, message}` — never throws on an unreachable/misconfigured source. |
 
 First-boot default account: `admin` / `admin` (logged as WARN). One-shot reset via `ADMIN_RESET=true` or `ADMIN_PASSWORD_RESET=<value>` — see `ai-context/CONFIGURATION.md` → Admin Account & Reset.
+
+### Settings editability — registry, boot-time layer, restart-pending flow
+
+Three pieces make DB-stored settings actually take effect (A-loyiha, settings-editability):
+
+- **`SettingsRegistry`** (static, no Spring): per-key metadata — group, uz label, input type, and effect-class. `LIVE` keys are read per-use via `SettingsService.get(key, fallback)` (e.g. `gateway.api.base-url` in `ProxyController`, `gateway.source.base-url`/pull/save URIs in `BiruniClient`, tenant field names in `TenantMappingService`, Loki/Prometheus URLs). `REQUIRES_RESTART` keys are bound into beans at startup (`@ConfigurationProperties`/`@Value`). `READ_ONLY` keys are bootstrap/infra (ports, Kafka, Redis, `gateway.settings.db-path`, active profile) — shown greyed in the UI and rejected on PUT. Unknown keys default to `REQUIRES_RESTART` (safe assumption). Drives both `GET /settings/registry` and the `SettingsController` write guard.
+- **`SettingsEnvironmentPostProcessor`** (registered in `spring.factories`, ordered after config-data): at boot it opens the H2 settings DB directly (JDBC, `IFEXISTS=TRUE`) and injects all non-secret rows as a `settings-db` `MapPropertySource` ranked **below** `systemEnvironment` (env vars / `-D` still win → read-only infra keys stay protected) but **above** `application.yml`. Every `@ConfigurationProperties`/`@Value` consumer thus picks up DB overrides on the next boot with zero per-consumer changes — this is what makes `REQUIRES_RESTART` settings apply. Secrets never enter the Environment (runtime `SettingsService.getSecret` only); `gateway.settings.*` and `gateway._meta.*` are never re-injected; any failure (first boot, no DB file) is swallowed and yaml defaults apply.
+- **Restart-pending flow:** `PUT` on a `REQUIRES_RESTART` key → `SettingsService.markRestartPending()` sets the internal `gateway._meta.restart-pending` flag (not audited, not a property). `GET /settings/registry` surfaces it as `restartPending: true` → the SPA shows a warning banner. On the next successful boot the DB values have been applied by the post-processor, so `RestartPendingResetRunner` (`@Order(100)`, after migration) clears the flag.
 
 ## Errors module — Loki log aggregation (D2)
 

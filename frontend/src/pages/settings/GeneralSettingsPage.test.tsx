@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import '../../i18n';
+import i18n from '../../i18n';
 import { GeneralSettingsPage } from './GeneralSettingsPage';
 import * as settingsApi from '../../api/settings';
 
@@ -41,10 +41,10 @@ describe('GeneralSettingsPage', () => {
   it('shows the restart-pending banner when flag is set', async () => {
     vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue({ ...registry, restartPending: true } as any);
     render(<GeneralSettingsPage />);
-    // The banner is the only role="alert" on the page; the legend tag also mentions
-    // "restart", so a bare getByText(/restart/i) would multi-match. Query by role instead.
+    // The banner is the only role="alert" on the page — query by role, and compare its text
+    // against the i18n catalog itself so the assertion never depends on the uz wording.
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
-    expect(screen.getByRole('alert')).toHaveTextContent(/restart/i);
+    expect(screen.getByRole('alert')).toHaveTextContent(i18n.t('settings.restartPending'));
   });
 
   it('does not show the restart-pending banner when flag is clear', async () => {

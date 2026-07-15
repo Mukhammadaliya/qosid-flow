@@ -1,8 +1,39 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Card, Collapse, Input, Button, Tag, Space, message } from 'antd';
+import { Alert, Card, Collapse, Input, Button, Table, Tabs, Tag, Space, message } from 'antd';
 import { LockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { getRegistry, putSetting, RegistryItem } from '../../api/settings';
+import { getRegistry, putSetting, getAudit, RegistryItem } from '../../api/settings';
+
+/** Audit log tab — render code moved verbatim from the retired AdvancedSettingsPage.
+ *  Mounted lazily by antd Tabs, so getAudit fires only when the tab is first opened. */
+function AuditTab() {
+  const { t } = useTranslation();
+  const [audit, setAudit] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAudit()
+      .then(setAudit)
+      .catch((e: any) => setLoadError(e?.response?.data?.message ?? t('common.loadError')))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const auditColumns = [
+    { title: t('settings.auditKey'), dataIndex: 'skey', key: 'skey' },
+    { title: t('settings.auditOld'), dataIndex: 'old_value', key: 'old_value' },
+    { title: t('settings.auditNew'), dataIndex: 'new_value', key: 'new_value' },
+    { title: t('settings.auditBy'), dataIndex: 'changed_by', key: 'changed_by' },
+    { title: t('settings.auditAt'), dataIndex: 'changed_at', key: 'changed_at' },
+  ];
+
+  return (
+    <Card loading={loading}>
+      {loadError && <Alert style={{ marginBottom: 16 }} type="error" showIcon message={loadError} />}
+      <Table rowKey={(_r, i) => String(i)} size="small" columns={auditColumns} dataSource={audit} />
+    </Card>
+  );
+}
 
 const BADGE: Record<RegistryItem['effectClass'], { color: string; key: string }> = {
   LIVE: { color: 'green', key: 'settings.legend.live' },
@@ -52,7 +83,7 @@ export function GeneralSettingsPage() {
     }
   };
 
-  return (
+  const settingsTab = (
     <Card loading={loading}>
       {loadError && <Alert style={{ marginBottom: 16 }} type="error" showIcon message={loadError} />}
       <Space style={{ marginBottom: 12 }} size="middle">
@@ -97,5 +128,12 @@ export function GeneralSettingsPage() {
         ),
       }))} />
     </Card>
+  );
+
+  return (
+    <Tabs items={[
+      { key: 'settings', label: t('settings.general'), children: settingsTab },
+      { key: 'audit', label: t('settings.audit'), children: <AuditTab /> },
+    ]} />
   );
 }
