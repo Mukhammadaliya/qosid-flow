@@ -6,6 +6,8 @@ import org.springframework.boot.env.EnvironmentPostProcessor;
 import org.springframework.core.Ordered;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.MutablePropertySources;
+import org.springframework.core.env.StandardEnvironment;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -56,8 +58,15 @@ public class SettingsEnvironmentPostProcessor implements EnvironmentPostProcesso
             return;
         }
         if (props.isEmpty()) return;
-        // addLast: ranks below systemEnvironment/systemProperties (added earlier by Spring),
-        // above application.yml → env-vars win (read-only infra protected), DB overrides yaml.
-        environment.getPropertySources().addLast(new MapPropertySource(SOURCE_NAME, props));
+        MutablePropertySources sources = environment.getPropertySources();
+        MapPropertySource source = new MapPropertySource(SOURCE_NAME, props);
+        // Rank below systemEnvironment (env vars / -D win → read-only infra protected),
+        // above application.yml. Config-data appended the yaml sources below systemEnvironment,
+        // so inserting immediately after systemEnvironment puts settings-db above yaml.
+        if (sources.contains(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME)) {
+            sources.addAfter(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME, source);
+        } else {
+            sources.addFirst(source); // e.g. MockEnvironment (no systemEnvironment) — presence is enough
+        }
     }
 }

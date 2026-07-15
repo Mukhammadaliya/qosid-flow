@@ -43,4 +43,25 @@ class SettingsEnvironmentPostProcessorTest {
         assertDoesNotThrow(() -> processor.postProcessEnvironment(env, new SpringApplication()));
         assertNull(env.getProperty("gateway.api.base-url"));
     }
+
+    @Test
+    void dbValueOverridesYamlButNotSystemEnvironment(@TempDir Path dir) throws Exception {
+        String dbPath = dir.resolve("settings").toString();
+        try (Connection c = DriverManager.getConnection("jdbc:h2:" + dbPath + ";MODE=LEGACY", "sa", "");
+             Statement s = c.createStatement()) {
+            s.execute("CREATE TABLE settings (skey VARCHAR(200) PRIMARY KEY, svalue CLOB, secret BOOLEAN NOT NULL DEFAULT FALSE, updated_at TIMESTAMP, updated_by VARCHAR(100))");
+            s.execute("INSERT INTO settings (skey, svalue, secret) VALUES ('gateway.api.base-url', 'from-db', FALSE)");
+        }
+        org.springframework.core.env.StandardEnvironment env = new org.springframework.core.env.StandardEnvironment();
+        env.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource(
+                "settings-db-path-source", java.util.Map.of("gateway.settings.db-path", dbPath)));
+        // application.yml-like source: appended last (lowest, like config-data) with a competing value
+        env.getPropertySources().addLast(new org.springframework.core.env.MapPropertySource(
+                "applicationConfig", java.util.Map.of("gateway.api.base-url", "from-yaml")));
+
+        processor.postProcessEnvironment(env, new SpringApplication());
+
+        // DB wins over yaml
+        assertEquals("from-db", env.getProperty("gateway.api.base-url"));
+    }
 }
