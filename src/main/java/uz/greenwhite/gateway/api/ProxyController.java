@@ -195,7 +195,7 @@ public class ProxyController {
                 .extraTenantId(extraTenantId)
                 .requestId(requestId)
                 .source("API")
-                .baseUrl(apiProperties.getBaseUrl())
+                .baseUrl(settingsService.get("gateway.api.base-url", apiProperties.getBaseUrl()))
                 .uri(targetUri)
                 .method(request.getMethod())
                 .headers(headers)

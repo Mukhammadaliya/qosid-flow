@@ -2,6 +2,7 @@ package uz.greenwhite.gateway.oracle;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -11,6 +12,7 @@ import org.springframework.web.client.RestClient;
 import uz.greenwhite.gateway.config.GatewayProperties;
 import uz.greenwhite.gateway.model.ResponseSaveRequest;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
+import uz.greenwhite.gateway.settings.SettingsService;
 import uz.greenwhite.gateway.source.RequestSourceClient;
 import uz.greenwhite.gateway.source.ResponseSinkClient;
 import uz.greenwhite.gateway.source.SourceAuthService;
@@ -30,21 +32,37 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
     private final GatewayProperties properties;
     private final TenantMappingService tenantMappingService;
     private final SourceAuthService sourceAuthService;
+    private final SettingsService settingsService;
 
+    @Autowired
     public BiruniClient(GatewayProperties properties, TenantMappingService tenantMappingService,
-                         SourceAuthService sourceAuthService) {
+                         SourceAuthService sourceAuthService, SettingsService settingsService) {
+        this(buildRestClient(properties), properties, tenantMappingService, sourceAuthService, settingsService);
+    }
+
+    /**
+     * Test seam: allows binding a {@link org.springframework.test.web.client.MockRestServiceServer}
+     * to the RestClient. Production wiring goes through the {@code @Autowired} constructor.
+     */
+    BiruniClient(RestClient restClient, GatewayProperties properties, TenantMappingService tenantMappingService,
+                 SourceAuthService sourceAuthService, SettingsService settingsService) {
+        this.restClient = restClient;
         this.properties = properties;
         this.tenantMappingService = tenantMappingService;
         this.sourceAuthService = sourceAuthService;
+        this.settingsService = settingsService;
+    }
 
+    private static RestClient buildRestClient(GatewayProperties properties) {
         var httpClient = java.net.http.HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(properties.getConnectionTimeout()))
                 .build();
         var factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(Duration.ofSeconds(properties.getConnectionTimeout()));
 
-        this.restClient = RestClient.builder()
-                .baseUrl(properties.getBaseUrl())
+        // NOTE: no .baseUrl(...) here — the base URL is read live from SettingsService
+        // on every call so admin edits apply without restart.
+        return RestClient.builder()
                 .requestFactory(factory)
                 .messageConverters(converters -> {
                     MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter();
@@ -68,11 +86,13 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
     @Override
     public List<RequestMessage> pullRequests() {
         try {
-            log.debug("Pulling requests from: {}{}", properties.getBaseUrl(), properties.getRequestPullUri());
+            String base = settingsService.get("gateway.source.base-url", properties.getBaseUrl());
+            String pullUri = settingsService.get("gateway.source.request-pull-uri", properties.getRequestPullUri());
+            log.debug("Pulling requests from: {}{}", base, pullUri);
 
             Map<String, String> authHeaders = sourceAuthService.authHeaders();
             List<JsonNode> raw = restClient.get()
-                    .uri(properties.getRequestPullUri())
+                    .uri(base + pullUri)
                     .headers(h -> authHeaders.forEach(h::add))
                     .retrieve()
                     .toEntity(new ParameterizedTypeReference<List<JsonNode>>() {})
@@ -115,9 +135,12 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
             body.put("response", request.getResponse());
             body.put("error_message", request.getErrorMessage());
 
+            String saveBase = settingsService.get("gateway.source.base-url", properties.getBaseUrl());
+            String saveUri = settingsService.get("gateway.source.response-save-uri", properties.getResponseSaveUri());
+
             Map<String, String> authHeaders = sourceAuthService.authHeaders();
             var response = restClient.post()
-                    .uri(properties.getResponseSaveUri())
+                    .uri(saveBase + saveUri)
                     .headers(h -> authHeaders.forEach(h::add))
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(List.of(body))
