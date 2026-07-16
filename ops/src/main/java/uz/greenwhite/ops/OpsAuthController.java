@@ -2,6 +2,7 @@ package uz.greenwhite.ops;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -35,13 +36,18 @@ public class OpsAuthController {
         SecurityContext ctx = SecurityContextHolder.createEmptyContext();
         ctx.setAuthentication(auth);
         SecurityContextHolder.setContext(ctx);
+        // Session fixation defense: rotate the session on privilege elevation (mirrors AdminAuthController).
+        HttpSession existing = request.getSession(false);
+        if (existing != null) existing.invalidate();
+        request.getSession(true);
         contextRepository.saveContext(ctx, request, response); // persist to session
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(HttpServletRequest request) {
-        request.getSession().invalidate();
+        HttpSession session = request.getSession(false);
+        if (session != null) session.invalidate();
         SecurityContextHolder.clearContext();
         return ResponseEntity.ok().build();
     }

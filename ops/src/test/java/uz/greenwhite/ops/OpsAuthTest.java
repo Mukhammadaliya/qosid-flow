@@ -1,12 +1,15 @@
 package uz.greenwhite.ops;
 
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -48,5 +51,38 @@ class OpsAuthTest {
         mvc.perform(post("/ops/api/login").contentType("application/json")
                         .content("{\"username\":\"admin\",\"password\":\"wrong\"}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    /** Catches Important 2: without CsrfCookieFilter no XSRF-TOKEN cookie is ever issued,
+     *  so the SPA's first state-changing POST after login would 403. */
+    @Test
+    void csrfCookieIssuedOnLoginAndLogoutWithTokenSucceeds() throws Exception {
+        seedAdmin();
+        MvcResult login = mvc.perform(post("/ops/api/login").contentType("application/json")
+                        .content("{\"username\":\"admin\",\"password\":\"s3cret-pass\"}"))
+                .andExpect(status().isOk())
+                .andExpect(cookie().exists("XSRF-TOKEN"))
+                .andReturn();
+        MockHttpSession session = (MockHttpSession) login.getRequest().getSession(false);
+        String token = login.getResponse().getCookie("XSRF-TOKEN").getValue();
+
+        mvc.perform(post("/ops/api/logout")
+                        .session(session)
+                        .cookie(new Cookie("XSRF-TOKEN", token))
+                        .header("X-XSRF-TOKEN", token))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void logoutWithoutCsrfTokenIsForbidden() throws Exception {
+        seedAdmin();
+        MvcResult login = mvc.perform(post("/ops/api/login").contentType("application/json")
+                        .content("{\"username\":\"admin\",\"password\":\"s3cret-pass\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        MockHttpSession session = (MockHttpSession) login.getRequest().getSession(false);
+
+        mvc.perform(post("/ops/api/logout").session(session))
+                .andExpect(status().isForbidden());
     }
 }
