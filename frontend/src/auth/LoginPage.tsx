@@ -8,16 +8,16 @@ export function LoginPage() {
   const { login } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<'badcreds' | 'down' | null>(null);
   const [busy, setBusy] = useState(false);
 
   const onFinish = async (v: { username: string; password: string }) => {
-    setBusy(true); setError(false);
+    setBusy(true); setError(null);
     try {
       await login(v.username, v.password);
-      navigate('/settings', { replace: true });
-    } catch {
-      setError(true);
+      navigate('/', { replace: true });
+    } catch (e) {
+      setError((e as Error).message === 'down' ? 'down' : 'badcreds');
     } finally {
       setBusy(false);
     }
@@ -27,7 +27,7 @@ export function LoginPage() {
     <div style={{ display: 'flex', justifyContent: 'center', marginTop: '15vh' }}>
       <Card style={{ width: 360 }}>
         <Typography.Title level={3} style={{ textAlign: 'center' }}>{t('app.title')}</Typography.Title>
-        {error && <Alert type="error" message={t('auth.loginFailed')} style={{ marginBottom: 16 }} />}
+        {error && <Alert type="error" message={t(error === 'down' ? 'auth.allDown' : 'auth.loginFailed')} style={{ marginBottom: 16 }} />}
         <Form layout="vertical" onFinish={onFinish}>
           <Form.Item name="username" label={t('auth.username')} rules={[{ required: true }]}>
             <Input autoFocus />

@@ -7,7 +7,7 @@ import { AuthContext } from '../auth/AuthContext';
 
 function renderLayout() {
   return render(
-    <AuthContext.Provider value={{ user: 'admin', loading: false, login: async () => {}, logout: async () => {}, refresh: async () => {} }}>
+    <AuthContext.Provider value={{ user: 'admin', loading: false, gatewayUp: true, opsUp: true, login: async () => {}, logout: async () => {}, refresh: async () => {} }}>
       <MemoryRouter initialEntries={['/settings']}>
         <AppLayout><div>content-here</div></AppLayout>
       </MemoryRouter>

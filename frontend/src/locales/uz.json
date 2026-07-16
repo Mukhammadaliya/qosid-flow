@@ -14,6 +14,8 @@
   "auth.oldPassword": "Eski parol",
   "auth.newPassword": "Yangi parol",
   "auth.loginFailed": "Login yoki parol noto'g'ri",
+  "auth.allDown": "Serverlarga ulanib bo'lmadi — gateway ham, ops sidecar ham javob bermayapti",
+  "auth.gatewayDown": "Gateway o'chiq — faqat Ops sahifasi ishlaydi",
   "settings.title": "Sozlamalar",
   "settings.sourceAuth": "Source Auth",
   "settings.tenantMapping": "Tenant Mapping",
