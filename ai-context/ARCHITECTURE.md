@@ -398,7 +398,7 @@ A **separate JVM** in the `ops/` Maven module (package `uz.greenwhite.ops`, own 
 
 ### Single-origin deploy & unified SPA (C-faza, v1.13.0)
 
-The React SPA is no longer embedded in the gateway JAR (the old `SpaForwardController` + Maven `copy-frontend-dist` step are gone). In production nginx is the single public origin and serves the SPA statically, so a UI-only release no longer requires a gateway restart:
+The React SPA is no longer embedded in the gateway JAR — the old server-side forward controller and the Maven frontend-copy build step have both been removed. In production nginx is the single public origin and serves the SPA statically, so a UI-only release no longer requires a gateway restart:
 
 ```
 Browser → nginx (443, TLS)
@@ -416,7 +416,7 @@ Reference config: `deploy/nginx-qosid.conf`. Local dev mirrors this via the Vite
 |---|---|---|
 | yes | yes | full mode — Settings/Errors/Statistics/Ops all enabled, lands on `/settings` |
 | no | yes | degraded mode — only the Ops nav item is enabled, warning banner shown, lands on `/ops` so the operator can restart the gateway |
-| yes | no | Ops nav item disabled (tooltip), everything else works normally |
+| yes | no | Ops nav item disabled, everything else works normally |
 | no | no | login fails outright (both unreachable) |
 
 `AuthContext` polls `/qosid/admin/api/me` and `/ops/api/me` independently on refresh/login and drives `gatewayUp`/`opsUp`; `AppLayout` disables nav items and shows the banner off those two flags, and `HomeRedirect` sends `/` to `/ops` whenever the gateway is down.
