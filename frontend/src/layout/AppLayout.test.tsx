@@ -5,9 +5,9 @@ import '../i18n';
 import { AppLayout } from './AppLayout';
 import { AuthContext } from '../auth/AuthContext';
 
-function renderLayout() {
+function renderLayout(overrides: Partial<{ gatewayUp: boolean; opsUp: boolean }> = {}) {
   return render(
-    <AuthContext.Provider value={{ user: 'admin', loading: false, gatewayUp: true, opsUp: true, login: async () => {}, logout: async () => {}, refresh: async () => {} }}>
+    <AuthContext.Provider value={{ user: 'admin', loading: false, gatewayUp: true, opsUp: true, ...overrides, login: async () => {}, logout: async () => {}, refresh: async () => {} }}>
       <MemoryRouter initialEntries={['/settings']}>
         <AppLayout><div>content-here</div></AppLayout>
       </MemoryRouter>
@@ -35,14 +35,26 @@ describe('AppLayout', () => {
     expect(statistics?.className).not.toContain('ant-menu-item-disabled');
   });
 
-  it('shows future nav items (Logs) as disabled', () => {
-    renderLayout();
-    const logs = screen.getByText('Loglar').closest('.ant-menu-item');
-    expect(logs?.className).toContain('ant-menu-item-disabled');
-  });
-
   it('shows the logged-in username', () => {
     renderLayout();
     expect(screen.getByText('admin')).toBeInTheDocument();
+  });
+
+  it('disables gateway pages and shows banner when gateway is down', () => {
+    renderLayout({ gatewayUp: false, opsUp: true });
+    const settings = screen.getByText('Sozlamalar').closest('[role="menuitem"]');
+    expect(settings?.getAttribute('aria-disabled')).toBe('true');
+    const errors = screen.getByText('Xatolar').closest('[role="menuitem"]');
+    expect(errors?.getAttribute('aria-disabled')).toBe('true');
+    const statistics = screen.getByText('Statistika').closest('[role="menuitem"]');
+    expect(statistics?.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByText(/Gateway o'chiq/)).toBeInTheDocument();
+  });
+
+  it('shows enabled Ops nav item when ops is up', () => {
+    renderLayout({ gatewayUp: true, opsUp: true });
+    const ops = screen.getByText('Ops').closest('[role="menuitem"]');
+    expect(ops).not.toBeNull();
+    expect(ops?.getAttribute('aria-disabled')).not.toBe('true');
   });
 });

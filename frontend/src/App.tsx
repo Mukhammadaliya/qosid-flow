@@ -1,7 +1,7 @@
 import { ConfigProvider } from 'antd';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { smartupTheme } from './theme';
-import { AuthProvider } from './auth/AuthContext';
+import { AuthProvider, useAuth } from './auth/AuthContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { LoginPage } from './auth/LoginPage';
 import { AppLayout } from './layout/AppLayout';
@@ -10,6 +10,11 @@ import { DlqPage } from './pages/errors/DlqPage';
 import { JarPage } from './pages/errors/JarPage';
 import { DockerPage } from './pages/errors/DockerPage';
 import { StatisticsPage } from './pages/stats/StatisticsPage';
+
+function HomeRedirect() {
+  const { gatewayUp } = useAuth();
+  return <Navigate to={gatewayUp ? '/settings' : '/ops'} replace />;
+}
 
 export default function App() {
   return (
@@ -22,13 +27,13 @@ export default function App() {
               <RequireAuth>
                 <AppLayout>
                   <Routes>
-                    <Route index element={<Navigate to="/settings" replace />} />
+                    <Route index element={<HomeRedirect />} />
                     <Route path="settings/*" element={<SettingsPage />} />
                     <Route path="errors/dlq" element={<DlqPage />} />
                     <Route path="errors/jar" element={<JarPage />} />
                     <Route path="errors/docker" element={<DockerPage />} />
                     <Route path="statistics" element={<StatisticsPage />} />
-                    <Route path="*" element={<Navigate to="/settings" replace />} />
+                    <Route path="*" element={<HomeRedirect />} />
                   </Routes>
                 </AppLayout>
               </RequireAuth>
