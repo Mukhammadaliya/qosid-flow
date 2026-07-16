@@ -10,6 +10,7 @@ import { DlqPage } from './pages/errors/DlqPage';
 import { JarPage } from './pages/errors/JarPage';
 import { DockerPage } from './pages/errors/DockerPage';
 import { StatisticsPage } from './pages/stats/StatisticsPage';
+import { OpsPage } from './pages/ops/OpsPage';
 
 function HomeRedirect() {
   const { gatewayUp } = useAuth();
@@ -33,6 +34,7 @@ export default function App() {
                     <Route path="errors/jar" element={<JarPage />} />
                     <Route path="errors/docker" element={<DockerPage />} />
                     <Route path="statistics" element={<StatisticsPage />} />
+                    <Route path="ops" element={<OpsPage />} />
                     <Route path="*" element={<HomeRedirect />} />
                   </Routes>
                 </AppLayout>

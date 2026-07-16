@@ -88,5 +88,18 @@
   "ai.settingsTitle": "AI tahlil (opt-in)",
   "common.secretPlaceholder": "(o'zgartirmaslik uchun bo'sh qoldiring)",
   "common.ok": "OK",
-  "common.loadError": "Yuklashda xatolik yuz berdi"
+  "common.loadError": "Yuklashda xatolik yuz berdi",
+  "common.cancel": "Bekor qilish",
+  "ops.title": "Ops — gateway boshqaruvi",
+  "ops.statusUp": "Ishlayapti",
+  "ops.statusDown": "O'chiq",
+  "ops.statusUnknown": "Noma'lum",
+  "ops.start": "Ishga tushirish",
+  "ops.stop": "To'xtatish",
+  "ops.confirmStopTitle": "Gateway to'xtatilsinmi?",
+  "ops.confirmStopBody": "To'xtatilgan vaqtda kelgan so'rovlar Kafka navbatida kutib turadi va gateway qayta yoqilganda qayta ishlanadi.",
+  "ops.actionFailed": "Amal bajarilmadi — ops jurnalini tekshiring",
+  "ops.logTitle": "Jonli log (gateway.log)",
+  "ops.pause": "Pauza",
+  "ops.logEmpty": "Hozircha log satrlari yo'q"
 }
