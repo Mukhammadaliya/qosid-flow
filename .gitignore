@@ -45,3 +45,6 @@ tools/s3-mock/s3-data/
 
 frontend/node_modules
 frontend/dist
+
+ops-local-start.cmd
+ops-local-stop.cmd

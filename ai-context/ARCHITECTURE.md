@@ -384,7 +384,7 @@ ResponseSaveRequest (Oracle save payload)
 
 ## Ops console (sidecar) — `qosid-ops`
 
-A **separate JVM** in the `ops/` Maven module (package `uz.greenwhite.ops`, own `pom.xml`, JAR `qosid-ops.jar` via `finalName`), listening on **:8092** (`OPS_PORT`), deployed as its **own systemd unit** (`ops/qosid-ops.service`). It is fully independent of the gateway process — its whole point is to stay up when the gateway is down, so an operator can restart the gateway and watch its logs from a browser.
+A **separate JVM** in the `ops/` Maven module (package `uz.greenwhite.ops`, own `pom.xml`, JAR `qosid-ops.jar` via `finalName`), listening on **:8092** (`OPS_PORT`), deployed as its **own systemd unit** (`ops/qosid-ops.service`). It is fully independent of the gateway process — its whole point is to stay up when the gateway is down, so an operator can restart the gateway and watch its logs from a browser. Since C-faza (v1.13.0) the module is **API-only** — there is no server-rendered `/ops` page anymore; the operator UI lives in the unified React SPA (`frontend/`) and talks to this module purely over `/ops/api/**`.
 
 | Concern | Class | How |
 |---------|-------|-----|
@@ -392,8 +392,34 @@ A **separate JVM** in the `ops/` Maven module (package `uz.greenwhite.ops`, own 
 | Start/stop gateway | `GatewayControlService` | Runs the **operator-configured** (config-only, never user-supplied → no command injection) `ops.gateway.start-command`/`stop-command` via `ProcessBuilder` (whitespace-split, stderr merged); reads process output to EOF, then `waitFor(30s)`; returns `ControlResult(ok, exitCode, output)`; never throws. **The start command must EXIT** (e.g. `systemctl start gateway-service`) — a foreground `java -jar` would hold stdout open and hang the request (see CONFIGURATION.md → `ops.*`). |
 | Log tail | `LogTailService` | Tails `ops.log-file` (`gateway.log`): last-N snapshot + incremental polling with rotation detection (anchor-bytes fingerprint) and partial-line holdback. |
 | API + SSE fan-out | `OpsController` | `/ops/api/{status,start,stop}` + `GET /ops/api/logs/stream` (SSE: last-200-line snapshot on connect, then a `@Scheduled` 1s poll pushes new lines to all connected emitters). |
-| Auth | `AdminAuthDao`, `OpsAuthController`, `OpsSecurityConfig` | Session login against the **same admin account as the gateway admin UI**: `OpsDbConfig` opens the gateway's H2 settings DB (`ops.settings-db-path`) in **AUTO_SERVER mixed mode** (`;MODE=LEGACY;AUTO_SERVER=TRUE`, `mem:`-guarded) — both `SettingsDbConfig`/`SettingsEnvironmentPostProcessor` (gateway side) and `OpsDbConfig` (ops side) use AUTO_SERVER so the two JVMs share one DB file; whichever opens it first becomes the H2 server. Single `SecurityFilterChain` on `/ops/**`: `/ops`, `/ops/`, `/ops/index.html`, `/ops/api/login` are permitAll, everything else needs a session; CSRF cookie (`CookieCsrfTokenRepository` + plain `CsrfTokenRequestAttributeHandler`, no XOR) with an ops-local `CsrfCookieFilter`; login rotates the session (fixation defense) — same B1 patterns as the gateway. |
-| UI | `OpsPageController` + `static/ops/index.html` | `GET /ops` forwards to a **self-contained vanilla-JS page** (no build step): login form, up/down badge, start/stop toggle with confirm, real-time log window (ERROR/WARN coloring, pause/clear, 2000-line DOM cap), `X-XSRF-TOKEN` echoed from the `XSRF-TOKEN` cookie on POSTs. |
+| Auth | `AdminAuthDao`, `OpsAuthController`, `OpsSecurityConfig` | Session login against the **same admin account as the gateway admin UI**: `OpsDbConfig` opens the gateway's H2 settings DB (`ops.settings-db-path`) in **AUTO_SERVER mixed mode** (`;MODE=LEGACY;AUTO_SERVER=TRUE`, `mem:`-guarded) — both `SettingsDbConfig`/`SettingsEnvironmentPostProcessor` (gateway side) and `OpsDbConfig` (ops side) use AUTO_SERVER so the two JVMs share one DB file; whichever opens it first becomes the H2 server. Single `SecurityFilterChain` on `/ops/**`: only `/ops/api/login` is permitAll (there are no page routes left to permit), everything else needs a session; CSRF cookie `OPS-XSRF-TOKEN` / header `X-OPS-XSRF-TOKEN` (`CookieCsrfTokenRepository` + plain `CsrfTokenRequestAttributeHandler`, no XOR) with an ops-local `CsrfCookieFilter`; login rotates the session (fixation defense) — same B1 patterns as the gateway. |
+
+**Cookie rename rationale (C-faza, v1.13.0):** once the SPA and the ops sidecar sit behind one nginx origin, a browser sees both backends' cookies on the same domain. Spring Security's defaults (`JSESSIONID` session cookie, `XSRF-TOKEN` CSRF cookie/`X-XSRF-TOKEN` header) would collide with the gateway admin chain's own `JSESSIONID`/`XSRF-TOKEN`, silently corrupting whichever session was written last. Ops renames its pair — session cookie `OPS_SESSION` (`server.servlet.session.cookie.name` in `ops/src/main/resources/application.yml`), CSRF cookie `OPS-XSRF-TOKEN` / header `X-OPS-XSRF-TOKEN` (`OpsSecurityConfig`) — so the two independent sessions coexist without namespace clashes; the gateway keeps its original `JSESSIONID`/`XSRF-TOKEN` unchanged.
+
+### Single-origin deploy & unified SPA (C-faza, v1.13.0)
+
+The React SPA is no longer embedded in the gateway JAR (the old `SpaForwardController` + Maven `copy-frontend-dist` step are gone). In production nginx is the single public origin and serves the SPA statically, so a UI-only release no longer requires a gateway restart:
+
+```
+Browser → nginx (443, TLS)
+            ├─ /          → static frontend/dist  (React Router fallback: try_files $uri /index.html)
+            ├─ /qosid/    → 127.0.0.1:8090         (gateway: pipeline + admin API, unchanged)
+            └─ /ops/api/  → 127.0.0.1:8092         (ops sidecar API only; SSE-safe: proxy_buffering off,
+                                                     proxy_cache off, proxy_read_timeout 1h, HTTP/1.1)
+```
+
+Reference config: `deploy/nginx-qosid.conf`. Local dev mirrors this via the Vite proxy (`/qosid` and `/ops/api` → :8090/:8092 respectively) — deliberately **not** `/ops`, since that path is the SPA's own page route, not something to forward.
+
+**Single login / degraded mode:** the SPA has one login form that POSTs credentials to both `/qosid/admin/api/login` and `/ops/api/login` concurrently (both validate against the same H2 `admin_account`). A 401 from either backend is authoritative (bad credentials); a network error on one side (that backend simply unreachable) is not fatal as long as the other login succeeds.
+
+| Gateway reachable | Ops reachable | Landing / nav behavior |
+|---|---|---|
+| yes | yes | full mode — Settings/Errors/Statistics/Ops all enabled, lands on `/settings` |
+| no | yes | degraded mode — only the Ops nav item is enabled, warning banner shown, lands on `/ops` so the operator can restart the gateway |
+| yes | no | Ops nav item disabled (tooltip), everything else works normally |
+| no | no | login fails outright (both unreachable) |
+
+`AuthContext` polls `/qosid/admin/api/me` and `/ops/api/me` independently on refresh/login and drives `gatewayUp`/`opsUp`; `AppLayout` disables nav items and shows the banner off those two flags, and `HomeRedirect` sends `/` to `/ops` whenever the gateway is down.
 
 **Deploy requirements:** the systemd unit runs as user `qosid`, which needs permission to run exactly `systemctl start gateway-service` and `systemctl stop gateway-service` (polkit rule or sudoers `NOPASSWD` scoped to those two commands). Bind :8092 behind nginx / firewall — the console can stop the gateway. `OPS_SETTINGS_DB_PATH` must point at the **same** H2 path as the gateway's `gateway.settings.db-path`.
 
