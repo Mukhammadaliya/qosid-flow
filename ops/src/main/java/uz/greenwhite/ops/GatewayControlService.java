@@ -52,6 +52,10 @@ public class GatewayControlService {
             }
             int code = p.exitValue();
             return new ControlResult(code == 0, code, out.toString());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Gateway control command interrupted: {}", e.getMessage());
+            return new ControlResult(false, -1, "interrupted: " + e.getMessage());
         } catch (Exception e) {
             log.warn("Gateway control command failed: {}", e.getMessage());
             return new ControlResult(false, -1, "failed to run command: " + e.getMessage());

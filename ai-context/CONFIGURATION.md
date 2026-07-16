@@ -329,7 +329,7 @@ Config for the `ops/` module (`ops/src/main/resources/application.yml`) — **no
 
 **AUTO_SERVER note:** both sides open the settings DB with `;AUTO_SERVER=TRUE` — gateway (`SettingsDbConfig` **and** `SettingsEnvironmentPostProcessor`, which opens the DB early at boot) and ops (`OpsDbConfig`). H2 mixed mode lets two JVMs share one DB file: the first opener becomes the server, the other connects over TCP automatically. If either side lacked the flag, the second JVM would fail to open the locked file (the gateway's PostProcessor would then silently fall back to yaml defaults).
 
-**Deploy note:** the systemd unit runs as user `qosid`, which needs permission to run `systemctl start/stop gateway-service` — add a polkit rule or a sudoers `NOPASSWD` entry scoped to **exactly those two commands**. The unit expects the JAR at `/opt/services/qosid-flow/ops/qosid-ops.jar` (the ops pom sets `finalName=qosid-ops`).
+**Deploy note:** the systemd unit runs as user `qosid`, which needs permission to run `systemctl start/stop gateway-service` — add a polkit rule or a sudoers `NOPASSWD` entry scoped to **exactly those two commands**. If using the sudoers route, the configured commands must be prefixed with `sudo` (e.g. `OPS_GATEWAY_START_COMMAND=sudo /usr/bin/systemctl start gateway-service`), since the unit invokes `systemctl` directly. The unit expects the JAR at `/opt/services/qosid-flow/ops/qosid-ops.jar` (the ops pom sets `finalName=qosid-ops`). The ops JAR is built manually (`mvn package -f ops/pom.xml`) — CI builds only the root pom. On first deploy the gateway must boot once before ops login works (the gateway creates the `admin_account` table).
 
 ## Mandatory Environment Variables for Production
 

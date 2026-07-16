@@ -67,8 +67,8 @@ public class OpsController {
             try {
                 for (String line : newLines) emitter.send(SseEmitter.event().data(line));
             } catch (Exception e) {
-                emitter.complete();
                 emitters.remove(emitter);
+                try { emitter.complete(); } catch (Exception ignored) { /* already broken */ }
             }
         }
     }
