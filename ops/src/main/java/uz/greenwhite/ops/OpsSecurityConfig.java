@@ -39,7 +39,7 @@ public class OpsSecurityConfig {
 /**
  * Ported from the gateway's AdminSecurityConfig (B1). The CSRF token is deferred by default (only
  * rendered into the response cookie if something actually reads it). Without this filter, a GET
- * that never touches {@code CsrfToken.getToken()} never sends a {@code Set-Cookie: XSRF-TOKEN},
+ * that never touches {@code CsrfToken.getToken()} never sends a {@code Set-Cookie: OPS-XSRF-TOKEN},
  * so a client has nothing to echo back on the next POST. Touching it on every ops-chain request
  * guarantees the cookie is always present.
  */

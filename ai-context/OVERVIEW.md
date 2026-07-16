@@ -19,7 +19,7 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 
 ## What This Is NOT
 
-- **Not a UI application** — purely backend service, no frontend
+- **Not primarily a UI application** — the core is a backend gateway; the React SPA (`frontend/`, served by nginx since v1.7.0, cutover v1.13.0) is a control-plane/admin surface layered on top, not the product itself
 - **Not a monolith** — single-purpose microservice focused on request gateway processing
 - **Not a CRUD app** — does not manage entities; it orchestrates HTTP request delivery with resilience
 

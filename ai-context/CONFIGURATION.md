@@ -335,6 +335,15 @@ Config for the `ops/` module (`ops/src/main/resources/application.yml`) — **no
 
 **Nginx deploy note (C-faza, v1.13.0):** ops is API-only and has no page of its own to serve — in production a single nginx origin serves the SPA statically from `frontend/dist` and reverse-proxies `/qosid/` → gateway (:8090) and `/ops/api/` → this module (:8092), with buffering/caching disabled and a long read timeout on the `/ops/api/` location so the SSE log stream (`/ops/api/logs/stream`) isn't buffered or cut off. Reference config: `deploy/nginx-qosid.conf`. Apply the same SSE-safe proxy settings to any other reverse proxy fronting ops.
 
+**v1.12.0 → v1.13.0 cutover checklist:**
+1. `git pull` + build JARs (`mvn clean package -DskipTests`) — the frontend profile also builds `frontend/dist`.
+2. Install/merge `deploy/nginx-qosid.conf` locations into the existing nginx server block; ensure the nginx user has read access to `/opt/services/qosid-flow/frontend/dist`.
+3. `nginx -t && systemctl reload nginx`.
+4. Restart the `gateway-service` and `qosid-ops` systemd units.
+5. **WARNING:** skipping the nginx step leaves the UI fully unavailable — the gateway JAR no longer embeds the SPA, and the ops sidecar no longer serves an HTML page of its own. The CI-released JAR alone is no longer a complete deployment artifact; nginx + `frontend/dist` are required alongside it.
+
+Recommended before exposing `/ops/api` through nginx: change the default admin password first, and put an nginx rate-limit and/or IP-allowlist on `/ops/api/login`.
+
 ## Mandatory Environment Variables for Production
 
 These **must** be set in production (no safe defaults):
