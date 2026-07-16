@@ -53,7 +53,7 @@ class OpsAuthTest {
                 .andExpect(status().isUnauthorized());
     }
 
-    /** Catches Important 2: without CsrfCookieFilter no XSRF-TOKEN cookie is ever issued,
+    /** Catches Important 2: without CsrfCookieFilter no OPS-XSRF-TOKEN cookie is ever issued,
      *  so the SPA's first state-changing POST after login would 403. */
     @Test
     void csrfCookieIssuedOnLoginAndLogoutWithTokenSucceeds() throws Exception {
@@ -61,15 +61,15 @@ class OpsAuthTest {
         MvcResult login = mvc.perform(post("/ops/api/login").contentType("application/json")
                         .content("{\"username\":\"admin\",\"password\":\"s3cret-pass\"}"))
                 .andExpect(status().isOk())
-                .andExpect(cookie().exists("XSRF-TOKEN"))
+                .andExpect(cookie().exists("OPS-XSRF-TOKEN"))
                 .andReturn();
         MockHttpSession session = (MockHttpSession) login.getRequest().getSession(false);
-        String token = login.getResponse().getCookie("XSRF-TOKEN").getValue();
+        String token = login.getResponse().getCookie("OPS-XSRF-TOKEN").getValue();
 
         mvc.perform(post("/ops/api/logout")
                         .session(session)
-                        .cookie(new Cookie("XSRF-TOKEN", token))
-                        .header("X-XSRF-TOKEN", token))
+                        .cookie(new Cookie("OPS-XSRF-TOKEN", token))
+                        .header("X-OPS-XSRF-TOKEN", token))
                 .andExpect(status().isOk());
     }
 

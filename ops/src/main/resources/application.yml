@@ -1,5 +1,9 @@
 server:
   port: ${OPS_PORT:8092}
+  servlet:
+    session:
+      cookie:
+        name: OPS_SESSION   # bitta domen ostida gateway JSESSIONID bilan to'qnashmaslik uchun
 
 ops:
   gateway:
