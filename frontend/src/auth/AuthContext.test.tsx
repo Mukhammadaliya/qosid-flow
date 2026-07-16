@@ -10,6 +10,7 @@ vi.mock('../api/ops', () => ({
   opsMe: vi.fn(),
 }));
 
+const BASE = '/qosid/admin/api';
 const axios401 = { isAxiosError: true, response: { status: 401 } };
 const axiosDown = { isAxiosError: true, response: undefined, code: 'ERR_NETWORK' };
 
@@ -165,6 +166,41 @@ describe('AuthProvider', () => {
     await waitFor(() => expect(auth?.loading).toBe(false));
 
     await expect(auth!.login('admin', 'admin')).rejects.toThrow('badcreds');
+  });
+
+  it('FIX1 regression: bounded 401 refresh loop — concurrent 401s cause at most one extra /me probe', async () => {
+    // Pre-fix, an unauthenticated visitor (or a gateway restart) triggers an unbounded loop:
+    // /me 401s -> interceptor -> onUnauthorized() -> refresh() -> its own /me probe 401s ->
+    // interceptor -> onUnauthorized() -> refresh() -> ... forever. Two independent guards now
+    // break this: (1) client.ts never calls onUnauthorized for the probe's own '/me' request,
+    // and (2) AuthContext's refreshing-ref re-entrancy guard collapses concurrent refresh()
+    // calls triggered by other 401s into a single in-flight probe.
+    let meCalls = 0;
+    vi.spyOn(api, 'get').mockImplementation((url: string) => {
+      if (url.endsWith('/health')) return Promise.resolve({ data: {} } as any);
+      meCalls++;
+      return Promise.reject({ config: { url }, response: { status: 401 } });
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByText('user:none')).toBeInTheDocument());
+    expect(meCalls).toBe(1); // the mount-time refresh's own /me probe
+
+    // Drive the REAL registered response interceptor directly (same technique as the mid-session
+    // tests above), simulating a 401 storm: two unrelated admin-API calls 401 concurrently (each
+    // would, pre-fix, schedule its own refresh()), plus the probe's own '/me' 401 (must never
+    // re-trigger onUnauthorized at all). None of these are awaited between each other, so any
+    // recursive/concurrent refresh() calls they schedule are still in flight together.
+    const rejected = (api.interceptors.response as any).handlers[0].rejected;
+    await act(async () => {
+      await Promise.allSettled([
+        rejected({ config: { url: `${BASE}/settings` }, response: { status: 401 } }),
+        rejected({ config: { url: `${BASE}/settings` }, response: { status: 401 } }),
+        rejected({ config: { url: `${BASE}/me` }, response: { status: 401 } }),
+      ]);
+    });
+
+    expect(meCalls).toBeLessThanOrEqual(2);
   });
 
   it('both down -> login throws down', async () => {

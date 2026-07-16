@@ -18,7 +18,10 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    if (error?.response?.status === 401) onUnauthorized();
+    // Never notify on the probe's own 401 — refresh()'s /me call rejecting would otherwise
+    // re-trigger refresh() forever (401 -> onUnauthorized -> refresh -> /me 401 -> ...).
+    const url = error?.config?.url ?? '';
+    if (error?.response?.status === 401 && !url.endsWith('/me')) onUnauthorized();
     return Promise.reject(error);
   },
 );

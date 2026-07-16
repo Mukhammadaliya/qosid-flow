@@ -3,12 +3,18 @@ import { Badge, Button, Card, Modal, Space, Switch, Typography, message } from '
 import { PoweroffOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { getOpsStatus, startGateway, stopGateway, ControlResult } from '../../api/ops';
+import { useAuth } from '../../auth/AuthContext';
 
 const MAX_LINES = 500;
 const POLL_MS = 5000;
 
+function is401(err: unknown): boolean {
+  return (err as { response?: { status?: number } })?.response?.status === 401;
+}
+
 export function OpsPage() {
   const { t } = useTranslation();
+  const { refresh } = useAuth();
   const [up, setUp] = useState<boolean | null>(null); // null = hali noma'lum
   const [busy, setBusy] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -16,18 +22,32 @@ export function OpsPage() {
   const boxRef = useRef<HTMLDivElement>(null);
   const pausedRef = useRef(false);
   pausedRef.current = paused;
+  const prevUpRef = useRef<boolean | null>(null);
 
   // Gateway holati: 5s poll
   useEffect(() => {
     let alive = true;
     const tick = async () => {
-      try { const r = await getOpsStatus(); if (alive) setUp(r.data.up); }
-      catch { if (alive) setUp(null); }
+      try {
+        const r = await getOpsStatus();
+        if (!alive) return;
+        const next = r.data.up;
+        setUp(next);
+        // Only re-probe auth on an observed up/down TRANSITION, never on every tick — otherwise
+        // gatewayUp/the banner/nav gating never catch up with a gateway that restarted mid-session.
+        const prev = prevUpRef.current;
+        if (prev !== null && prev !== next) refresh({ silent: true });
+        prevUpRef.current = next;
+      } catch (err) {
+        if (!alive) return;
+        setUp(null);
+        if (is401(err)) message.warning(t('ops.sessionExpired'));
+      }
     };
     tick();
     const id = setInterval(tick, POLL_MS);
     return () => { alive = false; clearInterval(id); };
-  }, []);
+  }, [refresh, t]);
 
   // Jonli log (SSE). EventSource uzilganda o'zi qayta ulanadi.
   useEffect(() => {
@@ -56,8 +76,9 @@ export function OpsPage() {
     try {
       const r = await fn();
       if (!r.data.ok) message.error(r.data.output || t('ops.actionFailed'));
-    } catch {
-      message.error(t('ops.actionFailed'));
+    } catch (err) {
+      if (is401(err)) message.warning(t('ops.sessionExpired'));
+      else message.error(t('ops.actionFailed'));
     } finally {
       setBusy(false);
     }

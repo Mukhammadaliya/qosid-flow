@@ -10,7 +10,7 @@ const { Header, Sider, Content } = Layout;
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
-  const { user, logout, gatewayUp, opsUp } = useAuth();
+  const { user, logout, gatewayUp, opsUp, gatewayAuthExpired } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
@@ -55,7 +55,20 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <Space style={{ cursor: 'pointer' }}><UserOutlined /> {user} <DownOutlined /></Space>
         </Dropdown>
       </Header>
-      {!gatewayUp && <Alert banner type="warning" showIcon message={t('auth.gatewayDown')} />}
+      {!gatewayUp && gatewayAuthExpired && (
+        <Alert
+          banner
+          type="warning"
+          showIcon
+          message={
+            <Space>
+              {t('auth.gatewaySessionExpired')}
+              <Button type="link" size="small" onClick={() => navigate('/login')}>{t('auth.login')}</Button>
+            </Space>
+          }
+        />
+      )}
+      {!gatewayUp && !gatewayAuthExpired && <Alert banner type="warning" showIcon message={t('auth.gatewayDown')} />}
       <Layout>
         <Sider
           theme="light"

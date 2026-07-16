@@ -5,9 +5,9 @@ import '../i18n';
 import { AppLayout } from './AppLayout';
 import { AuthContext } from '../auth/AuthContext';
 
-function renderLayout(overrides: Partial<{ gatewayUp: boolean; opsUp: boolean }> = {}) {
+function renderLayout(overrides: Partial<{ gatewayUp: boolean; opsUp: boolean; gatewayAuthExpired: boolean }> = {}) {
   return render(
-    <AuthContext.Provider value={{ user: 'admin', loading: false, gatewayUp: true, opsUp: true, ...overrides, login: async () => {}, logout: async () => {}, refresh: async () => {} }}>
+    <AuthContext.Provider value={{ user: 'admin', loading: false, gatewayUp: true, opsUp: true, gatewayAuthExpired: false, ...overrides, login: async () => {}, logout: async () => {}, refresh: async () => {} }}>
       <MemoryRouter initialEntries={['/settings']}>
         <AppLayout><div>content-here</div></AppLayout>
       </MemoryRouter>
@@ -49,6 +49,14 @@ describe('AppLayout', () => {
     const statistics = screen.getByText('Statistika').closest('[role="menuitem"]');
     expect(statistics?.getAttribute('aria-disabled')).toBe('true');
     expect(screen.getByText(/Gateway o'chiq/)).toBeInTheDocument();
+  });
+
+  it('FIX3 regression: shows the expired-session banner + re-login link when gateway session expired', () => {
+    renderLayout({ gatewayUp: false, opsUp: true, gatewayAuthExpired: true });
+    // The expired-session variant replaces the generic gatewayDown banner.
+    expect(screen.queryByText('Gateway o\'chiq — faqat Ops sahifasi ishlaydi')).not.toBeInTheDocument();
+    expect(screen.getByText(/Gateway sessiyasi tugagan/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Kirish' })).toBeInTheDocument();
   });
 
   it('shows enabled Ops nav item when ops is up', () => {

@@ -15,6 +15,7 @@
   "auth.loginFailed": "Login yoki parol noto'g'ri",
   "auth.allDown": "Serverlarga ulanib bo'lmadi — gateway ham, ops sidecar ham javob bermayapti",
   "auth.gatewayDown": "Gateway o'chiq — faqat Ops sahifasi ishlaydi",
+  "auth.gatewaySessionExpired": "Gateway sessiyasi tugagan — qayta kirish kerak",
   "settings.title": "Sozlamalar",
   "settings.sourceAuth": "Source Auth",
   "settings.tenantMapping": "Tenant Mapping",
@@ -99,6 +100,7 @@
   "ops.confirmStopTitle": "Gateway to'xtatilsinmi?",
   "ops.confirmStopBody": "To'xtatilgan vaqtda kelgan so'rovlar Kafka navbatida kutib turadi va gateway qayta yoqilganda qayta ishlanadi.",
   "ops.actionFailed": "Amal bajarilmadi — ops jurnalini tekshiring",
+  "ops.sessionExpired": "Ops sessiyasi tugagan — qayta kiring",
   "ops.logTitle": "Jonli log (gateway.log)",
   "ops.pause": "Pauza",
   "ops.logEmpty": "Hozircha log satrlari yo'q"
