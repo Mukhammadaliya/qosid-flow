@@ -25,7 +25,9 @@ public class SettingsDbConfig {
     public DataSource settingsDataSource(SettingsProperties props) {
         DriverManagerDataSource ds = new DriverManagerDataSource();
         ds.setDriverClassName("org.h2.Driver");
-        ds.setUrl("jdbc:h2:" + props.getDbPath() + ";MODE=LEGACY");
+        String path = props.getDbPath();
+        String autoServer = path.startsWith("mem:") ? "" : ";AUTO_SERVER=TRUE";
+        ds.setUrl("jdbc:h2:" + path + ";MODE=LEGACY" + autoServer);
         ds.setUsername("sa");
         ds.setPassword("");
         // Init schema HERE, inside the DataSource bean, so it exists before ANY

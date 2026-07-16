@@ -1,0 +1,15 @@
+server:
+  port: ${OPS_PORT:8092}
+
+ops:
+  gateway:
+    health-url: ${OPS_GATEWAY_HEALTH_URL:http://localhost:8090/qosid/admin/api/health}
+    start-command: ${OPS_GATEWAY_START_COMMAND:}
+    stop-command: ${OPS_GATEWAY_STOP_COMMAND:}
+  log-file: ${OPS_LOG_FILE:./logs/gateway.log}
+  settings-db-path: ${OPS_SETTINGS_DB_PATH:./data/settings}
+
+logging:
+  level:
+    root: INFO
+    uz.greenwhite.ops: INFO
