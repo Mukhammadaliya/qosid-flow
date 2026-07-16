@@ -85,4 +85,10 @@ class OpsAuthTest {
         mvc.perform(post("/ops/api/logout").session(session))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    void opsHtmlPageIsGone() throws Exception {
+        mvc.perform(get("/ops")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/ops/index.html")).andExpect(status().isUnauthorized());
+    }
 }

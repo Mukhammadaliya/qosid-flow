@@ -20,7 +20,7 @@ public class OpsSecurityConfig {
         http
             .securityMatcher("/ops/**")
             .authorizeHttpRequests(a -> a
-                .requestMatchers("/ops", "/ops/", "/ops/index.html", "/ops/api/login").permitAll()
+                .requestMatchers("/ops/api/login").permitAll()
                 .anyRequest().authenticated())
             .csrf(c -> c
                 .csrfTokenRepository(csrfRepo)
