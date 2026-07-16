@@ -46,7 +46,12 @@ public class SettingsEnvironmentPostProcessor implements EnvironmentPostProcesso
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
         String dbPath = environment.getProperty("gateway.settings.db-path", "./data/settings");
-        String url = "jdbc:h2:" + dbPath + ";MODE=LEGACY;IFEXISTS=TRUE";
+        // AUTO_SERVER matches SettingsDbConfig so the ops sidecar can co-access the same
+        // H2 file; without it this boot-time open would fail (and be silently swallowed →
+        // yaml defaults) once the sidecar holds the embedded lock. H2 rejects AUTO_SERVER
+        // for in-memory DBs, so mem: paths (tests) are exempt.
+        String autoServer = dbPath.startsWith("mem:") ? "" : ";AUTO_SERVER=TRUE";
+        String url = "jdbc:h2:" + dbPath + ";MODE=LEGACY;IFEXISTS=TRUE" + autoServer;
         Map<String, Object> props = new HashMap<>();
         try (Connection c = DriverManager.getConnection(url, "sa", "");
              Statement st = c.createStatement();
