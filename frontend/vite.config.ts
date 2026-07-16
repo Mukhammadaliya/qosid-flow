@@ -12,6 +12,8 @@ export default defineConfig({
     proxy: {
       '/qosid': 'http://localhost:8090',
       '/actuator': 'http://localhost:8090',
+      // ATAYLAB '/ops/api' — '/ops' SPA'ning o'z sahifa-route'i, proxy qilinmasligi kerak.
+      '/ops/api': 'http://localhost:8092',
     },
   },
   test: {
