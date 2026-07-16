@@ -76,6 +76,35 @@ describe('AuthProvider', () => {
     await waitFor(() => expect(screen.getByText('user:none')).toBeInTheDocument());
   });
 
+  it('mid-session gateway 401 with an alive ops session -> degraded mode, not a hard logout', async () => {
+    // Gateway session dies mid-session (mirrors the test above), but this time the
+    // ops session is alive throughout. The interceptor must re-probe rather than
+    // hard-clear the user: gatewayUp flips false, but user stays set from ops.
+    let gatewaySessionValid = true;
+    vi.spyOn(api, 'get').mockImplementation((url: string) => {
+      if (url.endsWith('/health')) return Promise.resolve({ data: {} } as any);
+      return gatewaySessionValid
+        ? Promise.resolve({ data: { username: 'admin' } } as any)
+        : Promise.reject({ response: { status: 401 } });
+    });
+    (opsMe as Mock).mockResolvedValue({ data: { user: 'admin' } });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByText('user:admin')).toBeInTheDocument());
+
+    gatewaySessionValid = false;
+    const rejected = (api.interceptors.response as any).handlers[0].rejected;
+    await act(async () => {
+      await rejected({ response: { status: 401 } }).catch(() => {});
+    });
+
+    // If the unauthorized handler were reverted to a hard `setUser(null)`, this
+    // would regress to 'user:none' even though ops is still authenticated.
+    await waitFor(() => expect(screen.getByText('gatewayUp:false')).toBeInTheDocument());
+    expect(screen.getByText('user:admin')).toBeInTheDocument();
+    expect(screen.getByText('opsUp:true')).toBeInTheDocument();
+  });
+
   it('full mode: both logins succeed -> user set, gatewayUp && opsUp', async () => {
     vi.spyOn(api, 'post').mockResolvedValue({ data: {} } as any);
     vi.spyOn(api, 'get').mockResolvedValue({ data: { username: 'admin' } } as any);

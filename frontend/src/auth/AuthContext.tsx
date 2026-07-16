@@ -35,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await api.get(`${BASE}/health`).catch(() => {});
     const [gw, ops] = await Promise.allSettled([api.get(`${BASE}/me`), opsMe()]);
     const gwUser = gw.status === 'fulfilled' ? (gw.value.data.username ?? null) : null;
-    const opsUser = ops.status === 'fulfilled' ? (ops.value.data.user || null) : null;
+    const opsUser = ops.status === 'fulfilled' ? (ops.value.data.user ?? null) : null;
     setGatewayUp(gw.status === 'fulfilled');
     setOpsUp(ops.status === 'fulfilled');
     setUser(gwUser ?? opsUser);
