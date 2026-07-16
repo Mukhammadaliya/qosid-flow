@@ -26,6 +26,8 @@
         <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-test</artifactId><scope>test</scope></dependency>
     </dependencies>
     <build>
+        <!-- Fixed JAR name so the systemd unit (ops/qosid-ops.service) can reference a stable path. -->
+        <finalName>qosid-ops</finalName>
         <plugins>
             <plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId></plugin>
         </plugins>

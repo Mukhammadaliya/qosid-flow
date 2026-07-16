@@ -1,0 +1,18 @@
+[Unit]
+Description=Qosid Ops Console (sidecar)
+After=network.target
+
+[Service]
+Type=simple
+User=qosid
+WorkingDirectory=/opt/services/qosid-flow
+ExecStart=/usr/bin/java -jar /opt/services/qosid-flow/ops/qosid-ops.jar
+Environment=OPS_GATEWAY_START_COMMAND=/usr/bin/systemctl start gateway-service
+Environment=OPS_GATEWAY_STOP_COMMAND=/usr/bin/systemctl stop gateway-service
+Environment=OPS_LOG_FILE=/opt/services/qosid-flow/logs/gateway.log
+Environment=OPS_SETTINGS_DB_PATH=/opt/services/qosid-flow/data/settings
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

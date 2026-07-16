@@ -269,7 +269,7 @@ Settings-DB-only keys (no yaml/env counterpart) — managed via `GET/PUT /qosid/
 
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
-| `gateway.settings.db-path` | String | `./data/settings` | `SETTINGS_DB_PATH` | H2 JDBC path/URL fragment (`jdbc:h2:<db-path>;MODE=LEGACY`) for the control-plane database — admin accounts, runtime settings, audit log. File-mode by default; tests use `mem:<name>`. |
+| `gateway.settings.db-path` | String | `./data/settings` | `SETTINGS_DB_PATH` | H2 JDBC path/URL fragment (`jdbc:h2:<db-path>;MODE=LEGACY;AUTO_SERVER=TRUE` — `AUTO_SERVER` is omitted for `mem:` paths, which H2 rejects) for the control-plane database — admin accounts, runtime settings, audit log. File-mode by default; tests use `mem:<name>`. `AUTO_SERVER` (mixed mode) lets the `qosid-ops` sidecar co-open the same DB file (see `ops.*` below). |
 | `gateway.settings.encryption-key` | String | `` (blank) | `SETTINGS_ENCRYPTION_KEY` | AES-GCM master key (any length — SHA-256'd internally) for at-rest encryption of settings marked `secret=true`. **Blank disables secrets**: `SettingsCipher.isEnabled()` returns false, `SettingsService.set(..., secret=true, ...)` throws `IllegalStateException`, and `getSecret()` logs a WARN and returns the caller's default instead of decrypting. Non-secret settings are unaffected. |
 | `gateway.settings.session-ttl-minutes` | long | `480` | `ADMIN_SESSION_TTL_MIN` | Intended admin HttpSession TTL (8h). Read into `SettingsProperties` but **not yet wired** to `HttpSession.setMaxInactiveInterval` or `server.servlet.session.timeout` — the servlet container's default session timeout currently governs actual expiry. Treat as reserved/forward-looking until wired. |
 
@@ -313,6 +313,23 @@ Default credentials on first boot (empty `admin_account` table): username `admin
 | `server.tomcat.threads.max` | int | `2000` | `TOMCAT_MAX_THREADS` | Max worker threads. |
 | `spring.servlet.multipart.max-file-size` | String | `50MB` | — | Max individual file upload size. |
 | `spring.servlet.multipart.max-request-size` | String | `52MB` | — | Max total multipart request size. |
+
+## ops.* — Ops Console Sidecar (`qosid-ops`, separate JVM)
+
+Config for the `ops/` module (`ops/src/main/resources/application.yml`) — **not** part of the gateway's config. Runs as its own process/systemd unit (`ops/qosid-ops.service`).
+
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `server.port` | int | `8092` | `OPS_PORT` | Ops console HTTP port. Bind behind nginx / firewall — the console can stop the gateway. |
+| `ops.gateway.health-url` | String | `http://localhost:8090/qosid/admin/api/health` | `OPS_GATEWAY_HEALTH_URL` | URL polled by `GatewayStatusService` (2s connect/read timeouts); gateway is "up" iff it answers 2xx. |
+| `ops.gateway.start-command` | String | `` (blank) | `OPS_GATEWAY_START_COMMAND` | Command run to start the gateway. Blank → `start` returns `ok=false, "command not configured"`. **MUST be a command that EXITS** (e.g. `systemctl start gateway-service`, or a script that launches the gateway in the background) — `GatewayControlService` reads the process output to EOF **before** returning, so a foreground `java -jar` would hold stdout open and hang the request indefinitely (the 30s `waitFor` cap only applies after output EOF). Trusted config value, whitespace-split — no shell, no user input. |
+| `ops.gateway.stop-command` | String | `` (blank) | `OPS_GATEWAY_STOP_COMMAND` | Command run to stop the gateway (e.g. `systemctl stop gateway-service`). Same exits-only constraint as `start-command`. |
+| `ops.log-file` | String | `./logs/gateway.log` | `OPS_LOG_FILE` | Gateway log file tailed by `LogTailService` / streamed over SSE. Absent/unreadable file degrades to an empty stream, never an error. |
+| `ops.settings-db-path` | String | `./data/settings` | `OPS_SETTINGS_DB_PATH` | H2 path of the **gateway's** settings DB — must equal the gateway's `gateway.settings.db-path` so ops auth verifies against the same `admin_account`. `OpsDbConfig` opens it as `jdbc:h2:<path>;MODE=LEGACY;AUTO_SERVER=TRUE` (`AUTO_SERVER` omitted for `mem:`). |
+
+**AUTO_SERVER note:** both sides open the settings DB with `;AUTO_SERVER=TRUE` — gateway (`SettingsDbConfig` **and** `SettingsEnvironmentPostProcessor`, which opens the DB early at boot) and ops (`OpsDbConfig`). H2 mixed mode lets two JVMs share one DB file: the first opener becomes the server, the other connects over TCP automatically. If either side lacked the flag, the second JVM would fail to open the locked file (the gateway's PostProcessor would then silently fall back to yaml defaults).
+
+**Deploy note:** the systemd unit runs as user `qosid`, which needs permission to run `systemctl start/stop gateway-service` — add a polkit rule or a sudoers `NOPASSWD` entry scoped to **exactly those two commands**. The unit expects the JAR at `/opt/services/qosid-flow/ops/qosid-ops.jar` (the ops pom sets `finalName=qosid-ops`).
 
 ## Mandatory Environment Variables for Production
 

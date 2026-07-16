@@ -382,6 +382,21 @@ ResponseSaveRequest (Oracle save payload)
 - **Why two chains:** the pipeline (`/qosid/api/**`) must stay open regardless of admin auth state. A single merged chain (or a missing `securityMatcher`) would put everything behind session auth — pipeline requests would 401/redirect. See SAFETY-RULES.md rule 29. (Actuator runs on the separate management port (8091) governed by its own auto-configuration, not by `AdminSecurityConfig` — out of scope for these chains by construction.)
 - **Guard tests:** `SecurityIsolationTest` asserts the pipeline GET/POST paths stay reachable and the admin paths stay gated (it does not assert anything about actuator, which lives on a different port). `AdminCsrfFlowTest` asserts, over a real servlet (no MockMvc `.with(csrf())` shortcut), that a real HTTP client can capture the `XSRF-TOKEN` cookie and successfully echo it in `X-XSRF-TOKEN` to log in. Keep both green.
 
+## Ops console (sidecar) — `qosid-ops`
+
+A **separate JVM** in the `ops/` Maven module (package `uz.greenwhite.ops`, own `pom.xml`, JAR `qosid-ops.jar` via `finalName`), listening on **:8092** (`OPS_PORT`), deployed as its **own systemd unit** (`ops/qosid-ops.service`). It is fully independent of the gateway process — its whole point is to stay up when the gateway is down, so an operator can restart the gateway and watch its logs from a browser.
+
+| Concern | Class | How |
+|---------|-------|-----|
+| Gateway up/down | `GatewayStatusService` | HTTP GET to `ops.gateway.health-url` (default: gateway admin `/qosid/admin/api/health` on :8090), 2s connect/read timeouts; `up = 2xx`; never throws. |
+| Start/stop gateway | `GatewayControlService` | Runs the **operator-configured** (config-only, never user-supplied → no command injection) `ops.gateway.start-command`/`stop-command` via `ProcessBuilder` (whitespace-split, stderr merged); reads process output to EOF, then `waitFor(30s)`; returns `ControlResult(ok, exitCode, output)`; never throws. **The start command must EXIT** (e.g. `systemctl start gateway-service`) — a foreground `java -jar` would hold stdout open and hang the request (see CONFIGURATION.md → `ops.*`). |
+| Log tail | `LogTailService` | Tails `ops.log-file` (`gateway.log`): last-N snapshot + incremental polling with rotation detection (anchor-bytes fingerprint) and partial-line holdback. |
+| API + SSE fan-out | `OpsController` | `/ops/api/{status,start,stop}` + `GET /ops/api/logs/stream` (SSE: last-200-line snapshot on connect, then a `@Scheduled` 1s poll pushes new lines to all connected emitters). |
+| Auth | `AdminAuthDao`, `OpsAuthController`, `OpsSecurityConfig` | Session login against the **same admin account as the gateway admin UI**: `OpsDbConfig` opens the gateway's H2 settings DB (`ops.settings-db-path`) in **AUTO_SERVER mixed mode** (`;MODE=LEGACY;AUTO_SERVER=TRUE`, `mem:`-guarded) — both `SettingsDbConfig`/`SettingsEnvironmentPostProcessor` (gateway side) and `OpsDbConfig` (ops side) use AUTO_SERVER so the two JVMs share one DB file; whichever opens it first becomes the H2 server. Single `SecurityFilterChain` on `/ops/**`: `/ops`, `/ops/index.html`, `/ops/api/login` are permitAll, everything else needs a session; CSRF cookie (`CookieCsrfTokenRepository` + plain `CsrfTokenRequestAttributeHandler`, no XOR) with an ops-local `CsrfCookieFilter`; login rotates the session (fixation defense) — same B1 patterns as the gateway. |
+| UI | `OpsPageController` + `static/ops/index.html` | `GET /ops` forwards to a **self-contained vanilla-JS page** (no build step): login form, up/down badge, start/stop toggle with confirm, real-time log window (ERROR/WARN coloring, pause/clear, 2000-line DOM cap), `X-XSRF-TOKEN` echoed from the `XSRF-TOKEN` cookie on POSTs. |
+
+**Deploy requirements:** the systemd unit runs as user `qosid`, which needs permission to run exactly `systemctl start gateway-service` and `systemctl stop gateway-service` (polkit rule or sudoers `NOPASSWD` scoped to those two commands). Bind :8092 behind nginx / firewall — the console can stop the gateway. `OPS_SETTINGS_DB_PATH` must point at the **same** H2 path as the gateway's `gateway.settings.db-path`.
+
 ## Request Status Lifecycle
 
 ```
