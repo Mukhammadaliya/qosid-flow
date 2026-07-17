@@ -68,6 +68,11 @@ public final class SettingsRegistry {
         return effectClassOf(key) == EffectClass.READ_ONLY;
     }
 
+    /** True when the key is explicitly listed in the registry (any effect class). */
+    public static boolean isKnown(String key) {
+        return SETTINGS.stream().anyMatch(m -> m.key().equals(key));
+    }
+
     /**
      * A key is editable only if it is EXPLICITLY listed in the registry with a
      * non-READ_ONLY effect class. Unknown keys are NOT editable — this is the

@@ -1,0 +1,219 @@
+package uz.greenwhite.ops;
+
+import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import uz.greenwhite.qosid.settings.SettingsCipher;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+/**
+ * Task 3 (D-loyiha): stop-to-edit settings API on the ops sidecar.
+ * Schema comes from core's settings-schema.sql, initialized by OpsDbConfig.
+ */
+@SpringBootTest(properties = {
+        "ops.settings-db-path=mem:opssettings;DB_CLOSE_DELAY=-1",
+        "ops.settings-encryption-key=test-aes-key",
+        "ops.gateway.start-command=echo s",
+        "ops.gateway.stop-command=echo s"
+})
+@AutoConfigureMockMvc
+class OpsSettingsApiTest {
+
+    private static final String PASSWORD_HASH = new BCryptPasswordEncoder().encode("s3cret-pass");
+
+    @Autowired MockMvc mvc;
+    @Autowired JdbcTemplate opsJdbc;
+    @MockBean GatewayStatusService status;
+
+    private final SettingsCipher testCipher = new SettingsCipher("test-aes-key");
+
+    @BeforeEach
+    void seed() {
+        // settings/settings_audit/admin_account tables come from core's settings-schema.sql (OpsDbConfig init)
+        opsJdbc.update("DELETE FROM settings_audit");
+        opsJdbc.update("DELETE FROM settings");
+        opsJdbc.update("DELETE FROM admin_account");
+        opsJdbc.update("INSERT INTO admin_account (username, password_hash) VALUES (?, ?)", "admin", PASSWORD_HASH);
+        opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, FALSE)",
+                "gateway.api.base-url", "http://old");
+        opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, TRUE)",
+                "gateway.source.auth.basic.password", testCipher.encrypt("oldpass"));
+    }
+
+    record OpsSession(MockHttpSession session, String csrf) {}
+
+    OpsSession login() throws Exception {
+        MvcResult login = mvc.perform(post("/ops/api/login").contentType("application/json")
+                        .content("{\"username\":\"admin\",\"password\":\"s3cret-pass\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        MockHttpSession session = (MockHttpSession) login.getRequest().getSession(false);
+        String token = login.getResponse().getCookie("OPS-XSRF-TOKEN").getValue();
+        return new OpsSession(session, token);
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder authedPut(
+            OpsSession s, String key, String value) {
+        return put("/ops/api/settings/" + key)
+                .session(s.session())
+                .cookie(new Cookie("OPS-XSRF-TOKEN", s.csrf()))
+                .header("X-OPS-XSRF-TOKEN", s.csrf())
+                .contentType("application/json")
+                .content("{\"value\":\"" + value + "\"}");
+    }
+
+    @Test
+    void listMasksSecrets() throws Exception {
+        OpsSession s = login();
+        mvc.perform(get("/ops/api/settings").session(s.session()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.key=='gateway.api.base-url')].value").value("http://old"))
+                .andExpect(jsonPath("$[?(@.key=='gateway.api.base-url')].secret").value(false))
+                .andExpect(jsonPath("$[?(@.key=='gateway.api.base-url')].editable").value(true))
+                .andExpect(jsonPath("$[?(@.key=='gateway.api.base-url')].group").value("Endpointlar"))
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.auth.basic.password')].value").value("***"))
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.auth.basic.password')].secret").value(true));
+    }
+
+    @Test
+    void putRejectedWhenGatewayUp() throws Exception {
+        when(status.isUp()).thenReturn(true);
+        OpsSession s = login();
+        mvc.perform(authedPut(s, "gateway.api.base-url", "http://new"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("service-running"));
+        String dbValue = opsJdbc.queryForObject(
+                "SELECT svalue FROM settings WHERE skey = ?", String.class, "gateway.api.base-url");
+        assertThat(dbValue).isEqualTo("http://old");
+        Integer auditCount = opsJdbc.queryForObject("SELECT COUNT(*) FROM settings_audit", Integer.class);
+        assertThat(auditCount).isZero();
+    }
+
+    @Test
+    void putSavesWhenGatewayDown() throws Exception {
+        when(status.isUp()).thenReturn(false);
+        OpsSession s = login();
+        mvc.perform(authedPut(s, "gateway.api.base-url", "http://new"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.key").value("gateway.api.base-url"))
+                .andExpect(jsonPath("$.status").value("SAVED"));
+        String dbValue = opsJdbc.queryForObject(
+                "SELECT svalue FROM settings WHERE skey = ?", String.class, "gateway.api.base-url");
+        assertThat(dbValue).isEqualTo("http://new");
+        // audit row written and served by GET /ops/api/settings/audit (SPA lowercase contract)
+        mvc.perform(get("/ops/api/settings/audit").session(s.session()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].skey").value("gateway.api.base-url"))
+                .andExpect(jsonPath("$[0].old_value").value("http://old"))
+                .andExpect(jsonPath("$[0].new_value").value("http://new"));
+    }
+
+    @Test
+    void putEncryptsSecret() throws Exception {
+        when(status.isUp()).thenReturn(false);
+        OpsSession s = login();
+        mvc.perform(authedPut(s, "gateway.source.auth.basic.password", "newpass"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SAVED"));
+        String stored = opsJdbc.queryForObject(
+                "SELECT svalue FROM settings WHERE skey = ?", String.class, "gateway.source.auth.basic.password");
+        assertThat(stored).isNotEqualTo("newpass");
+        assertThat(testCipher.decrypt(stored)).isEqualTo("newpass");
+        // audit must never leak the secret
+        String auditNew = opsJdbc.queryForObject(
+                "SELECT new_value FROM settings_audit WHERE skey = ?", String.class,
+                "gateway.source.auth.basic.password");
+        assertThat(auditNew).isEqualTo("***");
+    }
+
+    @Test
+    void putUnknownKey400() throws Exception {
+        when(status.isUp()).thenReturn(false);
+        OpsSession s = login();
+        mvc.perform(authedPut(s, "gateway.no.such.key", "x"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("unknown-key"));
+    }
+
+    @Test
+    void putReadOnlyKey400() throws Exception {
+        when(status.isUp()).thenReturn(false);
+        OpsSession s = login();
+        // registry-known READ_ONLY key ("gateway.kafka.bootstrap-servers" is UNKNOWN per SettingsRegistryTest)
+        mvc.perform(authedPut(s, "spring.kafka.bootstrap-servers", "kafka:9092"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("not-editable"));
+    }
+
+    @Test
+    void allEndpointsRequireSession() throws Exception {
+        mvc.perform(get("/ops/api/settings")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/ops/api/settings/audit")).andExpect(status().isUnauthorized());
+        // matching CSRF cookie/header pair so the CSRF filter passes and auth (401) is what rejects
+        mvc.perform(put("/ops/api/settings/gateway.api.base-url")
+                        .cookie(new Cookie("OPS-XSRF-TOKEN", "t"))
+                        .header("X-OPS-XSRF-TOKEN", "t")
+                        .contentType("application/json")
+                        .content("{\"value\":\"x\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+}
+
+/** Blank encryption-key context: storing a secret must be refused, never stored in plaintext. */
+@SpringBootTest(properties = {
+        "ops.settings-db-path=mem:opsnocipher;DB_CLOSE_DELAY=-1",
+        "ops.settings-encryption-key=",
+        "ops.gateway.start-command=echo s",
+        "ops.gateway.stop-command=echo s"
+})
+@AutoConfigureMockMvc
+class OpsSettingsNoCipherTest {
+
+    private static final String PASSWORD_HASH = new BCryptPasswordEncoder().encode("s3cret-pass");
+
+    @Autowired MockMvc mvc;
+    @Autowired JdbcTemplate opsJdbc;
+    @MockBean GatewayStatusService status;
+
+    @Test
+    void putSecretWithoutKey400() throws Exception {
+        opsJdbc.update("DELETE FROM settings");
+        opsJdbc.update("DELETE FROM admin_account");
+        opsJdbc.update("INSERT INTO admin_account (username, password_hash) VALUES (?, ?)", "admin", PASSWORD_HASH);
+        opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, TRUE)",
+                "gateway.source.auth.basic.password", "whatever");
+        when(status.isUp()).thenReturn(false);
+
+        MvcResult login = mvc.perform(post("/ops/api/login").contentType("application/json")
+                        .content("{\"username\":\"admin\",\"password\":\"s3cret-pass\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        MockHttpSession session = (MockHttpSession) login.getRequest().getSession(false);
+        String token = login.getResponse().getCookie("OPS-XSRF-TOKEN").getValue();
+
+        mvc.perform(put("/ops/api/settings/gateway.source.auth.basic.password")
+                        .session(session)
+                        .cookie(new Cookie("OPS-XSRF-TOKEN", token))
+                        .header("X-OPS-XSRF-TOKEN", token)
+                        .contentType("application/json")
+                        .content("{\"value\":\"newpass\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("encryption-unavailable"));
+        String stored = opsJdbc.queryForObject(
+                "SELECT svalue FROM settings WHERE skey = ?", String.class, "gateway.source.auth.basic.password");
+        assertThat(stored).isEqualTo("whatever");
+    }
+}

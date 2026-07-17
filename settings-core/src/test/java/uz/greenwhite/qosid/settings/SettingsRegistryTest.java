@@ -41,6 +41,14 @@ class SettingsRegistryTest {
     }
 
     @Test
+    void isKnownIsTrueOnlyForRegistryKeys() {
+        assertTrue(SettingsRegistry.isKnown("gateway.api.base-url"));         // LIVE
+        assertTrue(SettingsRegistry.isKnown("server.port"));                  // READ_ONLY still known
+        assertFalse(SettingsRegistry.isKnown("gateway.kafka.bootstrap-servers")); // unknown
+        assertFalse(SettingsRegistry.isKnown("gateway.source.auth.basic.password")); // secret, dedicated page
+    }
+
+    @Test
     void allEntriesHaveGroupAndLabel() {
         assertFalse(SettingsRegistry.all().isEmpty());
         SettingsRegistry.all().forEach(m -> {

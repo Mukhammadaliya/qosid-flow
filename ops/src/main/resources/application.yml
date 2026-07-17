@@ -12,6 +12,8 @@ ops:
     stop-command: ${OPS_GATEWAY_STOP_COMMAND:}
   log-file: ${OPS_LOG_FILE:./logs/gateway.log}
   settings-db-path: ${OPS_SETTINGS_DB_PATH:./data/settings}
+  # Same key as the gateway's SETTINGS_ENCRYPTION_KEY — secrets must round-trip between both JVMs.
+  settings-encryption-key: ${SETTINGS_ENCRYPTION_KEY:}
 
 logging:
   level:
