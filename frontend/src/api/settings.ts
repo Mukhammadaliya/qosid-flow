@@ -12,13 +12,13 @@ export interface TestResult { ok: boolean; type?: string; message: string; }
 export interface SettingRow { key: string; value: string; secret: boolean; updatedAt: string; updatedBy: string; }
 export interface TenantTestResult { tenantId: number | null; extraTenantId: number | null; tenantField: string; extraField: string; }
 
+// NOTE: gateway settings writes (PUT source-auth / settings / ai config) were removed
+// from this client on purpose — the gateway answers 409 stop-required for all of them
+// (D stop-to-edit). Writes go through opsSettings (ops sidecar) while the service is down.
 export const getSourceAuth = () => api.get<SourceAuth>(`${BASE}/source-auth`).then(r => r.data);
-export const putSourceAuth = (body: Partial<SourceAuth>) => api.put(`${BASE}/source-auth`, body);
 export const testSourceAuth = () => api.post<TestResult>(`${BASE}/source-auth/test`).then(r => r.data);
 
 export const getSettings = () => api.get<SettingRow[]>(`${BASE}/settings`).then(r => r.data);
-export const putSetting = (key: string, value: string, secret: boolean) =>
-  api.put(`${BASE}/settings/${encodeURIComponent(key)}`, { value, secret });
 export const getAudit = () => api.get<any[]>(`${BASE}/settings/audit`).then(r => r.data);
 
 export interface RegistryItem {

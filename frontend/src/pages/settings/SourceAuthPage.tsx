@@ -1,51 +1,55 @@
 import { useEffect, useState } from 'react';
-import { Form, Select, Input, Button, Alert, Space, Card, message } from 'antd';
+import { Form, Select, Input, Button, Alert, Space, Card, Tooltip, message } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { getSourceAuth, putSourceAuth, testSourceAuth, SourceAuth, TestResult } from '../../api/settings';
-
-const MASK = '***';
+import { getSourceAuth, testSourceAuth, SourceAuth, TestResult } from '../../api/settings';
+import { opsSettings } from '../../api/opsSettings';
+import { sourceAuth as sourceAuthEntries, sourceAuthFromRows } from '../../api/settingsKeys';
+import { useAuth } from '../../auth/AuthContext';
+import { ModeBanner } from './ModeBanner';
 
 export function SourceAuthPage() {
   const { t } = useTranslation();
+  const { gatewayUp, opsUp } = useAuth();
+  // Stop-to-edit: writable ONLY while the gateway is down and the ops session is
+  // alive (gateway writes all answer 409 stop-required). Same as GeneralSettingsPage.
+  const editMode = !gatewayUp && opsUp;
+
   const [form] = Form.useForm();
   const [type, setType] = useState('basic');
-  const [loaded, setLoaded] = useState<SourceAuth | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    getSourceAuth()
+    setLoaded(false);
+    setLoadError(null);
+    const load: Promise<SourceAuth | ReturnType<typeof sourceAuthFromRows>> = editMode
+      ? opsSettings.getAll().then(sourceAuthFromRows)
+      : getSourceAuth();
+    load
       .then((d) => {
-        setLoaded(d); setType(d.type);
+        setType(d.type);
         form.setFieldsValue(d);
+        setLoaded(true);
       })
       .catch((e: any) => setLoadError(e?.response?.data?.message ?? t('common.loadError')));
-  }, [form]);
+  }, [form, editMode]);
 
   const onSave = async () => {
-    const v = form.getFieldsValue();
     setSaving(true);
     try {
-      const body: Partial<SourceAuth> = { type };
-      if (type === 'basic') {
-        body.basicUsername = v.basicUsername;
-        // Only send the password if the admin typed a new one (masked value means unchanged).
-        if (v.basicPassword && v.basicPassword !== MASK) body.basicPassword = v.basicPassword;
-      } else if (type === 'apikey') {
-        body.apikeyHeader = v.apikeyHeader;
-        if (v.apikeyValue && v.apikeyValue !== MASK) body.apikeyValue = v.apikeyValue;
-      } else {
-        body.oauth2TokenUrl = v.oauth2TokenUrl;
-        body.oauth2ClientId = v.oauth2ClientId;
-        if (v.oauth2ClientSecret && v.oauth2ClientSecret !== MASK) body.oauth2ClientSecret = v.oauth2ClientSecret;
-        body.oauth2Scope = v.oauth2Scope;
-        body.oauth2CacheTtlSeconds = v.oauth2CacheTtlSeconds;
+      // Only the selected type's fields go out; blank/masked secrets are omitted
+      // (keep-existing) by the mapping itself.
+      for (const entry of sourceAuthEntries({ ...form.getFieldsValue(), type })) {
+        await opsSettings.put(entry.key, entry.value);
       }
-      await putSourceAuth(body);
       message.success(t('settings.saved'));
     } catch (e: any) {
-      message.error(e?.response?.data?.message ?? 'Error');
+      const code = e?.response?.data?.error;
+      message.error(code === 'service-running'
+        ? t('settings.serviceRunning')
+        : (e?.response?.data?.message ?? code ?? 'Error'));
     } finally {
       setSaving(false);
     }
@@ -63,7 +67,8 @@ export function SourceAuthPage() {
   return (
     <Card title={t('settings.sourceAuth')} loading={!loaded && !loadError}>
       {loadError && <Alert style={{ marginBottom: 16 }} type="error" showIcon message={loadError} />}
-      <Form form={form} layout="vertical" style={{ maxWidth: 480 }}>
+      <ModeBanner editMode={editMode} />
+      <Form form={form} layout="vertical" style={{ maxWidth: 480 }} disabled={!editMode}>
         <Form.Item label={t('settings.type')}>
           <Select
             value={type}
@@ -95,12 +100,16 @@ export function SourceAuthPage() {
           <Form.Item name="oauth2Scope" label={t('sourceAuth.oauth2Scope')}><Input /></Form.Item>
           <Form.Item name="oauth2CacheTtlSeconds" label={t('sourceAuth.oauth2CacheTtl')}><Input /></Form.Item>
         </>}
-
-        <Space>
-          <Button type="primary" onClick={onSave} loading={saving}>{t('settings.save')}</Button>
-          <Button onClick={onTest}>{t('settings.test')}</Button>
-        </Space>
       </Form>
+      <Space>
+        {editMode && (
+          <Button type="primary" onClick={onSave} loading={saving}>{t('settings.save')}</Button>
+        )}
+        {/* Test fires a real outbound call THROUGH the gateway — needs it running. */}
+        <Tooltip title={editMode ? t('settings.testNeedsService') : undefined}>
+          <Button onClick={onTest} disabled={editMode}>{t('settings.test')}</Button>
+        </Tooltip>
+      </Space>
 
       {testResult && (
         <Alert

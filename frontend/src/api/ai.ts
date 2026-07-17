@@ -15,5 +15,5 @@ export const analyzeError = (entry: LogEntry) =>
 
 export interface AiConfig { baseUrl: string; apiKey: string; model: string }
 
+// Config writes go through opsSettings while the service is down (gateway PUT is 409 now).
 export const getAiConfig = () => api.get<AiConfig>(`${BASE}/config`).then(r => r.data);
-export const putAiConfig = (body: Partial<AiConfig>) => api.put(`${BASE}/config`, body);

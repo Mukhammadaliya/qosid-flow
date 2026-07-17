@@ -23,6 +23,7 @@
   "settings.stopToEdit": "Tahrirlash uchun servisni Ops sahifasidan to'xtating",
   "settings.appliesOnStart": "O'zgarishlar servis to'xtatilgan holatda kiritiladi va keyingi ishga tushirishda qo'llanadi",
   "settings.serviceRunning": "Servis ishlayapti — saqlash uchun avval Ops sahifasidan to'xtating",
+  "settings.testNeedsService": "Sinash uchun servis ishlab turishi kerak",
   "settings.save": "Saqlash",
   "settings.saved": "Saqlandi",
   "settings.test": "Sinash",
