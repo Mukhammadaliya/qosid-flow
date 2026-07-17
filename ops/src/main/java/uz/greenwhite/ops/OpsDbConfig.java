@@ -10,6 +10,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 import uz.greenwhite.qosid.settings.AdminAccountRepository;
 import uz.greenwhite.qosid.settings.LoginHandoffRepository;
+import uz.greenwhite.qosid.settings.LoginRateLimiter;
 import uz.greenwhite.qosid.settings.SettingsCipher;
 import uz.greenwhite.qosid.settings.SettingsRepository;
 
@@ -67,6 +68,12 @@ public class OpsDbConfig {
     @Bean
     public LoginHandoffRepository loginHandoffRepository(JdbcTemplate opsJdbc) {
         return new LoginHandoffRepository(opsJdbc);
+    }
+
+    /** settings-core POJO — same 5-failures/60s login policy as the gateway JVM (per-JVM in-memory state). */
+    @Bean
+    public LoginRateLimiter loginRateLimiter() {
+        return new LoginRateLimiter();
     }
 
     /**

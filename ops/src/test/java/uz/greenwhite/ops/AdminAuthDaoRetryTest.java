@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import uz.greenwhite.qosid.settings.AdminAccount;
 import uz.greenwhite.qosid.settings.AdminAccountRepository;
+import uz.greenwhite.qosid.settings.LoginRateLimiter;
 
 import java.util.List;
 
@@ -36,7 +37,7 @@ class AdminAuthDaoRetryTest {
     }
 
     private AdminAuthDao dao(JdbcTemplate jdbc) {
-        return new AdminAuthDao(new AdminAccountRepository(jdbc));
+        return new AdminAuthDao(new AdminAccountRepository(jdbc), new LoginRateLimiter());
     }
 
     @SuppressWarnings("unchecked")

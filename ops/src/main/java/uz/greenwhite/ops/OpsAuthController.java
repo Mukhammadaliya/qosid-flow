@@ -13,6 +13,7 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
 import uz.greenwhite.qosid.settings.LoginHandoffRepository;
+import uz.greenwhite.qosid.settings.LoginRateLimiter;
 
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -36,10 +37,16 @@ public class OpsAuthController {
     public record LoginRequest(String username, String password) {}
 
     @PostMapping("/login")
-    public ResponseEntity<Void> login(@RequestBody LoginRequest req,
-                                      HttpServletRequest request, HttpServletResponse response) {
-        if (!authDao.verify(req.username(), req.password())) {
-            return ResponseEntity.status(401).build();
+    public ResponseEntity<Map<String, String>> login(@RequestBody LoginRequest req,
+                                                     HttpServletRequest request, HttpServletResponse response) {
+        try {
+            if (!authDao.verify(req.username(), req.password())) {
+                return ResponseEntity.status(401).build();
+            }
+        } catch (LoginRateLimiter.TooManyAttemptsException e) {
+            // same policy + status as the gateway's /qosid/admin/api/login (there it goes
+            // through GlobalExceptionHandler; ops has none, so we answer directly)
+            return ResponseEntity.status(429).body(Map.of("error", "rate-limited"));
         }
         UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                 req.username(), null, AuthorityUtils.createAuthorityList("ROLE_ADMIN"));

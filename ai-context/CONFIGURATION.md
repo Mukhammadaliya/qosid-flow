@@ -342,7 +342,7 @@ Config for the `ops/` module (`ops/src/main/resources/application.yml`) — **no
 4. Restart the `gateway-service` and `qosid-ops` systemd units.
 5. **WARNING:** skipping the nginx step leaves the UI fully unavailable — the gateway JAR no longer embeds the SPA, and the ops sidecar no longer serves an HTML page of its own. The CI-released JAR alone is no longer a complete deployment artifact; nginx + `frontend/dist` are required alongside it.
 
-Recommended before exposing `/ops/api` through nginx: change the default admin password first, and put an nginx rate-limit and/or IP-allowlist on `/ops/api/login`.
+Recommended before exposing `/ops/api` through nginx: change the default admin password first, and put an nginx rate-limit and/or IP-allowlist on `/ops/api/login`. Since v1.14.0 the ops JVM also enforces the same application-level login rate-limit as the gateway (`LoginRateLimiter`: 5 failures / 60s per username, existing accounts only → `429 {"error":"rate-limited"}`), so the nginx layer is defense-in-depth, not the only guard.
 
 ## Mandatory Environment Variables for Production
 
