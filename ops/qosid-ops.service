@@ -6,11 +6,14 @@ After=network.target
 Type=simple
 User=qosid
 WorkingDirectory=/opt/services/qosid-flow
-ExecStart=/usr/bin/java -jar /opt/services/qosid-flow/ops/qosid-ops.jar
+ExecStart=/usr/bin/java -jar /opt/services/qosid-flow/ops/target/qosid-ops.jar
 Environment=OPS_GATEWAY_START_COMMAND=/usr/bin/systemctl start gateway-service
 Environment=OPS_GATEWAY_STOP_COMMAND=/usr/bin/systemctl stop gateway-service
 Environment=OPS_LOG_FILE=/opt/services/qosid-flow/logs/gateway.log
 Environment=OPS_SETTINGS_DB_PATH=/opt/services/qosid-flow/data/settings
+# Stop-to-edit secret writes need the SAME key as the gateway unit's SETTINGS_ENCRYPTION_KEY.
+# Prefer an EnvironmentFile with 0600 perms over an inline value here.
+# Environment=SETTINGS_ENCRYPTION_KEY=<same-as-gateway>
 Restart=always
 RestartSec=5
 

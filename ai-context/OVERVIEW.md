@@ -102,7 +102,9 @@ qosid-flow/                              # Maven reactor (qosid-parent): setting
   app/src/main/resources/
     application.yml      # All configuration with env var overrides
     logback-spring.xml   # Logging configuration
-  ops/                   # Ops console sidecar (qosid-ops, separate JVM :8092)
+  ops/                   # Ops console sidecar (qosid-ops, separate JVM :8092) + stop-to-edit settings API
+  frontend/              # React SPA (Vite; not a Maven module — app's default-on `frontend` profile builds dist; nginx serves it in prod)
+  deploy/                # Reference nginx config (nginx-qosid.conf)
   infrastructure/        # Docker monitoring stack configs
     prometheus/          # Prometheus scrape config + alert rules
     alertmanager/        # AlertManager configuration
