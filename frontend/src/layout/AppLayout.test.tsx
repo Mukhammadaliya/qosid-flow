@@ -40,15 +40,22 @@ describe('AppLayout', () => {
     expect(screen.getByText('admin')).toBeInTheDocument();
   });
 
-  it('disables gateway pages and shows banner when gateway is down', () => {
+  it('keeps Settings enabled via ops when gateway is down; Errors/Statistics stay disabled', () => {
     renderLayout({ gatewayUp: false, opsUp: true });
+    // NEW rule (strict stop-to-edit model): Settings works through the ops API while stopped.
     const settings = screen.getByText('Sozlamalar').closest('[role="menuitem"]');
-    expect(settings?.getAttribute('aria-disabled')).toBe('true');
+    expect(settings?.getAttribute('aria-disabled')).not.toBe('true');
     const errors = screen.getByText('Xatolar').closest('[role="menuitem"]');
     expect(errors?.getAttribute('aria-disabled')).toBe('true');
     const statistics = screen.getByText('Statistika').closest('[role="menuitem"]');
     expect(statistics?.getAttribute('aria-disabled')).toBe('true');
     expect(screen.getByText(/Gateway o'chiq/)).toBeInTheDocument();
+  });
+
+  it('disables Settings only when both gateway and ops are down', () => {
+    renderLayout({ gatewayUp: false, opsUp: false });
+    const settings = screen.getByText('Sozlamalar').closest('[role="menuitem"]');
+    expect(settings?.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('FIX3 regression: shows the expired-session banner + re-login link when gateway session expired', () => {

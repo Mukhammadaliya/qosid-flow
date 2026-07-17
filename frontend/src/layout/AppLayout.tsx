@@ -21,8 +21,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const gwLabel = (label: string) =>
     gwDisabled ? <Tooltip title={t('auth.gatewayDown')}>{label}</Tooltip> : label;
 
+  // Settings stays usable through the ops sidecar while the gateway is stopped
+  // (strict stop-to-edit model); it is disabled only when BOTH backends are down.
+  const settingsDisabled = !gatewayUp && !opsUp;
+
   const navItems = [
-    { key: '/settings', icon: <SettingOutlined />, disabled: gwDisabled, label: gwLabel(t('nav.settings')) },
+    { key: '/settings', icon: <SettingOutlined />, disabled: settingsDisabled,
+      label: settingsDisabled ? <Tooltip title={t('auth.gatewayDown')}>{t('nav.settings')}</Tooltip> : t('nav.settings') },
     { key: '/errors', icon: <WarningOutlined />, disabled: gwDisabled, label: gwLabel(t('nav.errors')), children: [
         { key: '/errors/dlq', label: t('errors.dlqNav') },
         { key: '/errors/jar', label: t('errors.jarNav') },

@@ -1,23 +1,39 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Card, Collapse, Input, Button, Table, Tabs, Tag, Space, message } from 'antd';
+import { Alert, Card, Collapse, Input, Button, Table, Tabs, Space, message } from 'antd';
 import { LockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { getRegistry, putSetting, getAudit, RegistryItem } from '../../api/settings';
+import { useNavigate } from 'react-router-dom';
+import { getRegistry, getAudit } from '../../api/settings';
+import { opsSettings } from '../../api/opsSettings';
+import { useAuth } from '../../auth/AuthContext';
 
-/** Audit log tab — render code moved verbatim from the retired AdvancedSettingsPage.
- *  Mounted lazily by antd Tabs, so getAudit fires only when the tab is first opened. */
-function AuditTab() {
+/** Unified row shape for both data sources (gateway registry / ops sidecar). */
+interface SettingRow {
+  key: string;
+  group: string;
+  label: string;
+  type: string;
+  value: string;
+  secret: boolean;
+  editable: boolean;
+}
+
+/** Audit log tab. Mode-aware: while the gateway is up it reads the gateway audit
+ *  endpoint; in stopped-service edit mode it reads the same H2 table via the ops
+ *  sidecar. Both return identical row keys (skey/old_value/new_value/changed_by/changed_at).
+ *  Mounted lazily by antd Tabs, so the fetch fires only when the tab is first opened. */
+function AuditTab({ editMode }: { editMode: boolean }) {
   const { t } = useTranslation();
   const [audit, setAudit] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    getAudit()
+    (editMode ? opsSettings.getAudit() : getAudit())
       .then(setAudit)
       .catch((e: any) => setLoadError(e?.response?.data?.message ?? t('common.loadError')))
       .finally(() => setLoading(false));
-  }, []);
+  }, [editMode]);
 
   const auditColumns = [
     { title: t('settings.auditKey'), dataIndex: 'skey', key: 'skey' },
@@ -35,65 +51,75 @@ function AuditTab() {
   );
 }
 
-const BADGE: Record<RegistryItem['effectClass'], { color: string; key: string }> = {
-  LIVE: { color: 'green', key: 'settings.legend.live' },
-  REQUIRES_RESTART: { color: 'gold', key: 'settings.legend.restart' },
-  READ_ONLY: { color: 'default', key: 'settings.legend.readonly' },
-};
+const MASKED = '***';
 
 export function GeneralSettingsPage() {
   const { t } = useTranslation();
-  const [items, setItems] = useState<RegistryItem[]>([]);
+  const { gatewayUp, opsUp } = useAuth();
+  const navigate = useNavigate();
+  // Strict stop-to-edit model: editing is possible ONLY while the gateway is down
+  // and the ops sidecar session is alive. When the gateway is up, the page is
+  // read-only — all gateway settings writes answer 409 {"error":"stop-required"}.
+  const editMode = !gatewayUp && opsUp;
+
+  const [items, setItems] = useState<SettingRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [restartPending, setRestartPending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
     setLoadError(null);
-    getRegistry()
-      .then((r) => {
-        setItems(r.settings);
-        setRestartPending(r.restartPending);
-        setDrafts(Object.fromEntries(r.settings.map((i) => [i.key, i.value])));
+    const fetchRows: Promise<SettingRow[]> = editMode
+      ? opsSettings.getAll().then((rows) =>
+          rows.map((r) => ({ key: r.key, group: r.group, label: r.label, type: r.type, value: r.value, secret: r.secret, editable: r.editable })))
+      : getRegistry().then((r) =>
+          r.settings.map((it) => ({ key: it.key, group: it.group, label: it.label, type: it.type, value: it.value, secret: it.secret, editable: false })));
+    fetchRows
+      .then((rows) => {
+        setItems(rows);
+        setDrafts(Object.fromEntries(rows.map((i) => [i.key, i.value])));
       })
       .catch((e: any) => setLoadError(e?.response?.data?.message ?? t('common.loadError')))
       .finally(() => setLoading(false));
   };
-  useEffect(load, []);
+  useEffect(load, [editMode]);
 
   const groups = useMemo(() => {
-    const map = new Map<string, RegistryItem[]>();
+    const map = new Map<string, SettingRow[]>();
     for (const it of items) (map.get(it.group) ?? map.set(it.group, []).get(it.group)!).push(it);
     return [...map.entries()];
   }, [items]);
 
-  const save = async (it: RegistryItem) => {
+  const save = async (it: SettingRow) => {
     try {
-      await putSetting(it.key, drafts[it.key] ?? '', it.secret);
-      if (it.effectClass === 'REQUIRES_RESTART') {
-        setRestartPending(true);
-        message.warning(t('settings.savedRestart'));
-      } else {
-        message.success(t('settings.savedLive'));
-      }
+      await opsSettings.put(it.key, drafts[it.key] ?? '');
+      message.success(t('settings.saved'));
     } catch (e: any) {
-      message.error(e?.response?.data?.message ?? 'Error');
+      const code = e?.response?.data?.error;
+      message.error(code === 'service-running'
+        ? t('settings.serviceRunning')
+        : (e?.response?.data?.message ?? code ?? 'Error'));
     }
   };
 
   const settingsTab = (
     <Card loading={loading}>
       {loadError && <Alert style={{ marginBottom: 16 }} type="error" showIcon message={loadError} />}
-      <Space style={{ marginBottom: 12 }} size="middle">
-        <Tag color="green">{t('settings.legend.live')}</Tag>
-        <Tag color="gold">{t('settings.legend.restart')}</Tag>
-        <Tag>{t('settings.legend.readonly')}</Tag>
-      </Space>
-      {restartPending && (
-        <Alert style={{ marginBottom: 16 }} type="warning" showIcon
-               message={t('settings.restartPending')} />
+      {editMode ? (
+        <Alert style={{ marginBottom: 16 }} type="info" showIcon message={t('settings.appliesOnStart')} />
+      ) : (
+        <Alert
+          style={{ marginBottom: 16 }}
+          type="warning"
+          showIcon
+          message={
+            <Space>
+              {t('settings.stopToEdit')}
+              <Button type="link" size="small" onClick={() => navigate('/ops')}>{t('nav.ops')}</Button>
+            </Space>
+          }
+        />
       )}
       <Collapse defaultActiveKey={groups.map(([g]) => g)} items={groups.map(([group, rows]) => ({
         key: group,
@@ -101,23 +127,23 @@ export function GeneralSettingsPage() {
         children: (
           <div>
             {rows.map((it) => {
-              const readOnly = it.effectClass === 'READ_ONLY';
+              const canEdit = editMode && it.editable;
+              // Guard: a set secret arrives masked as "***" — saving it untouched
+              // would overwrite the real value with the literal mask.
+              const untouchedSecret = it.secret && (drafts[it.key] ?? '') === MASKED && it.value === MASKED;
               return (
                 <div key={it.key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <Tag color={BADGE[it.effectClass].color} style={{ minWidth: 90, textAlign: 'center' }}>
-                    {t(BADGE[it.effectClass].key)}
-                  </Tag>
                   <span style={{ minWidth: 200 }}>{it.label}</span>
                   <Input
                     style={{ maxWidth: 360 }}
                     aria-label={it.label}
                     value={drafts[it.key] ?? ''}
-                    disabled={readOnly}
+                    disabled={!canEdit}
                     onChange={(e) => setDrafts({ ...drafts, [it.key]: e.target.value })}
-                    suffix={readOnly ? <LockOutlined /> : undefined}
+                    suffix={!canEdit ? <LockOutlined /> : undefined}
                   />
-                  {!readOnly && (
-                    <Button size="small" type="primary" onClick={() => save(it)}>
+                  {canEdit && (
+                    <Button size="small" type="primary" disabled={untouchedSecret} onClick={() => save(it)}>
                       {t('settings.save')}
                     </Button>
                   )}
@@ -133,7 +159,7 @@ export function GeneralSettingsPage() {
   return (
     <Tabs items={[
       { key: 'settings', label: t('settings.general'), children: settingsTab },
-      { key: 'audit', label: t('settings.audit'), children: <AuditTab /> },
+      { key: 'audit', label: t('settings.audit'), children: <AuditTab editMode={editMode} /> },
     ]} />
   );
 }

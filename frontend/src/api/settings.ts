@@ -26,7 +26,7 @@ export interface RegistryItem {
   effectClass: 'LIVE' | 'REQUIRES_RESTART' | 'READ_ONLY';
   value: string; secret: boolean;
 }
-export interface SettingsRegistry { settings: RegistryItem[]; restartPending: boolean; }
+export interface SettingsRegistry { settings: RegistryItem[]; }
 
 export const getRegistry = () =>
   api.get<SettingsRegistry>(`${BASE}/settings/registry`).then(r => r.data);

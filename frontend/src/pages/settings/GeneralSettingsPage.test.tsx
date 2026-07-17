@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import i18n from '../../i18n';
 import { GeneralSettingsPage } from './GeneralSettingsPage';
 import * as settingsApi from '../../api/settings';
+import { opsSettings } from '../../api/opsSettings';
+import { AuthContext } from '../../auth/AuthContext';
 
 beforeEach(() => vi.restoreAllMocks());
 
 const registry = {
-  restartPending: false,
   settings: [
     { key: 'gateway.api.base-url', group: 'Endpointlar', label: 'API proxy manzili', type: 'url', effectClass: 'LIVE', value: 'https://a.example.com', secret: false },
     { key: 'gateway.retry.max-attempts', group: 'Retry/HTTP', label: 'Max attempts', type: 'number', effectClass: 'REQUIRES_RESTART', value: '3', secret: false },
@@ -16,51 +18,134 @@ const registry = {
   ],
 };
 
-describe('GeneralSettingsPage', () => {
-  it('renders grouped settings with effect-class badges', async () => {
-    vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as any);
-    render(<GeneralSettingsPage />);
+const opsRows = [
+  { key: 'gateway.api.base-url', group: 'Endpointlar', label: 'API proxy manzili', type: 'url', value: 'https://a.example.com', secret: false, editable: true },
+  { key: 'server.port', group: 'Infratuzilma', label: 'App port', type: 'number', value: '8090', secret: false, editable: false },
+  { key: 'gateway.settings.enc-key', group: 'Xavfsizlik', label: 'Shifrlash kaliti', type: 'secret', value: '***', secret: true, editable: true },
+];
+
+function renderPage(overrides: Partial<{ gatewayUp: boolean; opsUp: boolean }> = {}) {
+  const value = {
+    user: 'admin', loading: false, gatewayUp: true, opsUp: true, gatewayAuthExpired: false,
+    login: async () => {}, logout: async () => {}, refresh: async () => {}, ...overrides,
+  };
+  return render(
+    <AuthContext.Provider value={value as never}>
+      <MemoryRouter>
+        <GeneralSettingsPage />
+      </MemoryRouter>
+    </AuthContext.Provider>,
+  );
+}
+
+describe('GeneralSettingsPage — service UP (read-only mode)', () => {
+  it('renders grouped settings from the gateway registry, all locked', async () => {
+    const reg = vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as never);
+    const opsGet = vi.spyOn(opsSettings, 'getAll').mockResolvedValue([] as never);
+    renderPage({ gatewayUp: true, opsUp: true });
     await waitFor(() => expect(screen.getByText('API proxy manzili')).toBeInTheDocument());
-    expect(screen.getByDisplayValue('https://a.example.com')).toBeInTheDocument();
-    // read-only field is disabled
+    expect(reg).toHaveBeenCalled();
+    expect(opsGet).not.toHaveBeenCalled();
+    // every input is disabled and shows the lock hint
+    expect(screen.getByDisplayValue('https://a.example.com')).toBeDisabled();
+    expect(screen.getByDisplayValue('3')).toBeDisabled();
     expect(screen.getByDisplayValue('8090')).toBeDisabled();
+    expect(screen.getAllByRole('img', { name: 'lock' }).length).toBe(3);
+    // no save buttons anywhere — the UI must never offer a write path to the gateway
+    expect(screen.queryByRole('button', { name: /Saqlash/ })).toBeNull();
   });
 
-  it('saves a live setting via putSetting', async () => {
-    vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as any);
-    const put = vi.spyOn(settingsApi, 'putSetting').mockResolvedValue({} as any);
-    render(<GeneralSettingsPage />);
+  it('shows the stop-to-edit banner with a link to the Ops page', async () => {
+    vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as never);
+    renderPage({ gatewayUp: true, opsUp: true });
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(screen.getByRole('alert')).toHaveTextContent(i18n.t('settings.stopToEdit'));
+    expect(within(screen.getByRole('alert')).getByRole('button', { name: i18n.t('nav.ops') })).toBeInTheDocument();
+  });
+
+  it('does not render effect-class legend badges anymore', async () => {
+    vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as never);
+    renderPage({ gatewayUp: true, opsUp: true });
+    await waitFor(() => expect(screen.getByText('API proxy manzili')).toBeInTheDocument());
+    expect(screen.queryByText('Jonli')).toBeNull();
+    expect(screen.queryByText('Restart kerak')).toBeNull();
+    expect(screen.queryByText('Bloklangan')).toBeNull();
+  });
+});
+
+describe('GeneralSettingsPage — service DOWN, ops session alive (edit mode)', () => {
+  it('loads the table from the ops API instead of the gateway', async () => {
+    const reg = vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as never);
+    const opsGet = vi.spyOn(opsSettings, 'getAll').mockResolvedValue(opsRows as never);
+    renderPage({ gatewayUp: false, opsUp: true });
+    await waitFor(() => expect(screen.getByText('API proxy manzili')).toBeInTheDocument());
+    expect(opsGet).toHaveBeenCalled();
+    expect(reg).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue('https://a.example.com')).toBeEnabled();
+  });
+
+  it('shows the applies-on-start note instead of effect-class badges', async () => {
+    vi.spyOn(opsSettings, 'getAll').mockResolvedValue(opsRows as never);
+    renderPage({ gatewayUp: false, opsUp: true });
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(screen.getByRole('alert')).toHaveTextContent(i18n.t('settings.appliesOnStart'));
+    expect(screen.queryByText('Jonli')).toBeNull();
+  });
+
+  it('saves an edited value via PUT /ops/api/settings/{key}', async () => {
+    vi.spyOn(opsSettings, 'getAll').mockResolvedValue(opsRows as never);
+    const put = vi.spyOn(opsSettings, 'put').mockResolvedValue(undefined as never);
+    renderPage({ gatewayUp: false, opsUp: true });
     await waitFor(() => expect(screen.getByText('API proxy manzili')).toBeInTheDocument());
     const input = screen.getByDisplayValue('https://a.example.com');
     await userEvent.clear(input);
     await userEvent.type(input, 'https://b.example.com');
     await userEvent.click(screen.getAllByRole('button', { name: /Saqlash/ })[0]);
-    await waitFor(() => expect(put).toHaveBeenCalledWith('gateway.api.base-url', 'https://b.example.com', false));
+    await waitFor(() => expect(put).toHaveBeenCalledWith('gateway.api.base-url', 'https://b.example.com'));
   });
 
-  it('shows the restart-pending banner when flag is set', async () => {
-    vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue({ ...registry, restartPending: true } as any);
-    render(<GeneralSettingsPage />);
-    // The banner is the only role="alert" on the page — query by role, and compare its text
-    // against the i18n catalog itself so the assertion never depends on the uz wording.
-    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
-    expect(screen.getByRole('alert')).toHaveTextContent(i18n.t('settings.restartPending'));
-  });
-
-  it('does not show the restart-pending banner when flag is clear', async () => {
-    vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as any);
-    render(<GeneralSettingsPage />);
-    await waitFor(() => expect(screen.getByText('API proxy manzili')).toBeInTheDocument());
-    expect(screen.queryByRole('alert')).toBeNull();
-  });
-
-  it('does not allow editing a read-only field save', async () => {
-    vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as any);
-    render(<GeneralSettingsPage />);
+  it('keeps non-editable rows locked with no save button', async () => {
+    vi.spyOn(opsSettings, 'getAll').mockResolvedValue(opsRows as never);
+    renderPage({ gatewayUp: false, opsUp: true });
     await waitFor(() => expect(screen.getByText('App port')).toBeInTheDocument());
-    // read-only row renders a lock icon (aria-label "lock") and no Saqlash button
+    expect(screen.getByDisplayValue('8090')).toBeDisabled();
     const portRow = screen.getByText('App port').closest('div')!;
     expect(within(portRow as HTMLElement).getByRole('img', { name: 'lock' })).toBeInTheDocument();
     expect(within(portRow as HTMLElement).queryByRole('button')).toBeNull();
+  });
+
+  it('does not allow saving an untouched masked secret ("***")', async () => {
+    vi.spyOn(opsSettings, 'getAll').mockResolvedValue(opsRows as never);
+    renderPage({ gatewayUp: false, opsUp: true });
+    await waitFor(() => expect(screen.getByText('Shifrlash kaliti')).toBeInTheDocument());
+    const secretRow = screen.getByText('Shifrlash kaliti').closest('div')!;
+    expect(within(secretRow as HTMLElement).getByRole('button', { name: /Saqlash/ })).toBeDisabled();
+  });
+
+  it('audit tab reads from the ops API when the gateway is down', async () => {
+    vi.spyOn(opsSettings, 'getAll').mockResolvedValue(opsRows as never);
+    const gwAudit = vi.spyOn(settingsApi, 'getAudit').mockResolvedValue([] as never);
+    const opsAudit = vi.spyOn(opsSettings, 'getAudit').mockResolvedValue([
+      { skey: 'gateway.api.base-url', old_value: 'a', new_value: 'b', changed_by: 'admin', changed_at: '2026-07-17 10:00' },
+    ] as never);
+    renderPage({ gatewayUp: false, opsUp: true });
+    await waitFor(() => expect(screen.getByText('API proxy manzili')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('tab', { name: i18n.t('settings.audit') }));
+    await waitFor(() => expect(opsAudit).toHaveBeenCalled());
+    expect(gwAudit).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText('gateway.api.base-url')).toBeInTheDocument());
+  });
+});
+
+describe('GeneralSettingsPage — audit tab, service UP', () => {
+  it('audit tab keeps reading from the gateway when it is up', async () => {
+    vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as never);
+    const gwAudit = vi.spyOn(settingsApi, 'getAudit').mockResolvedValue([] as never);
+    const opsAudit = vi.spyOn(opsSettings, 'getAudit').mockResolvedValue([] as never);
+    renderPage({ gatewayUp: true, opsUp: true });
+    await waitFor(() => expect(screen.getByText('API proxy manzili')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('tab', { name: i18n.t('settings.audit') }));
+    await waitFor(() => expect(gwAudit).toHaveBeenCalled());
+    expect(opsAudit).not.toHaveBeenCalled();
   });
 });
