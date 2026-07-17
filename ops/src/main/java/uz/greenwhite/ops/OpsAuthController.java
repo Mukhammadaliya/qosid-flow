@@ -12,7 +12,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
+import uz.greenwhite.qosid.settings.LoginHandoffRepository;
 
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Base64;
 import java.util.Map;
 
 @RestController
@@ -20,7 +25,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OpsAuthController {
 
+    /** One-time handoff token lifetime — long enough for the SPA to poll the gateway up, short enough to be useless if leaked. */
+    static final Duration HANDOFF_TTL = Duration.ofSeconds(60);
+
     private final AdminAuthDao authDao;
+    private final LoginHandoffRepository handoffRepository;
+    private final SecureRandom secureRandom = new SecureRandom();
     private final SecurityContextRepository contextRepository = new HttpSessionSecurityContextRepository();
 
     public record LoginRequest(String username, String password) {}
@@ -50,6 +60,24 @@ public class OpsAuthController {
         if (session != null) session.invalidate();
         SecurityContextHolder.clearContext();
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Mints a one-time login handoff token for the already-authenticated operator
+     * (session + CSRF enforced by OpsSecurityConfig). Only the SHA-256 hash is stored
+     * in the shared H2; the raw token goes to the SPA, which exchanges it for a gateway
+     * session via POST /qosid/admin/api/login-token after the gateway comes back up.
+     */
+    @PostMapping("/handoff")
+    public ResponseEntity<Map<String, String>> handoff() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        byte[] raw = new byte[32];
+        secureRandom.nextBytes(raw);
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
+        handoffRepository.purgeExpired(); // opportunistic housekeeping — dead rows never accumulate
+        handoffRepository.insert(LoginHandoffRepository.sha256Hex(token), auth.getName(),
+                Instant.now().plus(HANDOFF_TTL));
+        return ResponseEntity.ok(Map.of("token", token));
     }
 
     @GetMapping("/me")

@@ -9,6 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 import uz.greenwhite.qosid.settings.AdminAccountRepository;
+import uz.greenwhite.qosid.settings.LoginHandoffRepository;
 import uz.greenwhite.qosid.settings.SettingsCipher;
 import uz.greenwhite.qosid.settings.SettingsRepository;
 
@@ -60,6 +61,12 @@ public class OpsDbConfig {
     @Bean
     public SettingsRepository settingsRepository(JdbcTemplate opsJdbc) {
         return new SettingsRepository(opsJdbc);
+    }
+
+    /** settings-core POJO — one-time login handoff tokens (ops mints, gateway consumes). */
+    @Bean
+    public LoginHandoffRepository loginHandoffRepository(JdbcTemplate opsJdbc) {
+        return new LoginHandoffRepository(opsJdbc);
     }
 
     /**

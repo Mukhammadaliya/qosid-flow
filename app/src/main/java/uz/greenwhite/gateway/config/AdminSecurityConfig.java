@@ -32,7 +32,8 @@ public class AdminSecurityConfig {
         http
             .securityMatcher("/qosid/admin/api/**")
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/qosid/admin/api/login", "/qosid/admin/api/health").permitAll()
+                .requestMatchers("/qosid/admin/api/login", "/qosid/admin/api/login-token",
+                        "/qosid/admin/api/health").permitAll()
                 .anyRequest().authenticated())
             .csrf(csrf -> csrf
                 .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())

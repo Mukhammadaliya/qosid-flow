@@ -8,6 +8,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import uz.greenwhite.qosid.settings.AdminAccount;
 import uz.greenwhite.qosid.settings.AdminAccountRepository;
+import uz.greenwhite.qosid.settings.LoginHandoffRepository;
 import uz.greenwhite.qosid.settings.LoginRateLimiter;
 
 import java.util.Optional;
@@ -19,11 +20,12 @@ import static org.mockito.Mockito.*;
 class AdminAuthServiceTest {
 
     @Mock AdminAccountRepository repo;
+    @Mock LoginHandoffRepository handoffRepo;
 
     private final PasswordEncoder encoder = new BCryptPasswordEncoder();
 
     private AdminAuthService service() {
-        return new AdminAuthService(repo, encoder, new LoginRateLimiter());
+        return new AdminAuthService(repo, encoder, new LoginRateLimiter(), handoffRepo);
     }
 
     @Test

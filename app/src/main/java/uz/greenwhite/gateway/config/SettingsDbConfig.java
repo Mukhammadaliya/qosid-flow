@@ -10,6 +10,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 import uz.greenwhite.qosid.settings.AdminAccountRepository;
+import uz.greenwhite.qosid.settings.LoginHandoffRepository;
 import uz.greenwhite.qosid.settings.LoginRateLimiter;
 import uz.greenwhite.qosid.settings.SettingsCipher;
 import uz.greenwhite.qosid.settings.SettingsRepository;
@@ -78,6 +79,12 @@ public class SettingsDbConfig {
     @Bean
     public LoginRateLimiter loginRateLimiter() {
         return new LoginRateLimiter();
+    }
+
+    /** One-time login handoff tokens (ops mints, gateway consumes — shared login_handoff table). */
+    @Bean
+    public LoginHandoffRepository loginHandoffRepository(@Qualifier("settingsJdbcTemplate") JdbcTemplate jdbc) {
+        return new LoginHandoffRepository(jdbc);
     }
 
     /** Runs settings-schema.sql (idempotent CREATE IF NOT EXISTS). Public for tests. */

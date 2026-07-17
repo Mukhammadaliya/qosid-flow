@@ -22,3 +22,9 @@ CREATE TABLE IF NOT EXISTS admin_account (
     updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login_at TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS login_handoff (
+    token_hash VARCHAR(64)  PRIMARY KEY,
+    username   VARCHAR(100) NOT NULL,
+    expires_at TIMESTAMP    NOT NULL
+);
