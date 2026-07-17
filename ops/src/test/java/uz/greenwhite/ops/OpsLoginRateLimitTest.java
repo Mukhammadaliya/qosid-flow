@@ -84,7 +84,16 @@ class OpsLoginRateLimitTest {
             mvc.perform(login("reset-user", "wrong")).andExpect(status().isUnauthorized());
         }
         mvc.perform(login("reset-user", "s3cret-pass")).andExpect(status().isOk());
-        // counter was reset — the next failure is #1 again, not #5-and-locked
+
+        // A single post-success wrong attempt is 401 whether or not reset happened
+        // (with reset: count 0 -> checkAllowed passes -> 401 -> count becomes 1;
+        //  without reset: count was already 4 -> checkAllowed still passes (4 < 5)
+        //  -> 401 -> count becomes 5), so it can't tell the two cases apart on its own.
+        // The SECOND post-success wrong attempt is where reset and no-reset diverge:
+        //  with reset: checkAllowed sees count 1 (< 5) -> allowed -> 401;
+        //  without reset: checkAllowed sees count 5 (>= 5, still in window) -> 429.
+        // So asserting both post-success attempts are 401 only passes when reset fired.
+        mvc.perform(login("reset-user", "wrong")).andExpect(status().isUnauthorized());
         mvc.perform(login("reset-user", "wrong")).andExpect(status().isUnauthorized());
     }
 }
