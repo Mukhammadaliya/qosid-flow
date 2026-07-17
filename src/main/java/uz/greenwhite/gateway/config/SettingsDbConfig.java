@@ -1,12 +1,13 @@
 package uz.greenwhite.gateway.config;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 
 import javax.sql.DataSource;
@@ -21,15 +22,24 @@ import java.sql.Connection;
 @Configuration
 public class SettingsDbConfig {
 
-    @Bean
+    @Bean(destroyMethod = "close")
     public DataSource settingsDataSource(SettingsProperties props) {
-        DriverManagerDataSource ds = new DriverManagerDataSource();
-        ds.setDriverClassName("org.h2.Driver");
         String path = props.getDbPath();
         String autoServer = path.startsWith("mem:") ? "" : ";AUTO_SERVER=TRUE";
-        ds.setUrl("jdbc:h2:" + path + ";MODE=LEGACY" + autoServer);
-        ds.setUsername("sa");
-        ds.setPassword("");
+        HikariConfig cfg = new HikariConfig();
+        cfg.setPoolName("settings-h2");
+        cfg.setDriverClassName("org.h2.Driver");
+        cfg.setJdbcUrl("jdbc:h2:" + path + ";MODE=LEGACY" + autoServer);
+        cfg.setUsername("sa");
+        cfg.setPassword("");
+        // Pool with a permanently-held connection pins the H2 AUTO_SERVER role to this JVM:
+        // the ops sidecar then always attaches as a TCP client, and the server role never
+        // thrashes between the two JVMs (which made concurrent access — e.g. the SPA's
+        // parallel login POSTs — transiently fail with "Failed to obtain JDBC Connection").
+        cfg.setMinimumIdle(1);
+        cfg.setMaximumPoolSize(5);
+        cfg.setMaxLifetime(0); // embedded DB, nothing server-side to age out — keep the pin permanent
+        HikariDataSource ds = new HikariDataSource(cfg);
         // Init schema HERE, inside the DataSource bean, so it exists before ANY
         // consumer (SettingsService @PostConstruct, repositories) touches the DB.
         // A separate init bean has undefined ordering vs SettingsService — bug.

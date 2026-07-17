@@ -279,3 +279,20 @@ logging:
     org.apache.kafka.clients.Metadata: INFO
   pattern:
     console: "%d{HH:mm:ss.SSS} %-5level [%15.15thread] %-40.40logger{39} : %msg%n"
+---
+# DEV-ONLY hujjat: lokal ops-local-stop.cmd POST /actuator/shutdown bilan graceful to'xtatishi uchun.
+# Windows'da console-siz JVM'ga SIGTERM yuborib bo'lmaydi (Stop-Process -Force = hech qanday
+# shutdown-hook ishlamaydi). Prod'da bu profil FAOL EMAS — systemctl SIGTERM yuboradi va
+# server.shutdown: graceful o'zi ishlaydi; shutdown endpoint prod'da yopiq qoladi.
+spring:
+  config:
+    activate:
+      on-profile: dev
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,shutdown
+  endpoint:
+    shutdown:
+      enabled: true
