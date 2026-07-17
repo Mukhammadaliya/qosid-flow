@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { api, setUnauthorizedHandler } from '../api/client';
-import { opsLogin, opsLogout, opsMe } from '../api/ops';
+import { opsLogin, opsLogout, opsMe, requestHandoff } from '../api/ops';
 
 export interface RefreshOptions { silent?: boolean; }
 
@@ -18,6 +18,10 @@ interface AuthState {
   /** opts.silent skips the loading flag flip so RequireAuth's spinner doesn't unmount the
    * current page (used by the 401 interceptor and by background up/down transition checks). */
   refresh: (opts?: RefreshOptions) => Promise<void>;
+  /** Avto-ulanish after a gateway start: mint a one-time token from ops and exchange it for a
+   * gateway session, then silently re-probe. Any failure is swallowed — worst case the user
+   * stays in degraded mode exactly as before this hook existed. */
+  attemptHandoff: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthState>(null as unknown as AuthState);
@@ -80,6 +84,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await refresh();
   }, [refresh]);
 
+  const attemptHandoff = useCallback(async () => {
+    try {
+      const { data } = await requestHandoff();
+      await api.post(`${BASE}/login-token`, { token: data.token });
+    } catch {
+      // Jim: ops sessiya yo'q / token rad etildi — quyidagi re-probe degraded holatni saqlaydi.
+    }
+    await refresh({ silent: true });
+  }, [refresh]);
+
   const logout = useCallback(async () => {
     await Promise.allSettled([api.post(`${BASE}/logout`), opsLogout()]);
     setUser(null);
@@ -96,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => { refresh(); }, [refresh]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, gatewayUp, opsUp, gatewayAuthExpired, login, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, gatewayUp, opsUp, gatewayAuthExpired, login, logout, refresh, attemptHandoff }}>
       {children}
     </AuthContext.Provider>
   );

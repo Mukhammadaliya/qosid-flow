@@ -22,11 +22,14 @@ class FakeEventSource {
 beforeEach(() => { vi.stubGlobal('EventSource', FakeEventSource as unknown as typeof EventSource); FakeEventSource.instances = []; });
 afterEach(() => { vi.unstubAllGlobals(); });
 
-function renderOpsPage(refresh: () => Promise<void> = vi.fn()) {
+function renderOpsPage(
+  refresh: () => Promise<void> = vi.fn(),
+  attemptHandoff: () => Promise<void> = vi.fn(),
+) {
   return render(
     <AuthContext.Provider value={{
       user: 'admin', loading: false, gatewayUp: true, opsUp: true, gatewayAuthExpired: false,
-      login: async () => {}, logout: async () => {}, refresh,
+      login: async () => {}, logout: async () => {}, refresh, attemptHandoff,
     }}>
       <OpsPage />
     </AuthContext.Provider>,
@@ -83,6 +86,35 @@ describe('OpsPage', () => {
       expect(getOpsStatus).toHaveBeenCalledTimes(3);
       expect(refresh).toHaveBeenCalledTimes(1);
       expect(refresh).toHaveBeenCalledWith({ silent: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Task 9: a down→up transition triggers attemptHandoff (avto-ulanish), not a bare refresh', async () => {
+    vi.useFakeTimers();
+    try {
+      (getOpsStatus as Mock)
+        .mockReset()
+        .mockResolvedValueOnce({ data: { up: false } })
+        .mockResolvedValue({ data: { up: true } });
+      const refresh = vi.fn().mockResolvedValue(undefined);
+      const attemptHandoff = vi.fn().mockResolvedValue(undefined);
+
+      renderOpsPage(refresh, attemptHandoff);
+
+      // Mount tick: down, no prior value -> nothing fires.
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(attemptHandoff).not.toHaveBeenCalled();
+
+      // Next tick: down→up — auto-reconnect via handoff (which does its own silent refresh).
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(attemptHandoff).toHaveBeenCalledTimes(1);
+      expect(refresh).not.toHaveBeenCalled();
+
+      // Further up ticks: no new transition, no repeat handoff.
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(attemptHandoff).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }

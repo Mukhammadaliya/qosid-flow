@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { opsApi } from './ops';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { opsApi, requestHandoff } from './ops';
 
 describe('opsApi CSRF interceptor', () => {
   beforeEach(() => { document.cookie = 'OPS-XSRF-TOKEN=tok123'; });
@@ -19,5 +19,15 @@ describe('opsApi CSRF interceptor', () => {
     };
     const config = handler.handlers[0].fulfilled({ headers: {} });
     expect(config.headers['X-XSRF-TOKEN']).toBeUndefined();
+  });
+});
+
+describe('requestHandoff', () => {
+  it('posts to /ops/api/handoff and returns the one-time token', async () => {
+    const post = vi.spyOn(opsApi, 'post').mockResolvedValue({ data: { token: 't-abc' } } as never);
+    const r = await requestHandoff();
+    expect(post).toHaveBeenCalledWith('/ops/api/handoff');
+    expect(r.data.token).toBe('t-abc');
+    post.mockRestore();
   });
 });

@@ -14,7 +14,7 @@ function is401(err: unknown): boolean {
 
 export function OpsPage() {
   const { t } = useTranslation();
-  const { refresh } = useAuth();
+  const { refresh, attemptHandoff } = useAuth();
   const [up, setUp] = useState<boolean | null>(null); // null = hali noma'lum
   const [busy, setBusy] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -33,10 +33,15 @@ export function OpsPage() {
         if (!alive) return;
         const next = r.data.up;
         setUp(next);
-        // Only re-probe auth on an observed up/down TRANSITION, never on every tick — otherwise
+        // Only react on an observed up/down TRANSITION, never on every tick — otherwise
         // gatewayUp/the banner/nav gating never catch up with a gateway that restarted mid-session.
+        // down→up: avto-ulanish (handoff token -> gateway session, own silent re-probe inside);
+        // up→down: plain silent re-probe so nav gating flips to degraded mode.
         const prev = prevUpRef.current;
-        if (prev !== null && prev !== next) refresh({ silent: true });
+        if (prev !== null && prev !== next) {
+          if (next) attemptHandoff();
+          else refresh({ silent: true });
+        }
         prevUpRef.current = next;
       } catch (err) {
         if (!alive) return;
@@ -47,7 +52,7 @@ export function OpsPage() {
     tick();
     const id = setInterval(tick, POLL_MS);
     return () => { alive = false; clearInterval(id); };
-  }, [refresh, t]);
+  }, [refresh, attemptHandoff, t]);
 
   // Jonli log (SSE). EventSource uzilganda o'zi qayta ulanadi.
   useEffect(() => {

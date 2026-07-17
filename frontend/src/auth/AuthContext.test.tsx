@@ -2,12 +2,13 @@ import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { AuthProvider, useAuth } from './AuthContext';
 import { api } from '../api/client';
-import { opsLogin, opsMe } from '../api/ops';
+import { opsLogin, opsMe, requestHandoff } from '../api/ops';
 
 vi.mock('../api/ops', () => ({
   opsLogin: vi.fn(),
   opsLogout: vi.fn().mockResolvedValue(undefined),
   opsMe: vi.fn(),
+  requestHandoff: vi.fn(),
 }));
 
 const BASE = '/qosid/admin/api';
@@ -217,5 +218,72 @@ describe('AuthProvider', () => {
     await waitFor(() => expect(auth?.loading).toBe(false));
 
     await expect(auth!.login('admin', 'admin')).rejects.toThrow('down');
+  });
+
+  // Task 9 (D-loyiha): avto-ulanish — ops handoff token -> gateway login-token -> silent re-probe.
+  describe('attemptHandoff', () => {
+    it('handoff + login-token succeed -> session established, gatewayUp true after re-probe', async () => {
+      // Gateway starts session-less (down-from-auth-perspective); the login-token call
+      // "creates" the session, after which the /me re-probe succeeds.
+      let gatewaySession = false;
+      vi.spyOn(api, 'get').mockImplementation((url: string) => {
+        if (url.endsWith('/health')) return Promise.resolve({ data: {} } as never);
+        return gatewaySession
+          ? Promise.resolve({ data: { username: 'admin' } } as never)
+          : Promise.reject(axios401);
+      });
+      const post = vi.spyOn(api, 'post').mockImplementation((url: string) => {
+        if (url.endsWith('/login-token')) {
+          gatewaySession = true;
+          return Promise.resolve({ data: { username: 'admin', status: 'AUTHENTICATED' } } as never);
+        }
+        return Promise.resolve({ data: {} } as never);
+      });
+      (opsMe as Mock).mockResolvedValue({ data: { user: 'admin' } });
+      (requestHandoff as Mock).mockResolvedValue({ data: { token: 't-one-time' } });
+
+      let auth: ReturnType<typeof useAuth> | undefined;
+      function Capture() {
+        auth = useAuth();
+        return null;
+      }
+      render(<AuthProvider><Capture /></AuthProvider>);
+      await waitFor(() => expect(auth?.loading).toBe(false));
+      expect(auth!.gatewayUp).toBe(false);
+
+      await act(async () => { await auth!.attemptHandoff(); });
+
+      expect(post).toHaveBeenCalledWith(`${BASE}/login-token`, { token: 't-one-time' });
+      expect(auth!.gatewayUp).toBe(true);
+      expect(auth!.user).toBe('admin');
+    });
+
+    it('handoff rejected -> login-token never called, error swallowed, still re-probes', async () => {
+      let meCalls = 0;
+      vi.spyOn(api, 'get').mockImplementation((url: string) => {
+        if (url.endsWith('/health')) return Promise.resolve({ data: {} } as never);
+        meCalls++;
+        return Promise.reject(axiosDown);
+      });
+      const post = vi.spyOn(api, 'post').mockResolvedValue({ data: {} } as never);
+      (opsMe as Mock).mockResolvedValue({ data: { user: 'admin' } });
+      (requestHandoff as Mock).mockRejectedValue(axios401);
+
+      let auth: ReturnType<typeof useAuth> | undefined;
+      function Capture() {
+        auth = useAuth();
+        return null;
+      }
+      render(<AuthProvider><Capture /></AuthProvider>);
+      await waitFor(() => expect(auth?.loading).toBe(false));
+      const callsBefore = meCalls;
+
+      // Must resolve (no throw) even though the handoff itself 401'd.
+      await act(async () => { await auth!.attemptHandoff(); });
+
+      expect(post).not.toHaveBeenCalled();
+      expect(meCalls).toBeGreaterThan(callsBefore); // re-probe still happened
+      expect(auth!.user).toBe('admin'); // ops session keeps the user in degraded mode
+    });
   });
 });

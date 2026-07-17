@@ -6,7 +6,7 @@ import { AuthContext } from './AuthContext';
 
 function renderWithUser(user: string | null) {
   return render(
-    <AuthContext.Provider value={{ user, loading: false, gatewayUp: true, opsUp: true, gatewayAuthExpired: false, login: async () => {}, logout: async () => {}, refresh: async () => {} }}>
+    <AuthContext.Provider value={{ user, loading: false, gatewayUp: true, opsUp: true, gatewayAuthExpired: false, login: async () => {}, logout: async () => {}, refresh: async () => {}, attemptHandoff: async () => {} }}>
       <MemoryRouter initialEntries={['/secret']}>
         <Routes>
           <Route path="/login" element={<div>login-page</div>} />

@@ -26,3 +26,5 @@ export const opsMe = () => opsApi.get<{ user: string }>(`${BASE}/me`);
 export const getOpsStatus = () => opsApi.get<{ up: boolean }>(`${BASE}/status`);
 export const startGateway = () => opsApi.post<ControlResult>(`${BASE}/start`);
 export const stopGateway = () => opsApi.post<ControlResult>(`${BASE}/stop`);
+/** One-time login handoff token (60s TTL) — exchanged for a gateway session via /login-token. */
+export const requestHandoff = () => opsApi.post<{ token: string }>(`${BASE}/handoff`);
