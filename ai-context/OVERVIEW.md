@@ -76,8 +76,9 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 ## Repository Structure
 
 ```
-qosid-flow/
-  src/main/java/uz/greenwhite/gateway/   # Application source code
+qosid-flow/                              # Maven reactor (qosid-parent): settings-core + app + ops
+  settings-core/                         # Shared settings module (qosid-settings-core, plain JAR)
+  app/src/main/java/uz/greenwhite/gateway/   # Gateway application source code
     api/             # REST API layer (ProxyController, StatusController, CallbackController)
     auth/            # Pluggable authorization SPI
     callback/        # Outbound callback dispatch with retry
@@ -98,9 +99,10 @@ qosid-flow/
     storage/         # RocksDB response body storage
     concurrency/     # Dynamic concurrency scaling
     validation/      # Request validation
-  src/main/resources/
+  app/src/main/resources/
     application.yml      # All configuration with env var overrides
     logback-spring.xml   # Logging configuration
+  ops/                   # Ops console sidecar (qosid-ops, separate JVM :8092)
   infrastructure/        # Docker monitoring stack configs
     prometheus/          # Prometheus scrape config + alert rules
     alertmanager/        # AlertManager configuration
@@ -108,7 +110,7 @@ qosid-flow/
   .github/workflows/     # CI/CD: build JAR + create GitHub Release
   ai-context/            # AI tool documentation (this folder)
   docker-compose.yml     # Local dev: RedPanda, Redis, Prometheus, Grafana
-  pom.xml                # Maven dependencies
+  pom.xml                # Root aggregator pom (qosid-parent); module poms in settings-core/, app/, ops/
   VERSION.md             # Version number (triggers CI/CD release)
   README.md              # Human-readable documentation
 ```
@@ -116,14 +118,14 @@ qosid-flow/
 ## Quick Commands
 
 ```bash
-# Build
+# Build (root'da — reactor: core+app+ops)
 mvn clean package -DskipTests
 
 # Run locally
-mvn spring-boot:run
+mvn spring-boot:run -pl app
 
 # Run with dev profile (enables TestController)
-mvn spring-boot:run -Dspring-boot.run.profiles=dev
+mvn spring-boot:run -pl app -Dspring-boot.run.profiles=dev
 
 # Start infrastructure (Kafka, Redis, Prometheus, Grafana)
 docker-compose up -d

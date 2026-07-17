@@ -40,7 +40,7 @@ build/
 
 ### Runtime data ###
 data/
-/logs/
+logs/
 tools/s3-mock/s3-data/
 
 frontend/node_modules

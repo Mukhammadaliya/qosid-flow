@@ -713,7 +713,7 @@ docker exec -it redis redis-cli ping
 ./mvnw clean package -DskipTests
 
 # Run in development mode
-java -jar target/*.jar --spring.profiles.active=dev
+java -jar app/target/qosid-flow-*.jar --spring.profiles.active=dev
 
 # Run in production mode
 export SPRING_PROFILE=prod
@@ -723,7 +723,7 @@ export SOURCE_BASE_URL=http://oracle-server:8080/app
 export SOURCE_USERNAME=admin
 export SOURCE_PASSWORD=secure_password
 # ... (see .env.example for all variables)
-java -jar target/*.jar --spring.profiles.active=prod
+java -jar app/target/qosid-flow-*.jar --spring.profiles.active=prod
 ```
 
 ### 8.7 Verify Startup

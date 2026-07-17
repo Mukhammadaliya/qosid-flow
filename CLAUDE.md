@@ -74,9 +74,9 @@ Pluggable auth: implement `AuthorizationProvider` — the default `NoOpAuthoriza
 ## Quick Commands
 
 ```bash
-mvn clean package -DskipTests        # Build JAR
-mvn spring-boot:run                   # Run locally
-mvn spring-boot:run -Dspring-boot.run.profiles=dev  # Run with test endpoints
+mvn clean package -DskipTests        # Build JAR (root'da — reactor: core+app+ops)
+mvn spring-boot:run -pl app           # Run locally
+mvn spring-boot:run -pl app -Dspring-boot.run.profiles=dev  # Run with test endpoints
 docker-compose up -d                  # Start infrastructure (Kafka, Redis, Prometheus, Grafana)
 docker-compose down                   # Stop infrastructure
 ```
