@@ -8,6 +8,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
+import uz.greenwhite.gateway.settings.SettingsService;
 
 import java.util.Map;
 
@@ -30,6 +31,7 @@ class AdminApiIntegrationTest {
 
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper om;
+    @Autowired SettingsService settingsService;
 
     private MockHttpSession login() throws Exception {
         var result = mvc.perform(post("/qosid/admin/api/login")
@@ -47,17 +49,19 @@ class AdminApiIntegrationTest {
     }
 
     @Test
-    void loginThenReadAndWriteSettings() throws Exception {
+    void loginThenReadSettingsButWriteIsBlocked() throws Exception {
         MockHttpSession session = login();
 
         mvc.perform(get("/qosid/admin/api/settings").session(session))
                 .andExpect(status().isOk());
 
+        // Stop-to-edit: the running service refuses all settings writes.
         mvc.perform(put("/qosid/admin/api/settings/gateway.retry.max-attempts")
                         .session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("value", "5", "secret", false))))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("stop-required"));
 
         mvc.perform(get("/qosid/admin/api/settings/audit").session(session))
                 .andExpect(status().isOk());
@@ -67,13 +71,11 @@ class AdminApiIntegrationTest {
     void auditRowsUseLowercaseJsonKeys() throws Exception {
         // H2 upper-cases unquoted column labels; the frontend audit table binds to lowercase
         // dataIndex keys ('skey', 'old_value', ...) — the API must preserve them.
+        // Seeded through the service (the internal write path migration/ops use) because
+        // the HTTP write surface is stop-to-edit blocked.
         MockHttpSession session = login();
 
-        mvc.perform(put("/qosid/admin/api/settings/gateway.retry.max-attempts")
-                        .session(session).with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(om.writeValueAsString(Map.of("value", "7", "secret", false))))
-                .andExpect(status().isNoContent());
+        settingsService.set("gateway.retry.max-attempts", "7", false, "admin");
 
         mvc.perform(get("/qosid/admin/api/settings/audit").session(session))
                 .andExpect(status().isOk())

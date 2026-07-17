@@ -1,10 +1,9 @@
 package uz.greenwhite.gateway.admin;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-import uz.greenwhite.gateway.admin.dto.AiConfigRequest;
 import uz.greenwhite.gateway.ai.AiAnalysisResult;
 import uz.greenwhite.gateway.ai.AiAnalysisService;
 import uz.greenwhite.gateway.ai.AiAnalyzeRequest;
@@ -15,7 +14,9 @@ import java.util.Map;
 
 /**
  * Opt-in AI error analysis, under the /qosid/admin/api/** session-auth chain.
- * All responses are 200 (never 500) — analysis failures ride in the result's error field.
+ * Status/analyze/config-read are 200 (never 500) — analysis failures ride in the
+ * result's error field. Stop-to-edit: the config write is refused on the running
+ * service (409 stop-required) — editing happens via the ops sidecar while stopped.
  */
 @RestController
 @RequestMapping("/qosid/admin/api/ai")
@@ -45,19 +46,12 @@ public class AiController {
         return ResponseEntity.ok(out);
     }
 
+    /**
+     * Stop-to-edit: the running service refuses ALL settings writes. AI config is
+     * edited only while the service is stopped, via the ops sidecar settings API.
+     */
     @PutMapping("/config")
-    public ResponseEntity<Void> putConfig(@RequestBody AiConfigRequest req) {
-        String admin = SecurityContextHolder.getContext().getAuthentication().getName();
-        settings.set("gateway.ai.base-url", nullToEmpty(req.getBaseUrl()), false, admin);
-        settings.set("gateway.ai.model", nullToEmpty(req.getModel()), false, admin);
-        // Only persist the key when a new (non-mask) value is supplied.
-        if (req.getApiKey() != null && !req.getApiKey().isBlank() && !MASK.equals(req.getApiKey())) {
-            settings.set("gateway.ai.api-key", req.getApiKey(), true, admin);
-        }
-        return ResponseEntity.noContent().build();
-    }
-
-    private static String nullToEmpty(String s) {
-        return s == null ? "" : s;
+    public ResponseEntity<Map<String, String>> putConfig() {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "stop-required"));
     }
 }

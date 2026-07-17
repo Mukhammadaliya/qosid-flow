@@ -2,16 +2,14 @@ package uz.greenwhite.gateway.admin;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.env.Environment;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-import uz.greenwhite.gateway.admin.dto.SettingUpdateRequest;
 import uz.greenwhite.gateway.admin.dto.SettingsRegistryResponse;
 import uz.greenwhite.gateway.settings.SettingsService;
 import uz.greenwhite.qosid.settings.SettingsRecord;
 import uz.greenwhite.qosid.settings.SettingsRegistry;
-import uz.greenwhite.qosid.settings.SettingsRegistry.EffectClass;
 
 import java.util.List;
 import java.util.Map;
@@ -44,7 +42,7 @@ public class SettingsController {
                             m.effectClass().name(), display, m.secret());
                 })
                 .toList();
-        return ResponseEntity.ok(new SettingsRegistryResponse(items, settingsService.isRestartPending()));
+        return ResponseEntity.ok(new SettingsRegistryResponse(items));
     }
 
     @GetMapping
@@ -52,29 +50,14 @@ public class SettingsController {
         return ResponseEntity.ok(settingsService.getAllMasked());
     }
 
+    /**
+     * Stop-to-edit: the running service refuses ALL settings writes. Settings are
+     * edited only while the service is stopped, via the ops sidecar settings API.
+     * The SPA matches this exact JSON shape.
+     */
     @PutMapping("/{key}")
-    public ResponseEntity<Void> update(@PathVariable String key, @RequestBody SettingUpdateRequest req) {
-        // Allowlist: only editable registry keys (LIVE/REQUIRES_RESTART) may be written.
-        // Rejects both READ_ONLY infra keys AND unknown keys (e.g. a hand-crafted PUT of
-        // spring.kafka.bootstrap-servers), which would otherwise be injected into the
-        // Environment on next boot. Source-auth/AI keys have their own endpoints.
-        if (!SettingsRegistry.isEditable(key)) {
-            throw new IllegalArgumentException("Setting '" + key + "' is not editable");
-        }
-        if ("gateway.tenant.field-name".equals(key)
-                && (req.getValue() == null || req.getValue().isBlank())) {
-            throw new IllegalArgumentException("gateway.tenant.field-name must not be blank");
-        }
-        if ("gateway.tenant.default-rest-tenant".equals(key)) {
-            try { Long.parseLong(req.getValue().trim()); }
-            catch (Exception e) { throw new IllegalArgumentException("default-rest-tenant must be numeric"); }
-        }
-        String admin = SecurityContextHolder.getContext().getAuthentication().getName();
-        settingsService.set(key, req.getValue(), req.isSecret(), admin);
-        if (SettingsRegistry.effectClassOf(key) == EffectClass.REQUIRES_RESTART) {
-            settingsService.markRestartPending();
-        }
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<Map<String, String>> update(@PathVariable String key) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "stop-required"));
     }
 
     @GetMapping("/audit")

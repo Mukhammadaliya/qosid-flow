@@ -2,10 +2,9 @@ package uz.greenwhite.gateway.admin;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-import uz.greenwhite.gateway.admin.dto.SourceAuthRequest;
 import uz.greenwhite.gateway.settings.SettingsService;
 import uz.greenwhite.gateway.source.SourceAuthService;
 import uz.greenwhite.gateway.source.SourceTokenService;
@@ -14,10 +13,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Admin management of the source-channel outbound auth (Biruni pull/save).
- * Secrets are stored AES-encrypted and masked on read. The test endpoint never calls the
- * Biruni pull endpoint — it consumes pending production requests, so a live GET there would
- * discard real work as a side effect.
+ * Admin view + diagnostics of the source-channel outbound auth (Biruni pull/save).
+ * Stop-to-edit: config writes are refused on the running service (409 stop-required) —
+ * editing happens via the ops sidecar while the service is stopped. Secrets are masked
+ * on read. The test endpoint never calls the Biruni pull endpoint — it consumes pending
+ * production requests, so a live GET there would discard real work as a side effect.
  */
 @Slf4j
 @RestController
@@ -46,58 +46,13 @@ public class SourceAuthController {
         return ResponseEntity.ok(out);
     }
 
+    /**
+     * Stop-to-edit: the running service refuses ALL settings writes. Source-auth is
+     * edited only while the service is stopped, via the ops sidecar settings API.
+     */
     @PutMapping
-    public ResponseEntity<Void> put(@RequestBody SourceAuthRequest req) {
-        String type = req.getType() == null ? "" : req.getType().toLowerCase();
-        String admin = SecurityContextHolder.getContext().getAuthentication().getName();
-        switch (type) {
-            case "basic" -> {
-                requireNonBlank(req.getBasicUsername(), "basicUsername");
-                boolean hasStoredPassword = !settings.get("gateway.source.auth.basic.password", "").isBlank();
-                if (!hasStoredPassword) {
-                    // I2: no password row exists yet — a username-only save would silently
-                    // break live auth (empty-password Basic header). Require one up front.
-                    requireNonBlank(req.getBasicPassword(), "basicPassword");
-                }
-                set("gateway.source.auth.basic.username", req.getBasicUsername(), false, admin);
-                if (req.getBasicPassword() != null && !req.getBasicPassword().isBlank()) {
-                    setSecret("gateway.source.auth.basic.password", req.getBasicPassword(), admin);
-                }
-            }
-            case "apikey" -> {
-                requireNonBlank(req.getApikeyHeader(), "apikeyHeader");
-                boolean hasStoredApikey = !settings.get("gateway.source.auth.apikey.value", "").isBlank();
-                if (!hasStoredApikey) {
-                    // Same keep-stored-secret semantics as the basic branch: the UI sends no
-                    // apikeyValue when the admin leaves the masked field untouched.
-                    requireNonBlank(req.getApikeyValue(), "apikeyValue");
-                }
-                set("gateway.source.auth.apikey.header", req.getApikeyHeader(), false, admin);
-                if (req.getApikeyValue() != null && !req.getApikeyValue().isBlank()) {
-                    setSecret("gateway.source.auth.apikey.value", req.getApikeyValue(), admin);
-                }
-            }
-            case "oauth2" -> {
-                requireNonBlank(req.getOauth2TokenUrl(), "oauth2TokenUrl");
-                requireNonBlank(req.getOauth2ClientId(), "oauth2ClientId");
-                boolean hasStoredClientSecret = !settings.get("gateway.source.auth.oauth2.client-secret", "").isBlank();
-                if (!hasStoredClientSecret) {
-                    // Keep-stored-secret: only require a client secret when none exists yet.
-                    requireNonBlank(req.getOauth2ClientSecret(), "oauth2ClientSecret");
-                }
-                requireNumericIfPresent(req.getOauth2CacheTtlSeconds(), "oauth2CacheTtlSeconds");
-                set("gateway.source.auth.oauth2.token-url", req.getOauth2TokenUrl(), false, admin);
-                set("gateway.source.auth.oauth2.client-id", req.getOauth2ClientId(), false, admin);
-                if (req.getOauth2ClientSecret() != null && !req.getOauth2ClientSecret().isBlank()) {
-                    setSecret("gateway.source.auth.oauth2.client-secret", req.getOauth2ClientSecret(), admin);
-                }
-                set("gateway.source.auth.oauth2.scope", nullToEmpty(req.getOauth2Scope()), false, admin);
-                set("gateway.source.auth.oauth2.cache-ttl-seconds", nullToEmpty(req.getOauth2CacheTtlSeconds()), false, admin);
-            }
-            default -> throw new IllegalArgumentException("type must be basic|apikey|oauth2");
-        }
-        set("gateway.source.auth.type", type, false, admin);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<Map<String, String>> put() {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "stop-required"));
     }
 
     /**
@@ -135,40 +90,5 @@ public class SourceAuthController {
 
     private String maskIfPresent(String key) {
         return settings.get(key, "").isBlank() ? "" : MASK;
-    }
-
-    private void set(String key, String value, boolean secret, String admin) {
-        settings.set(key, value, secret, admin);
-    }
-
-    /**
-     * Minor(a): {@link SettingsService#set} throws {@link IllegalStateException} when asked
-     * to store a secret with encryption disabled. Left uncaught that maps to a 500; rethrow
-     * as {@link IllegalArgumentException} so the global handler maps it to 400 with a clear cause.
-     */
-    private void setSecret(String key, String value, String admin) {
-        try {
-            settings.set(key, value, true, admin);
-        } catch (IllegalStateException e) {
-            throw new IllegalArgumentException("encryption not configured — set SETTINGS_ENCRYPTION_KEY", e);
-        }
-    }
-
-    private static void requireNonBlank(String v, String name) {
-        if (v == null || v.isBlank()) throw new IllegalArgumentException(name + " must not be blank");
-    }
-
-    /** Minor(b): oauth2CacheTtlSeconds is optional, but if present it must parse as a long. */
-    private static void requireNumericIfPresent(String v, String name) {
-        if (v == null || v.isBlank()) return;
-        try {
-            Long.parseLong(v.trim());
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(name + " must be numeric");
-        }
-    }
-
-    private static String nullToEmpty(String s) {
-        return s == null ? "" : s;
     }
 }

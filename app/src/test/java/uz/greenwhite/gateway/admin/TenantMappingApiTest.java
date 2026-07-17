@@ -37,13 +37,16 @@ class TenantMappingApiTest {
     }
 
     @Test
-    void blankTenantFieldNameRejected() throws Exception {
+    void tenantFieldNameWriteBlockedWith409() throws Exception {
+        // Stop-to-edit: the tenant field-name is written via the generic settings PUT,
+        // which the running service always refuses (edited via the ops sidecar instead).
         MockHttpSession s = login();
         mvc.perform(put("/qosid/admin/api/settings/gateway.tenant.field-name")
                         .session(s).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(Map.of("value", "", "secret", false))))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("stop-required"));
     }
 
     @Test

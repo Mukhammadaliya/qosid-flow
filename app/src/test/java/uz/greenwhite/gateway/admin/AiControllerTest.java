@@ -24,6 +24,11 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+/**
+ * Stop-to-edit: PUT /ai/config is refused on the running service (409) — config is
+ * edited via the ops sidecar while stopped. GET /status, GET /config (masked) and
+ * POST /analyze stay live. Config for read assertions is seeded through SettingsService.
+ */
 @SpringBootTest(properties = {
         "gateway.polling.enabled=false",
         "spring.kafka.listener.auto-startup=false",
@@ -53,10 +58,10 @@ class AiControllerTest {
     @Order(2)
     @WithMockUser(roles = "ADMIN")
     void configMasksStoredApiKey() throws Exception {
-        mvc.perform(put("/qosid/admin/api/ai/config").with(csrf())
-                        .contentType("application/json")
-                        .content("{\"baseUrl\":\"https://llm.example/v1\",\"apiKey\":\"sk-x\",\"model\":\"gpt-4o-mini\"}"))
-                .andExpect(status().isNoContent());
+        settingsService.set("gateway.ai.base-url", "https://llm.example/v1", false, "test");
+        settingsService.set("gateway.ai.model", "gpt-4o-mini", false, "test");
+        settingsService.set("gateway.ai.api-key", "sk-x", true, "test");
+
         mvc.perform(get("/qosid/admin/api/ai/config"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.apiKey").value("***"))
@@ -68,19 +73,16 @@ class AiControllerTest {
     @Test
     @Order(3)
     @WithMockUser(roles = "ADMIN")
-    void maskedApiKeyDoesNotOverwriteStoredKey() throws Exception {
+    void putConfigReturns409StopRequiredAndDoesNotWrite() throws Exception {
+        settingsService.set("gateway.ai.api-key", "sk-first", true, "test");
+
         mvc.perform(put("/qosid/admin/api/ai/config").with(csrf())
                         .contentType("application/json")
-                        .content("{\"baseUrl\":\"https://llm.example/v1\",\"apiKey\":\"sk-first\",\"model\":\"gpt-4o-mini\"}"))
-                .andExpect(status().isNoContent());
-        mvc.perform(put("/qosid/admin/api/ai/config").with(csrf())
-                        .contentType("application/json")
-                        .content("{\"baseUrl\":\"https://llm.example/v1\",\"apiKey\":\"***\",\"model\":\"gpt-4o-mini\"}"))
-                .andExpect(status().isNoContent());
+                        .content("{\"baseUrl\":\"https://other.example/v1\",\"apiKey\":\"sk-evil\",\"model\":\"m\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("stop-required"));
+
         assertThat(settingsService.getSecret("gateway.ai.api-key", "")).isEqualTo("sk-first");
-        mvc.perform(get("/qosid/admin/api/ai/config"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.apiKey").value("***"));
     }
 
     @Test
