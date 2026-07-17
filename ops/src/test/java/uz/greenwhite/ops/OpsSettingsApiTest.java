@@ -149,6 +149,60 @@ class OpsSettingsApiTest {
     }
 
     @Test
+    void putCreatesDbManagedSecretWithNoPreexistingRow() throws Exception {
+        // Fresh install: oauth2 source-auth keys have no settings row until first save.
+        // Db-managed secret key must be created (encrypted, secret=true), not rejected.
+        when(status.isUp()).thenReturn(false);
+        OpsSession s = login();
+        mvc.perform(authedPut(s, "gateway.source.auth.oauth2.client-secret", "s3cr3t"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SAVED"));
+        String stored = opsJdbc.queryForObject(
+                "SELECT svalue FROM settings WHERE skey = ?", String.class,
+                "gateway.source.auth.oauth2.client-secret");
+        assertThat(stored).isNotEqualTo("s3cr3t");
+        assertThat(testCipher.decrypt(stored)).isEqualTo("s3cr3t");
+        Boolean secretFlag = opsJdbc.queryForObject(
+                "SELECT secret FROM settings WHERE skey = ?", Boolean.class,
+                "gateway.source.auth.oauth2.client-secret");
+        assertThat(secretFlag).isTrue();
+        // audit must never leak the secret
+        String auditNew = opsJdbc.queryForObject(
+                "SELECT new_value FROM settings_audit WHERE skey = ?", String.class,
+                "gateway.source.auth.oauth2.client-secret");
+        assertThat(auditNew).isEqualTo("***");
+    }
+
+    @Test
+    void putCreatesDbManagedPlainKeyWithNoPreexistingRow() throws Exception {
+        when(status.isUp()).thenReturn(false);
+        OpsSession s = login();
+        mvc.perform(authedPut(s, "gateway.source.auth.oauth2.token-url", "https://idp/token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SAVED"));
+        String stored = opsJdbc.queryForObject(
+                "SELECT svalue FROM settings WHERE skey = ?", String.class,
+                "gateway.source.auth.oauth2.token-url");
+        assertThat(stored).isEqualTo("https://idp/token");
+        Boolean secretFlag = opsJdbc.queryForObject(
+                "SELECT secret FROM settings WHERE skey = ?", Boolean.class,
+                "gateway.source.auth.oauth2.token-url");
+        assertThat(secretFlag).isFalse();
+    }
+
+    @Test
+    void putTrulyUnknownKeyStill400() throws Exception {
+        when(status.isUp()).thenReturn(false);
+        OpsSession s = login();
+        mvc.perform(authedPut(s, "foo.bar", "x"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("unknown-key"));
+        Integer count = opsJdbc.queryForObject(
+                "SELECT COUNT(*) FROM settings WHERE skey = ?", Integer.class, "foo.bar");
+        assertThat(count).isZero();
+    }
+
+    @Test
     void putReadOnlyKey400() throws Exception {
         when(status.isUp()).thenReturn(false);
         OpsSession s = login();
@@ -215,5 +269,35 @@ class OpsSettingsNoCipherTest {
         String stored = opsJdbc.queryForObject(
                 "SELECT svalue FROM settings WHERE skey = ?", String.class, "gateway.source.auth.basic.password");
         assertThat(stored).isEqualTo("whatever");
+    }
+
+    @Test
+    void putDbManagedSecretWithoutKeyAndNoRow400() throws Exception {
+        // First-time creation of a db-managed SECRET key still requires the cipher —
+        // never silently store a secret in plaintext.
+        opsJdbc.update("DELETE FROM settings");
+        opsJdbc.update("DELETE FROM admin_account");
+        opsJdbc.update("INSERT INTO admin_account (username, password_hash) VALUES (?, ?)", "admin", PASSWORD_HASH);
+        when(status.isUp()).thenReturn(false);
+
+        MvcResult login = mvc.perform(post("/ops/api/login").contentType("application/json")
+                        .content("{\"username\":\"admin\",\"password\":\"s3cret-pass\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        MockHttpSession session = (MockHttpSession) login.getRequest().getSession(false);
+        String token = login.getResponse().getCookie("OPS-XSRF-TOKEN").getValue();
+
+        mvc.perform(put("/ops/api/settings/gateway.source.auth.oauth2.client-secret")
+                        .session(session)
+                        .cookie(new Cookie("OPS-XSRF-TOKEN", token))
+                        .header("X-OPS-XSRF-TOKEN", token)
+                        .contentType("application/json")
+                        .content("{\"value\":\"s3cr3t\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("encryption-unavailable"));
+        Integer count = opsJdbc.queryForObject(
+                "SELECT COUNT(*) FROM settings WHERE skey = ?", Integer.class,
+                "gateway.source.auth.oauth2.client-secret");
+        assertThat(count).isZero();
     }
 }

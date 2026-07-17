@@ -49,6 +49,47 @@ class SettingsRegistryTest {
     }
 
     @Test
+    void isDbManagedTruthTable() {
+        // DB-only, UI-managed keys (source-auth + AI) — not in the registry, but first-time
+        // creatable via the ops stop-to-edit API
+        assertTrue(SettingsRegistry.isDbManaged("gateway.source.auth.type"));
+        assertTrue(SettingsRegistry.isDbManaged("gateway.source.auth.basic.password"));
+        assertTrue(SettingsRegistry.isDbManaged("gateway.source.auth.oauth2.client-secret"));
+        assertTrue(SettingsRegistry.isDbManaged("gateway.ai.api-key"));
+        assertTrue(SettingsRegistry.isDbManaged("gateway.ai.base-url"));
+        // Registry keys and unknown keys are NOT db-managed
+        assertFalse(SettingsRegistry.isDbManaged("gateway.api.base-url"));
+        assertFalse(SettingsRegistry.isDbManaged("foo.bar"));
+    }
+
+    @Test
+    void isDbManagedSecretTruthTable() {
+        // Secret db-managed keys (AES at rest)
+        assertTrue(SettingsRegistry.isDbManagedSecret("gateway.source.auth.basic.password"));
+        assertTrue(SettingsRegistry.isDbManagedSecret("gateway.source.auth.apikey.value"));
+        assertTrue(SettingsRegistry.isDbManagedSecret("gateway.source.auth.oauth2.client-secret"));
+        assertTrue(SettingsRegistry.isDbManagedSecret("gateway.ai.api-key"));
+        // Non-secret db-managed keys
+        assertFalse(SettingsRegistry.isDbManagedSecret("gateway.source.auth.type"));
+        assertFalse(SettingsRegistry.isDbManagedSecret("gateway.source.auth.oauth2.token-url"));
+        assertFalse(SettingsRegistry.isDbManagedSecret("gateway.ai.model"));
+        // Unknown key -> false
+        assertFalse(SettingsRegistry.isDbManagedSecret("foo.bar"));
+    }
+
+    @Test
+    void dbManagedKeysStayOutOfRegistryMetadata() {
+        // They must NOT appear in GET /settings/registry (SettingsRegistry.all()) nor be
+        // injected by the boot PostProcessor (isEditable allowlist)
+        assertFalse(SettingsRegistry.isKnown("gateway.source.auth.type"));
+        assertFalse(SettingsRegistry.isKnown("gateway.ai.api-key"));
+        assertFalse(SettingsRegistry.isEditable("gateway.source.auth.type"));
+        assertFalse(SettingsRegistry.isEditable("gateway.ai.api-key"));
+        assertTrue(SettingsRegistry.all().stream()
+                .noneMatch(m -> SettingsRegistry.isDbManaged(m.key())));
+    }
+
+    @Test
     void allEntriesHaveGroupAndLabel() {
         assertFalse(SettingsRegistry.all().isEmpty());
         SettingsRegistry.all().forEach(m -> {

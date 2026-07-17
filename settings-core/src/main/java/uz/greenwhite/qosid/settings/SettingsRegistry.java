@@ -1,6 +1,7 @@
 package uz.greenwhite.qosid.settings;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Static metadata for known gateway settings: group, human label, input type,
@@ -52,8 +53,44 @@ public final class SettingsRegistry {
         new SettingMeta("spring.profiles.active", "Infratuzilma", "Spring profil", "text", EffectClass.READ_ONLY, false)
     );
 
+    /**
+     * DB-only, UI-managed keys (source-channel outbound auth B3 + AI config D5) with
+     * their secret flag — see ai-context/CONFIGURATION.md. They are DELIBERATELY not
+     * in {@link #SETTINGS}: they must not appear in {@code GET /settings/registry}
+     * ({@link #all()}) and must not be injected into the Environment at boot
+     * ({@link #isEditable} stays false — SettingsEnvironmentPostProcessor skips them).
+     * On a fresh install most have no settings row until first save; this list lets
+     * the ops stop-to-edit API create them first-time (with the correct secret flag)
+     * instead of rejecting with unknown-key.
+     */
+    private static final Map<String, Boolean> DB_MANAGED = Map.ofEntries(
+        Map.entry("gateway.source.auth.type", false),
+        Map.entry("gateway.source.auth.basic.username", false),
+        Map.entry("gateway.source.auth.basic.password", true),
+        Map.entry("gateway.source.auth.apikey.header", false),
+        Map.entry("gateway.source.auth.apikey.value", true),
+        Map.entry("gateway.source.auth.oauth2.token-url", false),
+        Map.entry("gateway.source.auth.oauth2.client-id", false),
+        Map.entry("gateway.source.auth.oauth2.client-secret", true),
+        Map.entry("gateway.source.auth.oauth2.scope", false),
+        Map.entry("gateway.source.auth.oauth2.cache-ttl-seconds", false),
+        Map.entry("gateway.ai.base-url", false),
+        Map.entry("gateway.ai.api-key", true),
+        Map.entry("gateway.ai.model", false)
+    );
+
     public static List<SettingMeta> all() {
         return SETTINGS;
+    }
+
+    /** True when the key is a DB-only, UI-managed key (never in the registry metadata). */
+    public static boolean isDbManaged(String key) {
+        return DB_MANAGED.containsKey(key);
+    }
+
+    /** True when the key is db-managed AND its value is a secret (AES at rest, masked on read). */
+    public static boolean isDbManagedSecret(String key) {
+        return DB_MANAGED.getOrDefault(key, false);
     }
 
     public static EffectClass effectClassOf(String key) {

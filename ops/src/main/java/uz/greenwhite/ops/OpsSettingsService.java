@@ -59,13 +59,21 @@ public class OpsSettingsService {
             return ResponseEntity.status(409).body(Map.of("error", "service-running"));
         }
         Optional<SettingsRecord> existing = repo.find(key);
-        if (existing.isEmpty() && !SettingsRegistry.isKnown(key)) {
+        // No row yet: allow first-time creation for registry-known keys AND for the
+        // db-managed (source-auth/AI) keys — on a fresh install most of those have no
+        // row until first save, and while the gateway is down this API is the only
+        // way to configure them. Anything else is truly unknown.
+        if (existing.isEmpty() && !SettingsRegistry.isKnown(key) && !SettingsRegistry.isDbManaged(key)) {
             return bad("unknown-key");
         }
         if (!isEditable(key)) {
             return bad("not-editable");
         }
-        boolean secret = existing.map(SettingsRecord::isSecret).orElse(false);
+        // Existing row: trust its stored secret flag. First-time creation: db-managed
+        // keys carry their declared flag (registry keys are all non-secret today, and
+        // isDbManagedSecret is false for them, so this covers both cases).
+        boolean secret = existing.map(SettingsRecord::isSecret)
+                .orElse(SettingsRegistry.isDbManagedSecret(key));
         String stored = value;
         if (secret) {
             if (!cipher.isEnabled()) {
