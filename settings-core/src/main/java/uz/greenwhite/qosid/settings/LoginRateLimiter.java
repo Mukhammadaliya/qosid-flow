@@ -1,12 +1,9 @@
-package uz.greenwhite.gateway.admin;
-
-import org.springframework.stereotype.Component;
+package uz.greenwhite.qosid.settings;
 
 import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** In-memory login rate limiter (one instance). 5 failures / 60s window per key. */
-@Component
+/** In-memory login rate limiter (one instance). 5 failures / 60s window per key. Plain POJO — wired as a @Bean by each JVM. */
 public class LoginRateLimiter {
 
     private static final int MAX_FAILURES = 5;

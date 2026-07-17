@@ -1,12 +1,7 @@
-package uz.greenwhite.gateway.admin;
+package uz.greenwhite.qosid.settings;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
-import uz.greenwhite.gateway.config.SettingsDbConfig;
-import uz.greenwhite.gateway.config.SettingsProperties;
-
-import javax.sql.DataSource;
 
 import java.util.Optional;
 
@@ -18,13 +13,7 @@ class AdminAccountRepositoryTest {
 
     @BeforeEach
     void setup() {
-        SettingsProperties props = new SettingsProperties();
-        props.setDbPath("mem:admin_test_" + System.nanoTime() + ";DB_CLOSE_DELAY=-1");
-        SettingsDbConfig config = new SettingsDbConfig();
-        DataSource ds = config.settingsDataSource(props);
-        config.initSchema(ds);
-        JdbcTemplate jdbc = config.settingsJdbcTemplate(ds);
-        repo = new AdminAccountRepository(jdbc);
+        repo = new AdminAccountRepository(TestSettingsDb.fresh("admin_test_"));
     }
 
     @Test

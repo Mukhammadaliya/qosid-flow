@@ -1,19 +1,21 @@
-package uz.greenwhite.gateway.admin;
+package uz.greenwhite.qosid.settings;
 
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
-import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
 import java.util.Optional;
 
-@Repository
+/**
+ * Shared admin_account table access. Plain POJO over a caller-supplied
+ * {@link JdbcTemplate} — used by both the gateway (settings DataSource) and
+ * the ops sidecar (its own connection to the same shared H2 DB).
+ */
 public class AdminAccountRepository {
 
     private final JdbcTemplate jdbc;
 
-    public AdminAccountRepository(@Qualifier("settingsJdbcTemplate") JdbcTemplate jdbc) {
+    public AdminAccountRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 

@@ -8,6 +8,7 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.MutablePropertySources;
 import org.springframework.core.env.StandardEnvironment;
+import uz.greenwhite.qosid.settings.SettingsRegistry;
 
 import java.sql.Connection;
 import java.sql.DriverManager;

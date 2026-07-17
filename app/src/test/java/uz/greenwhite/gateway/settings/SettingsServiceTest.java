@@ -4,6 +4,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import uz.greenwhite.qosid.settings.SettingsCipher;
+import uz.greenwhite.qosid.settings.SettingsRecord;
+import uz.greenwhite.qosid.settings.SettingsRepository;
 
 import java.util.List;
 import java.util.Optional;

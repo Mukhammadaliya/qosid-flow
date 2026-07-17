@@ -6,6 +6,7 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
+import uz.greenwhite.qosid.settings.SettingsRepository;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

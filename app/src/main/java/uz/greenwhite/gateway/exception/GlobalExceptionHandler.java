@@ -63,8 +63,8 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, "Not Found: /" + e.getResourcePath());
     }
 
-    @ExceptionHandler(uz.greenwhite.gateway.admin.LoginRateLimiter.TooManyAttemptsException.class)
-    public ResponseEntity<ErrorResponse> handleRateLimit(uz.greenwhite.gateway.admin.LoginRateLimiter.TooManyAttemptsException e) {
+    @ExceptionHandler(uz.greenwhite.qosid.settings.LoginRateLimiter.TooManyAttemptsException.class)
+    public ResponseEntity<ErrorResponse> handleRateLimit(uz.greenwhite.qosid.settings.LoginRateLimiter.TooManyAttemptsException e) {
         log.warn("Login rate limit hit: {}", e.getMessage());
         return build(HttpStatus.TOO_MANY_REQUESTS, e.getMessage());
     }

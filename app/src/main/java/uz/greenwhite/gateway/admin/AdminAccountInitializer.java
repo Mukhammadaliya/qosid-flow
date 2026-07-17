@@ -8,6 +8,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Component;
 import uz.greenwhite.gateway.settings.SettingsService;
+import uz.greenwhite.qosid.settings.AdminAccountRepository;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

@@ -7,6 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.env.Environment;
 import uz.greenwhite.gateway.settings.SettingsService;
+import uz.greenwhite.qosid.settings.AdminAccountRepository;
 
 import java.util.HashMap;
 import java.util.Map;

@@ -8,10 +8,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import uz.greenwhite.gateway.admin.dto.SettingUpdateRequest;
 import uz.greenwhite.gateway.admin.dto.SettingsRegistryResponse;
-import uz.greenwhite.gateway.settings.SettingsRecord;
-import uz.greenwhite.gateway.settings.SettingsRegistry;
-import uz.greenwhite.gateway.settings.SettingsRegistry.EffectClass;
 import uz.greenwhite.gateway.settings.SettingsService;
+import uz.greenwhite.qosid.settings.SettingsRecord;
+import uz.greenwhite.qosid.settings.SettingsRegistry;
+import uz.greenwhite.qosid.settings.SettingsRegistry.EffectClass;
 
 import java.util.List;
 import java.util.Map;

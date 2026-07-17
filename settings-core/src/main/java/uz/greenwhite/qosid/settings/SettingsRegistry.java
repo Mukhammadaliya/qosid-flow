@@ -1,4 +1,4 @@
-package uz.greenwhite.gateway.settings;
+package uz.greenwhite.qosid.settings;
 
 import java.util.List;
 

@@ -9,6 +9,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
+import uz.greenwhite.qosid.settings.AdminAccountRepository;
+import uz.greenwhite.qosid.settings.LoginRateLimiter;
+import uz.greenwhite.qosid.settings.SettingsCipher;
+import uz.greenwhite.qosid.settings.SettingsRepository;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -51,6 +55,29 @@ public class SettingsDbConfig {
     @Qualifier("settingsJdbcTemplate")
     public JdbcTemplate settingsJdbcTemplate(DataSource settingsDataSource) {
         return new JdbcTemplate(settingsDataSource);
+    }
+
+    // settings-core POJOs wired as beans (the module has no Spring annotations;
+    // component scan does not cover uz.greenwhite.qosid.settings — see D-loyiha Task 2).
+
+    @Bean
+    public SettingsCipher settingsCipher(SettingsProperties props) {
+        return new SettingsCipher(props.getEncryptionKey());
+    }
+
+    @Bean
+    public SettingsRepository settingsRepository(@Qualifier("settingsJdbcTemplate") JdbcTemplate jdbc) {
+        return new SettingsRepository(jdbc);
+    }
+
+    @Bean
+    public AdminAccountRepository adminAccountRepository(@Qualifier("settingsJdbcTemplate") JdbcTemplate jdbc) {
+        return new AdminAccountRepository(jdbc);
+    }
+
+    @Bean
+    public LoginRateLimiter loginRateLimiter() {
+        return new LoginRateLimiter();
     }
 
     /** Runs settings-schema.sql (idempotent CREATE IF NOT EXISTS). Public for tests. */

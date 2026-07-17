@@ -1,7 +1,7 @@
-package uz.greenwhite.gateway.settings;
+package uz.greenwhite.qosid.settings;
 
 import org.junit.jupiter.api.Test;
-import uz.greenwhite.gateway.settings.SettingsRegistry.EffectClass;
+import uz.greenwhite.qosid.settings.SettingsRegistry.EffectClass;
 
 import static org.junit.jupiter.api.Assertions.*;
 

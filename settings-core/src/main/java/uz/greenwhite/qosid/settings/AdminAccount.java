@@ -1,4 +1,4 @@
-package uz.greenwhite.gateway.admin;
+package uz.greenwhite.qosid.settings;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

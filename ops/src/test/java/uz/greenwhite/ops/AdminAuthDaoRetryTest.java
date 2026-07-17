@@ -5,6 +5,8 @@ import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import uz.greenwhite.qosid.settings.AdminAccount;
+import uz.greenwhite.qosid.settings.AdminAccountRepository;
 
 import java.util.List;
 
@@ -22,10 +24,20 @@ import static org.mockito.Mockito.when;
  * Shared-H2 AUTO_SERVER handoff (gateway restart window) can transiently fail the DB read.
  * A single failed read must NOT surface as "wrong password" (401) — verify() retries once
  * before giving up, so the SPA's unified login doesn't randomly drop into gateway-only mode.
+ * The DAO now goes through the shared settings-core AdminAccountRepository; the retry loop
+ * is exercised through a real repository over a mocked JdbcTemplate.
  */
 class AdminAuthDaoRetryTest {
 
     private final String hash = new BCryptPasswordEncoder().encode("s3cret");
+
+    private AdminAccount account() {
+        return AdminAccount.builder().id(1L).username("admin").passwordHash(hash).build();
+    }
+
+    private AdminAuthDao dao(JdbcTemplate jdbc) {
+        return new AdminAuthDao(new AdminAccountRepository(jdbc));
+    }
 
     @SuppressWarnings("unchecked")
     @Test
@@ -33,9 +45,9 @@ class AdminAuthDaoRetryTest {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.query(anyString(), any(RowMapper.class), eq("admin")))
                 .thenThrow(new CannotGetJdbcConnectionException("H2 server handoff in progress"))
-                .thenReturn(List.of(hash));
+                .thenReturn(List.of(account()));
 
-        assertTrue(new AdminAuthDao(jdbc).verify("admin", "s3cret"));
+        assertTrue(dao(jdbc).verify("admin", "s3cret"));
     }
 
     @SuppressWarnings("unchecked")
@@ -45,7 +57,7 @@ class AdminAuthDaoRetryTest {
         when(jdbc.query(anyString(), any(RowMapper.class), eq("admin")))
                 .thenThrow(new CannotGetJdbcConnectionException("still down"));
 
-        assertFalse(new AdminAuthDao(jdbc).verify("admin", "s3cret"));
+        assertFalse(dao(jdbc).verify("admin", "s3cret"));
     }
 
     @SuppressWarnings("unchecked")
@@ -53,9 +65,9 @@ class AdminAuthDaoRetryTest {
     void wrongPasswordFailsWithoutRetry() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.query(anyString(), any(RowMapper.class), eq("admin")))
-                .thenReturn(List.of(hash));
+                .thenReturn(List.of(account()));
 
-        assertFalse(new AdminAuthDao(jdbc).verify("admin", "wrong"));
+        assertFalse(dao(jdbc).verify("admin", "wrong"));
         verify(jdbc, times(1)).query(anyString(), any(RowMapper.class), eq("admin"));
     }
 }

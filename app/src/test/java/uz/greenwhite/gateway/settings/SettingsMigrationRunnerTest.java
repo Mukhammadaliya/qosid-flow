@@ -5,6 +5,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.env.Environment;
+import uz.greenwhite.qosid.settings.SettingsRecord;
+import uz.greenwhite.qosid.settings.SettingsRepository;
 
 import java.util.Optional;
 

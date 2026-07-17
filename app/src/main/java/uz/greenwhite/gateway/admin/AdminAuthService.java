@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import uz.greenwhite.qosid.settings.AdminAccountRepository;
+import uz.greenwhite.qosid.settings.LoginRateLimiter;
 
 @Slf4j
 @Service

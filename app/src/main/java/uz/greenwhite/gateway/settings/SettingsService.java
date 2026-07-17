@@ -4,6 +4,9 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import uz.greenwhite.qosid.settings.SettingsCipher;
+import uz.greenwhite.qosid.settings.SettingsRecord;
+import uz.greenwhite.qosid.settings.SettingsRepository;
 
 import java.util.ArrayList;
 import java.util.List;

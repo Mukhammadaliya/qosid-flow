@@ -1,8 +1,6 @@
-package uz.greenwhite.gateway.settings;
+package uz.greenwhite.qosid.settings;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
-import uz.greenwhite.gateway.config.SettingsProperties;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -14,11 +12,12 @@ import java.util.Base64;
 
 /**
  * AES-GCM encryption for at-rest secrets in the settings DB. Key derived from
- * {@code gateway.settings.encryption-key} via SHA-256 (so any-length key works).
+ * the raw key string via SHA-256 (so any-length key works). Plain POJO (no
+ * Spring) — the gateway wires it as a {@code @Bean} from
+ * {@code gateway.settings.encryption-key}; the ops sidecar constructs its own.
  * Blank key → {@link #isEnabled()} false; callers must not store secrets then.
  */
 @Slf4j
-@Component
 public class SettingsCipher {
 
     private static final int GCM_IV_LENGTH = 12;
@@ -28,15 +27,14 @@ public class SettingsCipher {
     private final boolean enabled;
     private final SecureRandom random = new SecureRandom();
 
-    public SettingsCipher(SettingsProperties props) {
-        String key = props.getEncryptionKey();
-        this.enabled = key != null && !key.isBlank();
+    public SettingsCipher(String rawKey) {
+        this.enabled = rawKey != null && !rawKey.isBlank();
         if (enabled) {
-            this.keySpec = new SecretKeySpec(sha256(key), "AES");
+            this.keySpec = new SecretKeySpec(sha256(rawKey), "AES");
             log.info("Settings encryption ENABLED (AES-GCM)");
         } else {
             this.keySpec = null;
-            log.warn("Settings encryption DISABLED: gateway.settings.encryption-key is blank — secrets cannot be stored");
+            log.warn("Settings encryption DISABLED: encryption key is blank — secrets cannot be stored");
         }
     }
 

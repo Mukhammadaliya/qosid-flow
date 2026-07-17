@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import uz.greenwhite.qosid.settings.AdminAccountRepository;
 
 import javax.sql.DataSource;
 
@@ -26,5 +27,11 @@ public class OpsDbConfig {
     @Bean
     public JdbcTemplate opsJdbc(DataSource opsDataSource) {
         return new JdbcTemplate(opsDataSource);
+    }
+
+    /** settings-core POJO wired as a bean — shared admin_account access, same class the gateway uses. */
+    @Bean
+    public AdminAccountRepository adminAccountRepository(JdbcTemplate opsJdbc) {
+        return new AdminAccountRepository(opsJdbc);
     }
 }
