@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import uz.greenwhite.gateway.config.GatewayProperties;
 import uz.greenwhite.gateway.model.ResponseSaveRequest;
@@ -23,6 +24,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Component
@@ -33,6 +35,13 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
     private final TenantMappingService tenantMappingService;
     private final SourceAuthService sourceAuthService;
     private final SettingsService settingsService;
+
+    /**
+     * Latches true once the "source pull o'chiq" WARN has been logged for the current
+     * unconfigured episode, so the 5s polling loop does not spam the same warning.
+     * Reset to false as soon as the endpoints become configured again.
+     */
+    private final AtomicBoolean pullDisabledWarned = new AtomicBoolean(false);
 
     @Autowired
     public BiruniClient(GatewayProperties properties, TenantMappingService tenantMappingService,
@@ -85,9 +94,22 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
      */
     @Override
     public List<RequestMessage> pullRequests() {
+        // Effective endpoints: settings-DB row (UI) > env var > (now-empty) yaml.
+        String base = settingsService.get("gateway.source.base-url", properties.getBaseUrl());
+        String pullUri = settingsService.get("gateway.source.request-pull-uri", properties.getRequestPullUri());
+
+        // Dormant pull: if the pull endpoint is not configured yet, skip the cycle silently.
+        // No HTTP call, no auth resolution, no pull-error metric (RequestPuller increments the
+        // error counter only on a thrown exception — returning empty is the benign path).
+        if (!StringUtils.hasText(base) || !StringUtils.hasText(pullUri)) {
+            if (pullDisabledWarned.compareAndSet(false, true)) {
+                log.warn("Source pull o'chiq: gateway.source.base-url/request-pull-uri sozlanmagan (Sozlamalar UI)");
+            }
+            return List.of();
+        }
+        pullDisabledWarned.set(false);
+
         try {
-            String base = settingsService.get("gateway.source.base-url", properties.getBaseUrl());
-            String pullUri = settingsService.get("gateway.source.request-pull-uri", properties.getRequestPullUri());
             log.debug("Pulling requests from: {}{}", base, pullUri);
 
             Map<String, String> authHeaders = sourceAuthService.authHeaders();

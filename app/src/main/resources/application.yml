@@ -109,12 +109,16 @@ gateway:
 
   # --- Data Source (Oracle/Biruni) ---
   source:
-    base-url: ${SOURCE_BASE_URL:http://localhost:8080/smartup24}
+    # Request-lifecycle endpoints are configured via the Settings UI (settings DB), not yaml.
+    # yaml carries only an empty env-var placeholder as a transitional fallback (same pattern
+    # as B3 basic-auth SOURCE_USERNAME/SOURCE_PASSWORD). Precedence: settings-DB row > env var > empty.
+    # Blank base-url/request-pull-uri → pull cycle stays dormant (see BiruniClient.pullRequests).
+    base-url: ${SOURCE_BASE_URL:}
     username: ${SOURCE_USERNAME:}
     password: ${SOURCE_PASSWORD:}
-    request-pull-uri: ${SOURCE_PULL_URI:/b/biruni/bmb/requests$pull}
-    response-save-uri: ${SOURCE_SAVE_URI:/b/biruni/bmb/requests$save}
-    oauth2-provider-uri: ${SOURCE_OAUTH2_PROVIDER_URI:/b/biruni/bmb/requests$get_oauth_provider_data}
+    request-pull-uri: ${SOURCE_PULL_URI:}
+    response-save-uri: ${SOURCE_SAVE_URI:}
+    oauth2-provider-uri: ${SOURCE_OAUTH2_PROVIDER_URI:}
     connection-timeout: ${SOURCE_TIMEOUT:60}
 
   # --- Polling ---
@@ -158,7 +162,7 @@ gateway:
 
   # --- API Proxy ---
   api:
-    base-url: ${API_BASE_URL:http://localhost:8080/smartup24/b}
+    base-url: ${API_BASE_URL:}
 
   # --- Proxy (REST API entry point) ---
   proxy:

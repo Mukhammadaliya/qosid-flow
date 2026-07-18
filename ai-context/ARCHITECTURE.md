@@ -103,6 +103,7 @@ The pipeline has **two entry points** that both feed `gateway.request.new`:
 | **Output** | List of `RequestMessage` objects |
 | **Validation** | `RequestValidator.validate()` — checks tenantId, requestId, baseUrl, method |
 | **On Failure** | Logs error, increments `oraclePullError` metric |
+| **Dormant when unconfigured** | If the effective `gateway.source.base-url` OR `request-pull-uri` (settings-DB → env → yaml) is blank, `BiruniClient.pullRequests()` skips the cycle silently — no HTTP call, no `oraclePullError` increment, returns empty — and logs one WARN per unconfigured episode until the endpoints are set via the Settings UI. |
 | **Flow** | Pull -> Validate each -> Send valid ones to E2 -> DLQ invalid ones |
 
 **Source channel auth (B3):** `BiruniClient.pullRequests()` resolves the outbound auth header via `SourceAuthService.authHeaders()` — `basic` (default, yaml fallback), `apikey`, or `oauth2` per the `gateway.source.auth.type` setting. OAuth2 tokens are minted by `SourceTokenService` and cached under the Redis key `source:oauth2:token`, kept isolated from the per-request forwarding cache (`oauth2:token:<provider>`) — see SAFETY-RULES.md rule 31. The mint client is selectable via `gateway.source.auth.oauth2.client-type` (`standard` = RFC 6749 form-urlencoded via `StandardOAuth2Client` (default); `biruni` = proprietary JSON body via `BiruniOAuth2Client`, for Smartup/Biruni sources).

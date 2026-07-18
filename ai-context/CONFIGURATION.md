@@ -8,12 +8,12 @@ Complete reference for all configuration parameters. Every property has a defaul
 
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
-| `gateway.source.base-url` | String | `http://localhost:8080/smartup24` | `SOURCE_BASE_URL` | Biruni API base URL. **LIVE-editable** via the Settings UI — `BiruniClient` resolves it per call through `SettingsService` (yaml/env value is the fallback). |
+| `gateway.source.base-url` | String | `` (empty — configured via Settings UI) | `SOURCE_BASE_URL` | Biruni API base URL. **Request-lifecycle endpoint — configured ONLY via the Settings UI**, not yaml (yaml/env carries an empty transitional fallback). **LIVE-editable** — `BiruniClient` resolves it per call through `SettingsService`. **Dormant pull:** if this OR `request-pull-uri` is blank, the E1 pull cycle skips silently (no HTTP, no pull-error metric) and warns once until configured. |
 | `gateway.source.username` | String | `` (empty, mandatory env var) | `SOURCE_USERNAME` | Basic Auth username |
 | `gateway.source.password` | String | `` (empty, mandatory env var) | `SOURCE_PASSWORD` | Basic Auth password |
-| `gateway.source.request-pull-uri` | String | `/b/biruni/bmb/requests$pull` | `SOURCE_PULL_URI` | URI for pulling requests. **LIVE-editable** (resolved per call via `SettingsService`). |
-| `gateway.source.response-save-uri` | String | `/b/biruni/bmb/requests$save` | `SOURCE_SAVE_URI` | URI for saving responses. **LIVE-editable** (resolved per call via `SettingsService`). |
-| `gateway.source.oauth2-provider-uri` | String | `/b/biruni/bmb/requests$get_oauth_provider_data` | `SOURCE_OAUTH2_PROVIDER_URI` | URI for OAuth2 provider config. **LIVE-editable** (registry key, effect-class LIVE) — `OAuth2ProviderFetcher` resolves it per call through `SettingsService` (yaml/env value is the fallback). |
+| `gateway.source.request-pull-uri` | String | `` (empty — configured via Settings UI) | `SOURCE_PULL_URI` | URI for pulling requests. **Request-lifecycle endpoint — configured ONLY via the Settings UI** (empty transitional env fallback). **LIVE-editable** (resolved per call via `SettingsService`). Blank ⇒ E1 pull stays dormant (see `base-url`). |
+| `gateway.source.response-save-uri` | String | `` (empty — configured via Settings UI) | `SOURCE_SAVE_URI` | URI for saving responses. **Request-lifecycle endpoint — configured ONLY via the Settings UI** (empty transitional env fallback). **LIVE-editable** (resolved per call via `SettingsService`). |
+| `gateway.source.oauth2-provider-uri` | String | `` (empty — configured via Settings UI) | `SOURCE_OAUTH2_PROVIDER_URI` | URI for OAuth2 provider config. **Request-lifecycle endpoint — configured ONLY via the Settings UI** (empty transitional env fallback). **LIVE-editable** (registry key, effect-class LIVE) — `OAuth2ProviderFetcher` resolves it per call through `SettingsService`. |
 | `gateway.source.connection-timeout` | int | `60` | `SOURCE_TIMEOUT` | Connection timeout in seconds |
 
 ## gateway.source.auth.* — Source Channel Outbound Auth (B3)
@@ -168,7 +168,7 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
-| `gateway.api.base-url` | String | `http://localhost:8080/smartup24/b` | `API_BASE_URL` | Upstream base URL, **including any path prefix** (e.g. `/b`). API proxy requests are forwarded to `{baseUrl}{stripped client URI}`. Client URIs therefore omit the `/b` prefix — e.g. client sends `/qosid/api/v1/queue/sb/sbr/…` and qosid-flow calls `https://app.smartup24.com/b/sb/sbr/…`. Prod: `https://app.smartup24.com/b` (env var must include `/b`). **LIVE-editable** — `ProxyController` resolves it per request via `SettingsService`. |
+| `gateway.api.base-url` | String | `` (empty — configured via Settings UI) | `API_BASE_URL` | Upstream base URL, **including any path prefix** (e.g. `/b`). **Request-lifecycle endpoint — configured ONLY via the Settings UI** (empty transitional env fallback). API proxy requests are forwarded to `{baseUrl}{stripped client URI}`. Client URIs therefore omit the `/b` prefix — e.g. client sends `/qosid/api/v1/queue/sb/sbr/…` and qosid-flow calls `https://app.smartup24.com/b/sb/sbr/…`. Prod: `https://app.smartup24.com/b` (must include `/b`). **LIVE-editable** — `ProxyController` resolves it per request via `SettingsService`. |
 
 ## gateway.proxy.* — REST Proxy Layout
 
@@ -361,12 +361,13 @@ These **must** be set in production (no safe defaults):
 |---------|---------|
 | `KAFKA_BOOTSTRAP_SERVERS` | Production Kafka broker(s) |
 | `REDIS_HOST` | Production Redis host |
-| `SOURCE_BASE_URL` | Production Biruni API URL |
 | `SOURCE_USERNAME` | Production Biruni credentials |
 | `SOURCE_PASSWORD` | Production Biruni credentials |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot for DLQ alerts |
 | `TELEGRAM_CHAT_ID` | Telegram chat for DLQ alerts |
 | `SETTINGS_ENCRYPTION_KEY` | AES-GCM master key for settings-DB secrets. Without it, any attempt to save a `secret=true` setting via the admin API throws `IllegalStateException` — plan to set this before storing OAuth2 client secrets etc. in the control-plane DB. |
+
+> **Request-lifecycle endpoints (deploy note):** `gateway.source.base-url`, `gateway.source.request-pull-uri`, `gateway.source.response-save-uri`, `gateway.source.oauth2-provider-uri`, and `gateway.api.base-url` no longer ship business default values in yaml — they are **configured after upgrade via the Settings UI** (settings DB). Until `source.base-url`/`request-pull-uri` are set, the E1 pull cycle stays dormant (skips silently, warns once). The matching env vars (`SOURCE_BASE_URL`, `SOURCE_PULL_URI`, `SOURCE_SAVE_URI`, `SOURCE_OAUTH2_PROVIDER_URI`, `API_BASE_URL`) remain a transitional fallback; precedence is settings-DB row > env var > (empty) yaml.
 
 Optional but recommended in production:
 
