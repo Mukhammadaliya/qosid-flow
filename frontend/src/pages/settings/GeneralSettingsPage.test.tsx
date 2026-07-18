@@ -92,16 +92,60 @@ describe('GeneralSettingsPage — service DOWN, ops session alive (edit mode)', 
     expect(screen.queryByText('Jonli')).toBeNull();
   });
 
-  it('saves an edited value via PUT /ops/api/settings/{key}', async () => {
+  it('shows exactly one global save button, disabled when nothing is edited', async () => {
+    vi.spyOn(opsSettings, 'getAll').mockResolvedValue(opsRows as never);
+    renderPage({ gatewayUp: false, opsUp: true });
+    await waitFor(() => expect(screen.getByText('API proxy manzili')).toBeInTheDocument());
+    // no per-row save buttons anymore — only one global button
+    const saveButtons = screen.getAllByRole('button', { name: /Saqlash/ });
+    expect(saveButtons).toHaveLength(1);
+    expect(saveButtons[0]).toBeDisabled();
+  });
+
+  it('typing enables the global save and PUTs ONLY the changed key(s)', async () => {
     vi.spyOn(opsSettings, 'getAll').mockResolvedValue(opsRows as never);
     const put = vi.spyOn(opsSettings, 'put').mockResolvedValue(undefined as never);
     renderPage({ gatewayUp: false, opsUp: true });
     await waitFor(() => expect(screen.getByText('API proxy manzili')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /Saqlash/ })).toBeDisabled();
     const input = screen.getByDisplayValue('https://a.example.com');
     await userEvent.clear(input);
     await userEvent.type(input, 'https://b.example.com');
-    await userEvent.click(screen.getAllByRole('button', { name: /Saqlash/ })[0]);
+    // one dirty row → button enabled and shows the count
+    const saveBtn = screen.getByRole('button', { name: /Saqlash \(1\)/ });
+    expect(saveBtn).toBeEnabled();
+    await userEvent.click(saveBtn);
+    // PUT fires for the changed key only — not the untouched port, not the untouched masked secret
     await waitFor(() => expect(put).toHaveBeenCalledWith('gateway.api.base-url', 'https://b.example.com'));
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(i18n.t('settings.savedCount', { count: 1 }))).toBeInTheDocument();
+  });
+
+  it('reports a failed key yet still attempts the remaining ones', async () => {
+    const rows = [
+      { key: 'gateway.api.base-url', group: 'Endpointlar', label: 'API proxy manzili', type: 'url', value: 'https://a.example.com', secret: false, editable: true, stored: true },
+      { key: 'gateway.retry.max-attempts', group: 'Retry/HTTP', label: 'Max attempts', type: 'number', value: '3', secret: false, editable: true, stored: true },
+    ];
+    vi.spyOn(opsSettings, 'getAll').mockResolvedValue(rows as never);
+    const put = vi.spyOn(opsSettings, 'put')
+      .mockRejectedValueOnce({ response: { data: { error: 'service-running' } } })
+      .mockResolvedValueOnce(undefined as never);
+    renderPage({ gatewayUp: false, opsUp: true });
+    await waitFor(() => expect(screen.getByText('API proxy manzili')).toBeInTheDocument());
+    const urlInput = screen.getByDisplayValue('https://a.example.com');
+    await userEvent.clear(urlInput);
+    await userEvent.type(urlInput, 'https://b.example.com');
+    const numInput = screen.getByDisplayValue('3');
+    await userEvent.clear(numInput);
+    await userEvent.type(numInput, '5');
+    await userEvent.click(screen.getByRole('button', { name: /Saqlash \(2\)/ }));
+    // both keys attempted even though the first rejected
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(2));
+    expect(put).toHaveBeenCalledWith('gateway.api.base-url', 'https://b.example.com');
+    expect(put).toHaveBeenCalledWith('gateway.retry.max-attempts', '5');
+    // the failed key + its mapped service-running message surface in an error toast
+    expect(await screen.findByText(/gateway\.api\.base-url/)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(i18n.t('settings.serviceRunning')))).toBeInTheDocument();
   });
 
   it('renders the env-default placeholder for a not-yet-stored registry key', async () => {
@@ -124,12 +168,20 @@ describe('GeneralSettingsPage — service DOWN, ops session alive (edit mode)', 
     expect(within(portRow as HTMLElement).queryByRole('button')).toBeNull();
   });
 
-  it('does not allow saving an untouched masked secret ("***")', async () => {
+  it('excludes an untouched masked secret from the dirty set, but sends a real edit', async () => {
     vi.spyOn(opsSettings, 'getAll').mockResolvedValue(opsRows as never);
+    const put = vi.spyOn(opsSettings, 'put').mockResolvedValue(undefined as never);
     renderPage({ gatewayUp: false, opsUp: true });
     await waitFor(() => expect(screen.getByText('Shifrlash kaliti')).toBeInTheDocument());
-    const secretRow = screen.getByText('Shifrlash kaliti').closest('div')!;
-    expect(within(secretRow as HTMLElement).getByRole('button', { name: /Saqlash/ })).toBeDisabled();
+    // masked + untouched → not dirty → global save disabled (never send the literal mask)
+    expect(screen.getByRole('button', { name: /Saqlash/ })).toBeDisabled();
+    // actually change the secret → it becomes dirty and PUTs the new value
+    const secretInput = screen.getByDisplayValue('***');
+    await userEvent.clear(secretInput);
+    await userEvent.type(secretInput, 'new-key');
+    await userEvent.click(screen.getByRole('button', { name: /Saqlash/ }));
+    await waitFor(() => expect(put).toHaveBeenCalledWith('gateway.settings.enc-key', 'new-key'));
+    expect(put).toHaveBeenCalledTimes(1);
   });
 
   it('audit tab reads from the ops API when the gateway is down', async () => {

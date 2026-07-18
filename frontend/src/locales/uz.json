@@ -27,6 +27,7 @@
   "settings.testNeedsService": "Sinash uchun servis ishlab turishi kerak",
   "settings.save": "Saqlash",
   "settings.saved": "Saqlandi",
+  "settings.savedCount": "{{count}} ta sozlama saqlandi",
   "settings.test": "Sinash",
   "settings.type": "Turi",
   "settings.key": "Kalit",

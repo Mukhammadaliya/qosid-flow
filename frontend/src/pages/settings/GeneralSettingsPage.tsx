@@ -78,6 +78,7 @@ export function GeneralSettingsPage() {
   const [items, setItems] = useState<SettingRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = () => {
@@ -108,23 +109,61 @@ export function GeneralSettingsPage() {
     return [...map.entries()];
   }, [items]);
 
-  const save = async (it: SettingRow) => {
-    try {
-      await opsSettings.put(it.key, drafts[it.key] ?? '');
-      message.success(t('settings.saved'));
-    } catch (e: any) {
-      const code = e?.response?.data?.error;
-      message.error(code === 'service-running'
-        ? t('settings.serviceRunning')
-        : (e?.response?.data?.message ?? code ?? 'Error'));
+  // Stop-to-edit model: all edits are applied together on the next start, so a single
+  // top-of-tab Saqlash replaces per-row saves. A row is dirty when its draft differs from
+  // the stored value — EXCEPT an untouched masked secret ("***"), which must never be sent.
+  const dirtyRows = useMemo(
+    () =>
+      items.filter((it) => {
+        if (!it.editable) return false;
+        const draft = drafts[it.key] ?? '';
+        const untouchedSecret = it.secret && draft === MASKED && it.value === MASKED;
+        return !untouchedSecret && draft !== it.value;
+      }),
+    [items, drafts],
+  );
+
+  const saveAll = async () => {
+    setSaving(true);
+    const failures: { key: string; code: string }[] = [];
+    for (const it of dirtyRows) {
+      try {
+        await opsSettings.put(it.key, drafts[it.key] ?? '');
+      } catch (e: any) {
+        const code = e?.response?.data?.error;
+        failures.push({
+          key: it.key,
+          code: code === 'service-running'
+            ? t('settings.serviceRunning')
+            : (e?.response?.data?.message ?? code ?? 'Error'),
+        });
+      }
     }
+    setSaving(false);
+    if (failures.length === 0) {
+      message.success(t('settings.savedCount', { count: dirtyRows.length }));
+    } else {
+      message.error(failures.map((f) => `${f.key}: ${f.code}`).join('; '));
+    }
+    load();
   };
 
   const settingsTab = (
     <Card loading={loading}>
       {loadError && <Alert style={{ marginBottom: 16 }} type="error" showIcon message={loadError} />}
       {editMode ? (
-        <Alert style={{ marginBottom: 16 }} type="info" showIcon message={t('settings.appliesOnStart')} />
+        <>
+          <Alert style={{ marginBottom: 16 }} type="info" showIcon message={t('settings.appliesOnStart')} />
+          <Button
+            type="primary"
+            style={{ marginBottom: 16 }}
+            loading={saving}
+            disabled={dirtyRows.length === 0}
+            onClick={saveAll}
+          >
+            {t('settings.save')}{dirtyRows.length > 0 ? ` (${dirtyRows.length})` : ''}
+          </Button>
+        </>
       ) : (
         <Alert
           style={{ marginBottom: 16 }}
@@ -145,9 +184,6 @@ export function GeneralSettingsPage() {
           <div>
             {rows.map((it) => {
               const canEdit = editMode && it.editable;
-              // Guard: a set secret arrives masked as "***" — saving it untouched
-              // would overwrite the real value with the literal mask.
-              const untouchedSecret = it.secret && (drafts[it.key] ?? '') === MASKED && it.value === MASKED;
               return (
                 <div key={it.key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                   <span style={{ minWidth: 200 }}>{it.label}</span>
@@ -160,11 +196,6 @@ export function GeneralSettingsPage() {
                     onChange={(e) => setDrafts({ ...drafts, [it.key]: e.target.value })}
                     suffix={!canEdit ? <LockOutlined /> : undefined}
                   />
-                  {canEdit && (
-                    <Button size="small" type="primary" disabled={untouchedSecret} onClick={() => save(it)}>
-                      {t('settings.save')}
-                    </Button>
-                  )}
                 </div>
               );
             })}
