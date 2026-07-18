@@ -200,7 +200,9 @@ services:
     command: -config.file=/etc/promtail/promtail-config.yml
     volumes:
       - ./docker/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
-      - /host/qosid-logs:/var/log/qosid:ro          # <-- host LOG_DIR (gateway.log, dlq.log)
+      # Compose papkasiga nisbiy ./logs — lokalda repo/logs, prod'da /opt/services/qosid-flow/logs.
+      # (Avvalgi /host/qosid-logs mavhum yo'li lokalda mavjud emas edi — DLQ/JAR sahifalari bo'sh qolardi.)
+      - ./logs:/var/log/qosid:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     depends_on:
