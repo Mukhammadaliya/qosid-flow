@@ -79,7 +79,8 @@ class SourceAuthApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.type").value("apikey"))
                 .andExpect(jsonPath("$.apikeyHeader").value("X-Api-Key"))
-                .andExpect(jsonPath("$.apikeyValue").value("***")); // masked
+                .andExpect(jsonPath("$.apikeyValue").value("***")) // masked
+                .andExpect(jsonPath("$.oauth2ClientType").value("standard")); // default when unset
     }
 
     @Test

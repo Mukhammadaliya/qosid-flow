@@ -6,7 +6,7 @@ export interface SourceAuth {
   type: string; basicUsername: string; basicPassword: string;
   apikeyHeader: string; apikeyValue: string;
   oauth2TokenUrl: string; oauth2ClientId: string; oauth2ClientSecret: string;
-  oauth2Scope: string; oauth2CacheTtlSeconds: string;
+  oauth2Scope: string; oauth2CacheTtlSeconds: string; oauth2ClientType: string;
 }
 export interface TestResult { ok: boolean; type?: string; message: string; }
 export interface SettingRow { key: string; value: string; secret: boolean; updatedAt: string; updatedBy: string; }

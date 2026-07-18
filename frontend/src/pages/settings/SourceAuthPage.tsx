@@ -92,6 +92,14 @@ export function SourceAuthPage() {
         </>}
 
         {type === 'oauth2' && <>
+          <Form.Item name="oauth2ClientType" label={t('sourceAuth.oauth2ClientType')}>
+            <Select
+              options={[
+                { value: 'standard', label: t('sourceAuth.clientTypeStandard') },
+                { value: 'biruni', label: t('sourceAuth.clientTypeBiruni') },
+              ]}
+            />
+          </Form.Item>
           <Form.Item name="oauth2TokenUrl" label={t('sourceAuth.oauth2TokenUrl')}><Input /></Form.Item>
           <Form.Item name="oauth2ClientId" label={t('sourceAuth.oauth2ClientId')}><Input /></Form.Item>
           <Form.Item name="oauth2ClientSecret" label={t('sourceAuth.oauth2ClientSecret')}>

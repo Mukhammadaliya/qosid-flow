@@ -55,6 +55,7 @@ class SettingsRegistryTest {
         assertTrue(SettingsRegistry.isDbManaged("gateway.source.auth.type"));
         assertTrue(SettingsRegistry.isDbManaged("gateway.source.auth.basic.password"));
         assertTrue(SettingsRegistry.isDbManaged("gateway.source.auth.oauth2.client-secret"));
+        assertTrue(SettingsRegistry.isDbManaged("gateway.source.auth.oauth2.client-type"));
         assertTrue(SettingsRegistry.isDbManaged("gateway.ai.api-key"));
         assertTrue(SettingsRegistry.isDbManaged("gateway.ai.base-url"));
         // Registry keys and unknown keys are NOT db-managed
@@ -72,6 +73,7 @@ class SettingsRegistryTest {
         // Non-secret db-managed keys
         assertFalse(SettingsRegistry.isDbManagedSecret("gateway.source.auth.type"));
         assertFalse(SettingsRegistry.isDbManagedSecret("gateway.source.auth.oauth2.token-url"));
+        assertFalse(SettingsRegistry.isDbManagedSecret("gateway.source.auth.oauth2.client-type"));
         assertFalse(SettingsRegistry.isDbManagedSecret("gateway.ai.model"));
         // Unknown key -> false
         assertFalse(SettingsRegistry.isDbManagedSecret("foo.bar"));

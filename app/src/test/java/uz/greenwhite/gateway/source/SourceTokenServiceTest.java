@@ -7,6 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import uz.greenwhite.gateway.oauth2.client.BiruniOAuth2Client;
 import uz.greenwhite.gateway.oauth2.client.StandardOAuth2Client;
 import uz.greenwhite.gateway.oauth2.model.ProviderProperties;
 import uz.greenwhite.gateway.oauth2.model.Token;
@@ -23,13 +24,14 @@ class SourceTokenServiceTest {
 
     @Mock SettingsService settings;
     @Mock StandardOAuth2Client standardClient;
+    @Mock BiruniOAuth2Client biruniClient;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
 
     private final ObjectMapper om = new ObjectMapper();
 
     private SourceTokenService service() {
-        return new SourceTokenService(settings, standardClient, redis, om);
+        return new SourceTokenService(settings, standardClient, biruniClient, redis, om);
     }
 
     private void stubOAuthSettings() {
@@ -45,6 +47,7 @@ class SourceTokenServiceTest {
         when(redis.opsForValue()).thenReturn(valueOps);
         when(valueOps.get("source:oauth2:token")).thenReturn(null); // miss
         stubOAuthSettings();
+        when(settings.get("gateway.source.auth.oauth2.client-type", "standard")).thenReturn("standard");
         when(standardClient.getAccessToken(any(ProviderProperties.class)))
                 .thenReturn(new Token("ACCESS", 3600_000, "Bearer", null));
 
@@ -77,6 +80,7 @@ class SourceTokenServiceTest {
         when(settings.getSecret("gateway.source.auth.oauth2.client-secret", "")).thenReturn("secret");
         when(settings.get("gateway.source.auth.oauth2.scope", "")).thenReturn("");
         when(settings.get("gateway.source.auth.oauth2.cache-ttl-seconds", "")).thenReturn("99999"); // > token life
+        when(settings.get("gateway.source.auth.oauth2.client-type", "standard")).thenReturn("standard");
         when(standardClient.getAccessToken(any(ProviderProperties.class)))
                 .thenReturn(new Token("A", 60_000, "Bearer", null)); // 60s token
 
@@ -84,5 +88,36 @@ class SourceTokenServiceTest {
 
         // TTL capped at 60 - 15 = 45s, not 99999
         verify(valueOps).set(eq("source:oauth2:token"), anyString(), eq(45L), eq(TimeUnit.SECONDS));
+    }
+
+    @Test
+    void defaultClientTypeMintsThroughStandardClient() {
+        when(redis.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get("source:oauth2:token")).thenReturn(null);
+        stubOAuthSettings();
+        // client-type absent -> default "standard"
+        when(settings.get("gateway.source.auth.oauth2.client-type", "standard")).thenReturn("standard");
+        when(standardClient.getAccessToken(any(ProviderProperties.class)))
+                .thenReturn(new Token("STD", 3600_000, "Bearer", null));
+
+        assertEquals("STD", service().getBearerToken());
+
+        verify(standardClient).getAccessToken(any(ProviderProperties.class));
+        verify(biruniClient, never()).getAccessToken(any());
+    }
+
+    @Test
+    void biruniClientTypeMintsThroughBiruniClient() {
+        when(redis.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get("source:oauth2:token")).thenReturn(null);
+        stubOAuthSettings();
+        when(settings.get("gateway.source.auth.oauth2.client-type", "standard")).thenReturn("biruni");
+        when(biruniClient.getAccessToken(any(ProviderProperties.class)))
+                .thenReturn(new Token("BIR", 3600_000, "Bearer", null));
+
+        assertEquals("BIR", service().getBearerToken());
+
+        verify(biruniClient).getAccessToken(any(ProviderProperties.class));
+        verify(standardClient, never()).getAccessToken(any());
     }
 }

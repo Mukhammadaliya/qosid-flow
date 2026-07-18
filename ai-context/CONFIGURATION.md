@@ -27,7 +27,8 @@ Complete reference for all configuration parameters. Every property has a defaul
 | `gateway.source.auth.basic.password` | String | `` (empty) | **yes** | Basic Auth password. Migrated once from `gateway.source.password` (`SOURCE_PASSWORD`) on first boot (skipped with a WARN if `SETTINGS_ENCRYPTION_KEY` is blank). |
 | `gateway.source.auth.apikey.header` | String | `X-Api-Key` | no | Header name used to carry the API key. |
 | `gateway.source.auth.apikey.value` | String | `` (empty) | **yes** | API key value. |
-| `gateway.source.auth.oauth2.token-url` | String | `` (empty) | no | Token endpoint for the source-channel OAuth2 client (`client_credentials`, RFC 6749 form-urlencoded via `StandardOAuth2Client`). |
+| `gateway.source.auth.oauth2.token-url` | String | `` (empty) | no | Token endpoint for the source-channel OAuth2 client (`client_credentials`). Wire format depends on `client-type` below. |
+| `gateway.source.auth.oauth2.client-type` | String | `standard` (values: `standard` \| `biruni`) | no | Which client mints the source token: `standard` = RFC 6749 form-urlencoded (`StandardOAuth2Client`); `biruni` = proprietary JSON body (`BiruniOAuth2Client`, for Smartup/Biruni sources like smartup24). Absent/blank ⇒ `standard` (backwards compatible). |
 | `gateway.source.auth.oauth2.client-id` | String | `` (empty) | no | OAuth2 client id. |
 | `gateway.source.auth.oauth2.client-secret` | String | `` (empty) | **yes** | OAuth2 client secret. |
 | `gateway.source.auth.oauth2.scope` | String | `` (empty) | no | Optional OAuth2 scope. |

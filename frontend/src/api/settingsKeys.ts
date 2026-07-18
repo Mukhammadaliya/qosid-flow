@@ -25,6 +25,7 @@ export const TYPED_FORM_KEYS: ReadonlySet<string> = new Set([
   'gateway.source.auth.oauth2.client-secret',
   'gateway.source.auth.oauth2.scope',
   'gateway.source.auth.oauth2.cache-ttl-seconds',
+  'gateway.source.auth.oauth2.client-type',
   'gateway.tenant.field-name',
   'gateway.tenant.extra-field-name',
   'gateway.tenant.default-rest-tenant',
@@ -67,6 +68,7 @@ export interface SourceAuthFormValues {
   oauth2ClientSecret?: string;
   oauth2Scope?: string;
   oauth2CacheTtlSeconds?: string;
+  oauth2ClientType?: string;
 }
 
 /** Only the selected type's fields are emitted — same as the gateway PUT body. */
@@ -84,6 +86,7 @@ export function sourceAuth(f: SourceAuthFormValues): SettingEntry[] {
     out.push(...secretEntry('gateway.source.auth.oauth2.client-secret', f.oauth2ClientSecret));
     out.push(plain('gateway.source.auth.oauth2.scope', f.oauth2Scope));
     out.push(plain('gateway.source.auth.oauth2.cache-ttl-seconds', f.oauth2CacheTtlSeconds));
+    out.push(plain('gateway.source.auth.oauth2.client-type', f.oauth2ClientType || 'standard'));
   }
   return out;
 }
@@ -102,6 +105,7 @@ export function sourceAuthFromRows(rows: Row[]): SourceAuthFormValues {
     oauth2ClientSecret: '',
     oauth2Scope: m['gateway.source.auth.oauth2.scope'] ?? '',
     oauth2CacheTtlSeconds: m['gateway.source.auth.oauth2.cache-ttl-seconds'] ?? '',
+    oauth2ClientType: m['gateway.source.auth.oauth2.client-type'] || 'standard',
   };
 }
 

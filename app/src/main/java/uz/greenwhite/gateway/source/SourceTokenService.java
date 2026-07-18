@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import uz.greenwhite.gateway.oauth2.client.BiruniOAuth2Client;
+import uz.greenwhite.gateway.oauth2.client.OAuth2Client;
 import uz.greenwhite.gateway.oauth2.client.StandardOAuth2Client;
 import uz.greenwhite.gateway.oauth2.model.ProviderProperties;
 import uz.greenwhite.gateway.oauth2.model.Token;
@@ -28,6 +30,7 @@ public class SourceTokenService {
 
     private final SettingsService settings;
     private final StandardOAuth2Client standardClient;
+    private final BiruniOAuth2Client biruniClient;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
@@ -37,9 +40,20 @@ public class SourceTokenService {
         if (cached != null) {
             return cached;
         }
-        Token token = standardClient.getAccessToken(buildProps());
+        Token token = selectClient().getAccessToken(buildProps());
         cache(token);
         return token.accessToken();
+    }
+
+    /**
+     * Selects the token-mint client per {@code gateway.source.auth.oauth2.client-type}:
+     * {@code biruni} = proprietary JSON body (Smartup/Biruni sources), else (default
+     * {@code standard}) = RFC 6749 form-urlencoded. Package-private so the admin test
+     * path shares exactly this selection logic.
+     */
+    OAuth2Client selectClient() {
+        String clientType = settings.get("gateway.source.auth.oauth2.client-type", "standard");
+        return "biruni".equalsIgnoreCase(clientType) ? biruniClient : standardClient;
     }
 
     private String readCache() {
@@ -74,7 +88,7 @@ public class SourceTokenService {
 
     private ProviderProperties buildProps() {
         return ProviderProperties.builder()
-                .type("standard")
+                .type(settings.get("gateway.source.auth.oauth2.client-type", "standard"))
                 .tokenUrl(settings.get("gateway.source.auth.oauth2.token-url", ""))
                 .clientId(settings.get("gateway.source.auth.oauth2.client-id", ""))
                 .clientSecret(settings.getSecret("gateway.source.auth.oauth2.client-secret", ""))

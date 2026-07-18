@@ -74,6 +74,7 @@ public final class SettingsRegistry {
         Map.entry("gateway.source.auth.oauth2.client-secret", true),
         Map.entry("gateway.source.auth.oauth2.scope", false),
         Map.entry("gateway.source.auth.oauth2.cache-ttl-seconds", false),
+        Map.entry("gateway.source.auth.oauth2.client-type", false),
         Map.entry("gateway.ai.base-url", false),
         Map.entry("gateway.ai.api-key", true),
         Map.entry("gateway.ai.model", false)

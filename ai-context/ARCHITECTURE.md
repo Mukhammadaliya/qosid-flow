@@ -105,7 +105,7 @@ The pipeline has **two entry points** that both feed `gateway.request.new`:
 | **On Failure** | Logs error, increments `oraclePullError` metric |
 | **Flow** | Pull -> Validate each -> Send valid ones to E2 -> DLQ invalid ones |
 
-**Source channel auth (B3):** `BiruniClient.pullRequests()` resolves the outbound auth header via `SourceAuthService.authHeaders()` — `basic` (default, yaml fallback), `apikey`, or `oauth2` per the `gateway.source.auth.type` setting. OAuth2 tokens are minted by `SourceTokenService` (RFC 6749 `client_credentials` via `StandardOAuth2Client`) and cached under the Redis key `source:oauth2:token`, kept isolated from the per-request forwarding cache (`oauth2:token:<provider>`) — see SAFETY-RULES.md rule 31.
+**Source channel auth (B3):** `BiruniClient.pullRequests()` resolves the outbound auth header via `SourceAuthService.authHeaders()` — `basic` (default, yaml fallback), `apikey`, or `oauth2` per the `gateway.source.auth.type` setting. OAuth2 tokens are minted by `SourceTokenService` and cached under the Redis key `source:oauth2:token`, kept isolated from the per-request forwarding cache (`oauth2:token:<provider>`) — see SAFETY-RULES.md rule 31. The mint client is selectable via `gateway.source.auth.oauth2.client-type` (`standard` = RFC 6749 form-urlencoded via `StandardOAuth2Client` (default); `biruni` = proprietary JSON body via `BiruniOAuth2Client`, for Smartup/Biruni sources).
 
 ### E2: Kafka Produce — `RequestProducer.java`
 

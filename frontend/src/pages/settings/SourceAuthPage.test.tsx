@@ -13,7 +13,7 @@ beforeEach(() => vi.restoreAllMocks());
 const baseGet = {
   type: 'basic', basicUsername: 'svc', basicPassword: '***',
   apikeyHeader: 'X-Api-Key', apikeyValue: '', oauth2TokenUrl: '', oauth2ClientId: '',
-  oauth2ClientSecret: '', oauth2Scope: '', oauth2CacheTtlSeconds: '',
+  oauth2ClientSecret: '', oauth2Scope: '', oauth2CacheTtlSeconds: '', oauth2ClientType: 'standard',
 };
 
 const opsRows = [
@@ -86,6 +86,16 @@ describe('SourceAuthPage — service DOWN + ops session (edit mode)', () => {
     await userEvent.click(screen.getByRole('combobox'));
     await userEvent.click(await screen.findByTitle('apikey'));
     expect(screen.getByLabelText('Header nomi')).toBeInTheDocument();
+  });
+
+  it('renders the oauth2 client-type select when type switches to oauth2', async () => {
+    vi.spyOn(opsSettings, 'getAll').mockResolvedValue(opsRows as never);
+    renderPage({ gatewayUp: false, opsUp: true });
+    await waitFor(() => expect(screen.getByDisplayValue('svc')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('combobox'));
+    await userEvent.click(await screen.findByTitle('oauth2'));
+    expect(screen.getByText("Token so'rovi formati")).toBeInTheDocument();
+    expect(screen.getByLabelText('Token URL')).toBeInTheDocument();
   });
 
   it('saves via PUT /ops/api/settings/* and omits the untouched blank password', async () => {

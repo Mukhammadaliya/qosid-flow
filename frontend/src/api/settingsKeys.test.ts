@@ -12,6 +12,7 @@ import {
 describe('settingsKeys.TYPED_FORM_KEYS', () => {
   it('covers keys emitted/read by the typed tabs', () => {
     expect(TYPED_FORM_KEYS.has('gateway.source.auth.oauth2.client-id')).toBe(true);
+    expect(TYPED_FORM_KEYS.has('gateway.source.auth.oauth2.client-type')).toBe(true);
     expect(TYPED_FORM_KEYS.has('gateway.tenant.field-name')).toBe(true);
     expect(TYPED_FORM_KEYS.has('gateway.ai.api-key')).toBe(true);
   });
@@ -58,7 +59,7 @@ describe('settingsKeys.sourceAuth', () => {
     }
   });
 
-  it('maps a full oauth2 form including cache-ttl', () => {
+  it('maps a full oauth2 form including cache-ttl and client-type', () => {
     expect(
       sourceAuth({
         type: 'oauth2',
@@ -67,6 +68,7 @@ describe('settingsKeys.sourceAuth', () => {
         oauth2ClientSecret: 'sec',
         oauth2Scope: 'read',
         oauth2CacheTtlSeconds: '3600',
+        oauth2ClientType: 'biruni',
       }),
     ).toEqual([
       { key: 'gateway.source.auth.type', value: 'oauth2', secret: false },
@@ -75,7 +77,21 @@ describe('settingsKeys.sourceAuth', () => {
       { key: 'gateway.source.auth.oauth2.client-secret', value: 'sec', secret: true },
       { key: 'gateway.source.auth.oauth2.scope', value: 'read', secret: false },
       { key: 'gateway.source.auth.oauth2.cache-ttl-seconds', value: '3600', secret: false },
+      { key: 'gateway.source.auth.oauth2.client-type', value: 'biruni', secret: false },
     ]);
+  });
+
+  it('emits client-type "standard" by default when the field is blank', () => {
+    const entries = sourceAuth({
+      type: 'oauth2',
+      oauth2TokenUrl: 'https://idp/token',
+      oauth2ClientId: 'cid',
+    });
+    expect(entries).toContainEqual({
+      key: 'gateway.source.auth.oauth2.client-type',
+      value: 'standard',
+      secret: false,
+    });
   });
 
   it('omits a blank oauth2 client-secret but keeps the other oauth2 fields', () => {
@@ -171,6 +187,14 @@ describe('settingsKeys fromRows helpers (ops GET -> form values)', () => {
     expect(f.oauth2ClientSecret).toBe('');
     expect(f.basicPassword).toBe('');
     expect(f.apikeyValue).toBe('');
+  });
+
+  it('sourceAuthFromRows reads client-type and defaults it to standard', () => {
+    expect(
+      sourceAuthFromRows([{ key: 'gateway.source.auth.oauth2.client-type', value: 'biruni' }])
+        .oauth2ClientType,
+    ).toBe('biruni');
+    expect(sourceAuthFromRows([]).oauth2ClientType).toBe('standard');
   });
 
   it('sourceAuthFromRows defaults type to basic when no row exists', () => {

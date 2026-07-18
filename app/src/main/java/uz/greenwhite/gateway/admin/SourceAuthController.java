@@ -43,6 +43,7 @@ public class SourceAuthController {
         out.put("oauth2ClientSecret", maskIfPresent("gateway.source.auth.oauth2.client-secret"));
         out.put("oauth2Scope", settings.get("gateway.source.auth.oauth2.scope", ""));
         out.put("oauth2CacheTtlSeconds", settings.get("gateway.source.auth.oauth2.cache-ttl-seconds", ""));
+        out.put("oauth2ClientType", settings.get("gateway.source.auth.oauth2.client-type", "standard"));
         return ResponseEntity.ok(out);
     }
 
