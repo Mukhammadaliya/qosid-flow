@@ -35,16 +35,19 @@ public class OpsSettingsService {
     private final GatewayStatusService status;
 
     /**
-     * All DB rows enriched with registry metadata; secret values never leave as plaintext.
-     * Internal markers ({@link SettingsRegistry#isInternal}) and db-managed keys
-     * ({@link SettingsRegistry#isDbManaged} — source-auth/AI, which have dedicated typed
-     * pages) are hidden so every setting is listed in exactly one place. Db-managed keys
-     * stay WRITABLE via {@link #put} — only the raw list hides them.
+     * All DB rows enriched with registry metadata; secret values never leave as plaintext
+     * ({@code displayValue} masks them). Internal markers ({@link SettingsRegistry#isInternal})
+     * are hidden and non-editable. Db-managed keys ({@link SettingsRegistry#isDbManaged} —
+     * source-auth/AI) STAY in the list: the SPA's typed pages (SourceAuthPage/AiConfigPage)
+     * read their values back through this generic GET in stop-to-edit (gateway-down) mode, so
+     * hiding them would break read-back. Duplication in the SPA's General tab is prevented
+     * client-side (its {@code TYPED_FORM_KEYS} filter), so each setting is still configured in
+     * exactly one place.
      */
     public List<Map<String, Object>> list() {
         List<Map<String, Object>> out = new ArrayList<>();
         for (SettingsRecord r : repo.findAll()) {
-            if (SettingsRegistry.isInternal(r.getKey()) || SettingsRegistry.isDbManaged(r.getKey())) {
+            if (SettingsRegistry.isInternal(r.getKey())) {
                 continue;
             }
             Optional<SettingsRegistry.SettingMeta> meta = SettingsRegistry.all().stream()

@@ -76,10 +76,10 @@ class OpsSettingsApiTest {
     }
 
     @Test
-    void listHidesInternalAndDbManagedKeys() throws Exception {
-        // Internal bookkeeping markers + db-managed (source-auth/AI) keys are hidden;
-        // only the registry-known key surfaces. (Secret masking in displayValue stays as
-        // defense-in-depth, but the db-managed secret row seeded in seed() is now HIDDEN.)
+    void listHidesInternalKeysButKeepsDbManaged() throws Exception {
+        // Internal bookkeeping markers are hidden. Db-managed (source-auth/AI) keys REMAIN
+        // in the list — the SPA's typed pages read them back through this generic GET in
+        // stop-to-edit mode — with any secret row masked ("***") by displayValue.
         opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, FALSE)",
                 "admin.reset-marker", "1");
         opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, FALSE)",
@@ -97,13 +97,15 @@ class OpsSettingsApiTest {
                 .andExpect(jsonPath("$[?(@.key=='gateway.api.base-url')].secret").value(false))
                 .andExpect(jsonPath("$[?(@.key=='gateway.api.base-url')].editable").value(true))
                 .andExpect(jsonPath("$[?(@.key=='gateway.api.base-url')].group").value("Endpointlar"))
-                // hidden: internal markers, db-managed source-auth/AI keys (incl. the seeded secret)
+                // hidden: internal markers
                 .andExpect(jsonPath("$[?(@.key=='admin.reset-marker')]").isEmpty())
                 .andExpect(jsonPath("$[?(@.key=='gateway._meta.restart-pending')]").isEmpty())
                 .andExpect(jsonPath("$[?(@.key=='gateway.settings.migration-completed')]").isEmpty())
-                .andExpect(jsonPath("$[?(@.key=='gateway.source.auth.type')]").isEmpty())
-                .andExpect(jsonPath("$[?(@.key=='gateway.ai.model')]").isEmpty())
-                .andExpect(jsonPath("$[?(@.key=='gateway.source.auth.basic.password')]").isEmpty());
+                // present: db-managed source-auth/AI keys (typed pages read them back)
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.auth.type')].value").value("basic"))
+                .andExpect(jsonPath("$[?(@.key=='gateway.ai.model')].value").value("gpt-x"))
+                // present but masked: the seeded db-managed secret row
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.auth.basic.password')].value").value(OpsSettingsService.MASK));
     }
 
     @Test
@@ -247,7 +249,7 @@ class OpsSettingsApiTest {
 
     @Test
     void putDbManagedKeyStaysWritable() throws Exception {
-        // Hidden from the list, but the typed forms still save through this generic PUT.
+        // The typed forms (SourceAuth/AI) save through this generic PUT in stop-to-edit mode.
         when(status.isUp()).thenReturn(false);
         OpsSession s = login();
         mvc.perform(authedPut(s, "gateway.source.auth.type", "oauth2"))
