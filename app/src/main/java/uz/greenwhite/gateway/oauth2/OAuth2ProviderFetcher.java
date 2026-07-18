@@ -4,15 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import uz.greenwhite.gateway.config.GatewayProperties;
 import uz.greenwhite.gateway.oauth2.model.ProviderProperties;
 import uz.greenwhite.gateway.settings.SettingsService;
+import uz.greenwhite.gateway.source.SourceAuthService;
 import uz.greenwhite.gateway.tenant.TenantMappingService;
-import uz.greenwhite.gateway.util.AuthUtil;
 
 import java.time.Duration;
 import java.util.LinkedHashMap;
@@ -31,6 +30,7 @@ public class OAuth2ProviderFetcher {
     private final ObjectMapper objectMapper;
     private final TenantMappingService tenantMappingService;
     private final SettingsService settingsService;
+    private final SourceAuthService sourceAuthService;
 
     // Ikki konstruktorli klassda Spring tanlovi aniq bo'lishi shart — busiz kontekst yiqiladi.
     @Autowired
@@ -38,9 +38,10 @@ public class OAuth2ProviderFetcher {
                                  StringRedisTemplate redisTemplate,
                                  ObjectMapper objectMapper,
                                  TenantMappingService tenantMappingService,
-                                 SettingsService settingsService) {
+                                 SettingsService settingsService,
+                                 SourceAuthService sourceAuthService) {
         this(RestClient.builder().baseUrl(properties.getBaseUrl()).build(),
-                properties, redisTemplate, objectMapper, tenantMappingService, settingsService);
+                properties, redisTemplate, objectMapper, tenantMappingService, settingsService, sourceAuthService);
     }
 
     /**
@@ -52,13 +53,15 @@ public class OAuth2ProviderFetcher {
                           StringRedisTemplate redisTemplate,
                           ObjectMapper objectMapper,
                           TenantMappingService tenantMappingService,
-                          SettingsService settingsService) {
+                          SettingsService settingsService,
+                          SourceAuthService sourceAuthService) {
         this.restClient = restClient;
         this.properties = properties;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.tenantMappingService = tenantMappingService;
         this.settingsService = settingsService;
+        this.sourceAuthService = sourceAuthService;
     }
 
     /**
@@ -100,10 +103,13 @@ public class OAuth2ProviderFetcher {
             String providerUri = settingsService.get(
                     "gateway.source.oauth2-provider-uri", properties.getOauth2ProviderUri());
 
+            // B3: bu egress ham source-channel auth'ga bo'ysunadi (pull/save bilan bir xil) —
+            // avval legacy yaml Basic ishlatilardi, lokalda bo'sh creds 401 berardi.
+            Map<String, String> authHeaders = sourceAuthService.authHeaders();
+
             String response = restClient.post()
                     .uri(providerUri)
-                    .header(HttpHeaders.AUTHORIZATION,
-                            AuthUtil.generateBasicAuth(properties.getUsername(), properties.getPassword()))
+                    .headers(h -> authHeaders.forEach(h::add))
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()

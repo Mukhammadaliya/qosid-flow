@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClient;
 import uz.greenwhite.gateway.config.GatewayProperties;
 import uz.greenwhite.gateway.oauth2.model.ProviderProperties;
 import uz.greenwhite.gateway.settings.SettingsService;
+import uz.greenwhite.gateway.source.SourceAuthService;
 import uz.greenwhite.gateway.tenant.TenantMappingService;
 
 import java.util.Map;
@@ -24,6 +25,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -43,13 +45,17 @@ class OAuth2ProviderFetcherLiveEndpointTest {
     @Mock StringRedisTemplate redisTemplate;
     @Mock ValueOperations<String, String> valueOps;
     @Mock TenantMappingService tenantMappingService;
+    @Mock SourceAuthService sourceAuthService;
 
     @Test
-    void fetchUsesLiveProviderUri() {
+    void fetchUsesLiveProviderUriAndSourceAuthHeaders() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("https://live-source.example.com/live/provider-data"))
               .andExpect(method(HttpMethod.POST))
+              // B3: the provider-data egress must carry the CONFIGURED source-channel auth
+              // (SourceAuthService), not the legacy yaml Basic credentials.
+              .andExpect(header("Authorization", "Bearer src-token"))
               .andRespond(withSuccess("{\"tokenUrl\":\"https://idp/token\",\"clientId\":\"cid\"}",
                       MediaType.APPLICATION_JSON));
 
@@ -60,12 +66,11 @@ class OAuth2ProviderFetcherLiveEndpointTest {
         when(props.getOauth2ProviderUri()).thenReturn("/yaml/wrong-provider-data");
         when(settings.get(eq("gateway.source.oauth2-provider-uri"), any()))
                 .thenReturn("https://live-source.example.com/live/provider-data");
-        when(props.getUsername()).thenReturn("u");
-        when(props.getPassword()).thenReturn("p");
+        when(sourceAuthService.authHeaders()).thenReturn(Map.of("Authorization", "Bearer src-token"));
         when(tenantMappingService.toExternal(anyLong())).thenReturn(Map.of("company_id", 100L));
 
         OAuth2ProviderFetcher fetcher = new OAuth2ProviderFetcher(
-                builder.build(), props, redisTemplate, new ObjectMapper(), tenantMappingService, settings);
+                builder.build(), props, redisTemplate, new ObjectMapper(), tenantMappingService, settings, sourceAuthService);
         ProviderProperties result = fetcher.fetch("smartup", 100L);
 
         assertNotNull(result);
