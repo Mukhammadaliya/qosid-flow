@@ -104,6 +104,16 @@ describe('GeneralSettingsPage — service DOWN, ops session alive (edit mode)', 
     await waitFor(() => expect(put).toHaveBeenCalledWith('gateway.api.base-url', 'https://b.example.com'));
   });
 
+  it('renders the env-default placeholder for a not-yet-stored registry key', async () => {
+    const rows = [
+      { key: 'gateway.source.base-url', group: 'Endpointlar', label: 'Source base-url', type: 'url', value: '', secret: false, editable: true, stored: false },
+    ];
+    vi.spyOn(opsSettings, 'getAll').mockResolvedValue(rows as never);
+    renderPage({ gatewayUp: false, opsUp: true });
+    await waitFor(() => expect(screen.getByText('Source base-url')).toBeInTheDocument());
+    expect(screen.getByPlaceholderText(i18n.t('settings.envDefault'))).toBeInTheDocument();
+  });
+
   it('keeps non-editable rows locked with no save button', async () => {
     vi.spyOn(opsSettings, 'getAll').mockResolvedValue(opsRows as never);
     renderPage({ gatewayUp: false, opsUp: true });

@@ -2,6 +2,7 @@ package uz.greenwhite.gateway.oauth2;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import uz.greenwhite.gateway.config.GatewayProperties;
 import uz.greenwhite.gateway.oauth2.model.ProviderProperties;
+import uz.greenwhite.gateway.settings.SettingsService;
 import uz.greenwhite.gateway.tenant.TenantMappingService;
 import uz.greenwhite.gateway.util.AuthUtil;
 
@@ -28,18 +30,35 @@ public class OAuth2ProviderFetcher {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final TenantMappingService tenantMappingService;
+    private final SettingsService settingsService;
 
+    // Ikki konstruktorli klassda Spring tanlovi aniq bo'lishi shart — busiz kontekst yiqiladi.
+    @Autowired
     public OAuth2ProviderFetcher(GatewayProperties properties,
                                  StringRedisTemplate redisTemplate,
                                  ObjectMapper objectMapper,
-                                 TenantMappingService tenantMappingService) {
+                                 TenantMappingService tenantMappingService,
+                                 SettingsService settingsService) {
+        this(RestClient.builder().baseUrl(properties.getBaseUrl()).build(),
+                properties, redisTemplate, objectMapper, tenantMappingService, settingsService);
+    }
+
+    /**
+     * Test seam: allows binding a {@link org.springframework.test.web.client.MockRestServiceServer}
+     * to the RestClient. Production wiring goes through the public constructor.
+     */
+    OAuth2ProviderFetcher(RestClient restClient,
+                          GatewayProperties properties,
+                          StringRedisTemplate redisTemplate,
+                          ObjectMapper objectMapper,
+                          TenantMappingService tenantMappingService,
+                          SettingsService settingsService) {
+        this.restClient = restClient;
         this.properties = properties;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.tenantMappingService = tenantMappingService;
-        this.restClient = RestClient.builder()
-                .baseUrl(properties.getBaseUrl())
-                .build();
+        this.settingsService = settingsService;
     }
 
     /**
@@ -76,8 +95,13 @@ public class OAuth2ProviderFetcher {
             Map<String, Object> body = new LinkedHashMap<>(tenantMappingService.toExternal(tenantId));
             body.put("oauth2_provider", providerName);
 
+            // LIVE read: admin edits to the provider-data URI apply without a restart
+            // (mirrors BiruniClient's pull/save URI live-reads). yaml value is the fallback.
+            String providerUri = settingsService.get(
+                    "gateway.source.oauth2-provider-uri", properties.getOauth2ProviderUri());
+
             String response = restClient.post()
-                    .uri(properties.getOauth2ProviderUri())
+                    .uri(providerUri)
                     .header(HttpHeaders.AUTHORIZATION,
                             AuthUtil.generateBasicAuth(properties.getUsername(), properties.getPassword()))
                     .contentType(MediaType.APPLICATION_JSON)

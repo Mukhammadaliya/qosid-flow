@@ -26,6 +26,7 @@ public final class SettingsRegistry {
         new SettingMeta("gateway.source.base-url", "Endpointlar", "Source base-url", "url", EffectClass.LIVE, false),
         new SettingMeta("gateway.source.request-pull-uri", "Endpointlar", "Source pull URI", "text", EffectClass.LIVE, false),
         new SettingMeta("gateway.source.response-save-uri", "Endpointlar", "Source save URI", "text", EffectClass.LIVE, false),
+        new SettingMeta("gateway.source.oauth2-provider-uri", "Endpointlar", "OAuth2 provider-data URI", "text", EffectClass.LIVE, false),
         new SettingMeta("gateway.loki.url", "Observability", "Loki URL", "url", EffectClass.LIVE, false),
         new SettingMeta("gateway.prometheus.url", "Observability", "Prometheus URL", "url", EffectClass.LIVE, false),
         new SettingMeta("gateway.tenant.field-name", "Tenant", "Tenant field name", "text", EffectClass.LIVE, false),

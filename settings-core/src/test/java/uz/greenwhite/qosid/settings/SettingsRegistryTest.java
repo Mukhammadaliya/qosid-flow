@@ -17,6 +17,15 @@ class SettingsRegistryTest {
     }
 
     @Test
+    void oauth2ProviderUriIsLiveEditable() {
+        // Feature B: the Biruni OAuth2 provider-data endpoint is request-lifecycle → UI-editable (LIVE).
+        assertEquals(EffectClass.LIVE, SettingsRegistry.effectClassOf("gateway.source.oauth2-provider-uri"));
+        assertTrue(SettingsRegistry.isKnown("gateway.source.oauth2-provider-uri"));
+        assertTrue(SettingsRegistry.isEditable("gateway.source.oauth2-provider-uri"));
+        assertFalse(SettingsRegistry.isReadOnly("gateway.source.oauth2-provider-uri"));
+    }
+
+    @Test
     void unknownGatewayKeyDefaultsToRequiresRestart() {
         assertEquals(EffectClass.REQUIRES_RESTART, SettingsRegistry.effectClassOf("gateway.some.future.key"));
     }

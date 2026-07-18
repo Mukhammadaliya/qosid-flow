@@ -26,6 +26,9 @@ interface SettingRow {
   value: string;
   secret: boolean;
   editable: boolean;
+  /** Whether a settings-DB row exists (ops edit mode only). When false the yaml/env
+   *  value is live but not persisted — the empty input shows an env-default placeholder. */
+  stored: boolean;
 }
 
 /** Audit log tab. Mode-aware: while the gateway is up it reads the gateway audit
@@ -84,11 +87,11 @@ export function GeneralSettingsPage() {
       ? opsSettings.getAll().then((rows) =>
           rows
             .filter((r) => !isHiddenFromGeneral(r.key))
-            .map((r) => ({ key: r.key, group: r.group, label: r.label, type: r.type, value: r.value, secret: r.secret, editable: r.editable })))
+            .map((r) => ({ key: r.key, group: r.group, label: r.label, type: r.type, value: r.value, secret: r.secret, editable: r.editable, stored: r.stored })))
       : getRegistry().then((r) =>
           r.settings
             .filter((it) => !isHiddenFromGeneral(it.key))
-            .map((it) => ({ key: it.key, group: it.group, label: it.label, type: it.type, value: it.value, secret: it.secret, editable: false })));
+            .map((it) => ({ key: it.key, group: it.group, label: it.label, type: it.type, value: it.value, secret: it.secret, editable: false, stored: true })));
     fetchRows
       .then((rows) => {
         setItems(rows);
@@ -153,6 +156,7 @@ export function GeneralSettingsPage() {
                     aria-label={it.label}
                     value={drafts[it.key] ?? ''}
                     disabled={!canEdit}
+                    placeholder={it.stored ? undefined : t('settings.envDefault')}
                     onChange={(e) => setDrafts({ ...drafts, [it.key]: e.target.value })}
                     suffix={!canEdit ? <LockOutlined /> : undefined}
                   />

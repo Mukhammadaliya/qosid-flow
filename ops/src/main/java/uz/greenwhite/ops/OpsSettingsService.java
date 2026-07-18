@@ -35,32 +35,65 @@ public class OpsSettingsService {
     private final GatewayStatusService status;
 
     /**
-     * All DB rows enriched with registry metadata; secret values never leave as plaintext
-     * ({@code displayValue} masks them). Internal markers ({@link SettingsRegistry#isInternal})
-     * are hidden and non-editable. Db-managed keys ({@link SettingsRegistry#isDbManaged} —
-     * source-auth/AI) STAY in the list: the SPA's typed pages (SourceAuthPage/AiConfigPage)
-     * read their values back through this generic GET in stop-to-edit (gateway-down) mode, so
-     * hiding them would break read-back. Duplication in the SPA's General tab is prevented
-     * client-side (its {@code TYPED_FORM_KEYS} filter), so each setting is still configured in
-     * exactly one place.
+     * The UNION of every EDITABLE registry key and the DB rows, so the SPA's edit mode can
+     * reach registry keys that have no DB row yet (their yaml/env value is live but invisible
+     * to the ops sidecar, which cannot resolve the gateway's Environment). Each row carries a
+     * {@code stored} flag = whether a DB row exists.
+     * <ul>
+     *   <li>Editable registry keys (LIVE + REQUIRES_RESTART) always appear: value = DB row
+     *       value (masked when secret) if a row exists, else {@code ""} with {@code stored=false}.</li>
+     *   <li>READ_ONLY registry keys appear ONLY when a DB row exists — ops cannot resolve their
+     *       yaml/env value, so an empty read-only row is noise.</li>
+     *   <li>DB rows NOT in the registry (db-managed source-auth/AI keys — {@link SettingsRegistry#isDbManaged})
+     *       stay in the list ({@code stored=true}): the SPA's typed pages (SourceAuthPage/AiConfigPage)
+     *       read their values back through this generic GET in stop-to-edit mode. Internal markers
+     *       ({@link SettingsRegistry#isInternal}) are excluded.</li>
+     * </ul>
+     * Secret values never leave as plaintext ({@code displayValue} masks them). Duplication in
+     * the SPA's General tab is prevented client-side (its {@code TYPED_FORM_KEYS} filter), so each
+     * setting is still configured in exactly one place. Order: registry order first, then the
+     * remaining DB rows.
      */
     public List<Map<String, Object>> list() {
-        List<Map<String, Object>> out = new ArrayList<>();
+        Map<String, SettingsRecord> dbRows = new LinkedHashMap<>();
         for (SettingsRecord r : repo.findAll()) {
-            if (SettingsRegistry.isInternal(r.getKey())) {
+            dbRows.put(r.getKey(), r);
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        // 1. Registry keys first, in registry order.
+        for (SettingsRegistry.SettingMeta meta : SettingsRegistry.all()) {
+            String key = meta.key();
+            SettingsRecord r = dbRows.get(key);
+            boolean editable = SettingsRegistry.isEditable(key);
+            // READ_ONLY: ops can't resolve the yaml/env value, so only surface it if stored.
+            if (!editable && r == null) {
                 continue;
             }
-            Optional<SettingsRegistry.SettingMeta> meta = SettingsRegistry.all().stream()
-                    .filter(m -> m.key().equals(r.getKey()))
-                    .findFirst();
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("key", key);
+            row.put("value", r != null ? displayValue(r) : "");
+            row.put("secret", r != null ? r.isSecret() : meta.secret());
+            row.put("group", meta.group());
+            row.put("label", meta.label());
+            row.put("type", meta.type());
+            row.put("editable", editable);
+            row.put("stored", r != null);
+            out.add(row);
+        }
+        // 2. DB rows not in the registry (db-managed source-auth/AI + any other non-internal row).
+        for (SettingsRecord r : dbRows.values()) {
+            if (SettingsRegistry.isKnown(r.getKey()) || SettingsRegistry.isInternal(r.getKey())) {
+                continue;
+            }
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("key", r.getKey());
             row.put("value", displayValue(r));
             row.put("secret", r.isSecret());
-            row.put("group", meta.map(SettingsRegistry.SettingMeta::group).orElse("Boshqa"));
-            row.put("label", meta.map(SettingsRegistry.SettingMeta::label).orElse(r.getKey()));
-            row.put("type", meta.map(SettingsRegistry.SettingMeta::type).orElse("text"));
+            row.put("group", "Boshqa");
+            row.put("label", r.getKey());
+            row.put("type", "text");
             row.put("editable", isEditable(r.getKey()));
+            row.put("stored", true);
             out.add(row);
         }
         return out;

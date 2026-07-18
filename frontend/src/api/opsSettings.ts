@@ -17,6 +17,9 @@ export interface OpsSetting {
   label: string;
   type: string;
   editable: boolean;
+  /** Whether a settings-DB row exists. When false the yaml/env value is live but
+   *  unknown to the ops sidecar — the field shows empty with an env-default placeholder. */
+  stored: boolean;
 }
 
 /** Audit rows come with the raw H2 column names (skey / changed_by — not key / author). */

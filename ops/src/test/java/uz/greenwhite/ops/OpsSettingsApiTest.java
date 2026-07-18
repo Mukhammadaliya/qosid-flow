@@ -109,6 +109,49 @@ class OpsSettingsApiTest {
     }
 
     @Test
+    void listMergesEditableRegistryKeysWithDbRows() throws Exception {
+        // Feature A: the list is the UNION of editable registry keys and DB rows, so the SPA's
+        // edit mode can reach registry keys that were never migrated/saved.
+        opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, FALSE)",
+                "gateway.source.auth.type", "basic");
+        opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, FALSE)",
+                "admin.reset-marker", "1");
+        OpsSession s = login();
+        mvc.perform(get("/ops/api/settings").session(s.session()))
+                .andExpect(status().isOk())
+                // (a) editable registry key WITHOUT a DB row → value "", stored false, editable
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.base-url')].value").value(""))
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.base-url')].stored").value(false))
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.base-url')].editable").value(true))
+                // the newly-registered LIVE key also surfaces without a DB row
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.oauth2-provider-uri')].stored").value(false))
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.oauth2-provider-uri')].editable").value(true))
+                // (b) editable registry key WITH a DB row → value + stored true
+                .andExpect(jsonPath("$[?(@.key=='gateway.api.base-url')].value").value("http://old"))
+                .andExpect(jsonPath("$[?(@.key=='gateway.api.base-url')].stored").value(true))
+                // (c) internal keys still absent
+                .andExpect(jsonPath("$[?(@.key=='admin.reset-marker')]").isEmpty())
+                // (d) db-managed non-registry rows still present, stored true
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.auth.type')].value").value("basic"))
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.auth.type')].stored").value(true))
+                // (e) READ_ONLY registry key WITHOUT a DB row → absent (ops can't resolve yaml/env)
+                .andExpect(jsonPath("$[?(@.key=='server.port')]").isEmpty());
+    }
+
+    @Test
+    void listSurfacesReadOnlyRegistryKeyOnlyWhenStored() throws Exception {
+        // A READ_ONLY registry key gains a row (e.g. via bootstrap) → it appears, locked, stored.
+        opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, FALSE)",
+                "server.port", "8090");
+        OpsSession s = login();
+        mvc.perform(get("/ops/api/settings").session(s.session()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.key=='server.port')].value").value("8090"))
+                .andExpect(jsonPath("$[?(@.key=='server.port')].stored").value(true))
+                .andExpect(jsonPath("$[?(@.key=='server.port')].editable").value(false));
+    }
+
+    @Test
     void putRejectedWhenGatewayUp() throws Exception {
         when(status.isUp()).thenReturn(true);
         OpsSession s = login();
