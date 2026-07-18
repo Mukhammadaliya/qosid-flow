@@ -262,8 +262,9 @@ public class HttpRequestService {
 
     /**
      * Build full URL from base URL, URI path, and query parameters.
+     * Package-private for unit tests (query separator logic).
      */
-    private String buildFullUrl(RequestMessage request) {
+    String buildFullUrl(RequestMessage request) {
         StringBuilder url = new StringBuilder(request.getBaseUrl());
 
         if (request.getUri() != null && !request.getUri().isEmpty()) {
@@ -271,7 +272,14 @@ public class HttpRequestService {
         }
 
         if (request.getParams() != null && !request.getParams().isEmpty()) {
-            url.append(request.getParams());
+            String params = request.getParams();
+            // Query ajratkichi: params yalang'och "a=1&b=2" bo'lsa '?' (URL'da allaqachon '?'
+            // bo'lsa '&') qo'shiladi; params o'zi '?'/'&' bilan kelsa — hech narsa qo'shilmaydi.
+            // Busiz /queue GET so'rovlarida query path'ga yopishib ketardi (/smalla=1).
+            if (!params.startsWith("?") && !params.startsWith("&")) {
+                url.append(url.indexOf("?") >= 0 ? '&' : '?');
+            }
+            url.append(params);
         }
 
         return url.toString();

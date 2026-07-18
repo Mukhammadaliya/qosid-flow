@@ -52,4 +52,39 @@ class HttpRequestServiceTest {
 
         org.mockito.Mockito.verifyNoInteractions(circuitBreakerRegistry, oAuth2ProviderService, webClient);
     }
+
+    // buildFullUrl: bare query params must be joined with '?' (or '&' when the URI
+    // already carries one) — without the separator /queue GETs forwarded /pathx=1.
+    private RequestMessage req(String uri, String params) {
+        return RequestMessage.builder()
+                .tenantId(1L).requestId(2L)
+                .baseUrl("https://example.com")
+                .uri(uri)
+                .params(params)
+                .build();
+    }
+
+    @Test
+    void bareParamsJoinedWithQuestionMark() {
+        assertEquals("https://example.com/small?a=1&b=2",
+                service.buildFullUrl(req("/small", "a=1&b=2")));
+    }
+
+    @Test
+    void paramsWithLeadingQuestionMarkNotDoubled() {
+        assertEquals("https://example.com/small?a=1",
+                service.buildFullUrl(req("/small", "?a=1")));
+    }
+
+    @Test
+    void uriAlreadyHasQueryParamsJoinedWithAmpersand() {
+        assertEquals("https://example.com/small?x=0&a=1",
+                service.buildFullUrl(req("/small?x=0", "a=1")));
+    }
+
+    @Test
+    void noParamsLeavesUrlUntouched() {
+        assertEquals("https://example.com/small",
+                service.buildFullUrl(req("/small", null)));
+    }
 }
