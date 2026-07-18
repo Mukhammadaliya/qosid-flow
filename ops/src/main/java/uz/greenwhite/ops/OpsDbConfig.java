@@ -26,7 +26,7 @@ public class OpsDbConfig {
     public DataSource opsDataSource(@Value("${ops.settings-db-path}") String dbPath) {
         DriverManagerDataSource ds = new DriverManagerDataSource();
         ds.setDriverClassName("org.h2.Driver");
-        String autoServer = dbPath.startsWith("mem:") ? "" : ";AUTO_SERVER=TRUE";
+        String autoServer = uz.greenwhite.qosid.settings.SettingsDbUrl.autoServerSuffix(dbPath);
         ds.setUrl("jdbc:h2:" + dbPath + ";MODE=LEGACY" + autoServer);
         ds.setUsername("sa");
         ds.setPassword("");

@@ -30,7 +30,7 @@ public class SettingsDbConfig {
     @Bean(destroyMethod = "close")
     public DataSource settingsDataSource(SettingsProperties props) {
         String path = props.getDbPath();
-        String autoServer = path.startsWith("mem:") ? "" : ";AUTO_SERVER=TRUE";
+        String autoServer = uz.greenwhite.qosid.settings.SettingsDbUrl.autoServerSuffix(path);
         HikariConfig cfg = new HikariConfig();
         cfg.setPoolName("settings-h2");
         cfg.setDriverClassName("org.h2.Driver");

@@ -51,7 +51,7 @@ public class SettingsEnvironmentPostProcessor implements EnvironmentPostProcesso
         // H2 file; without it this boot-time open would fail (and be silently swallowed →
         // yaml defaults) once the sidecar holds the embedded lock. H2 rejects AUTO_SERVER
         // for in-memory DBs, so mem: paths (tests) are exempt.
-        String autoServer = dbPath.startsWith("mem:") ? "" : ";AUTO_SERVER=TRUE";
+        String autoServer = uz.greenwhite.qosid.settings.SettingsDbUrl.autoServerSuffix(dbPath);
         String url = "jdbc:h2:" + dbPath + ";MODE=LEGACY;IFEXISTS=TRUE" + autoServer;
         Map<String, Object> props = new HashMap<>();
         try (Connection c = DriverManager.getConnection(url, "sa", "");
