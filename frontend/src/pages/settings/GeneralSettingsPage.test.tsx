@@ -63,6 +63,20 @@ describe('GeneralSettingsPage — service UP (read-only mode)', () => {
     expect(within(screen.getByRole('alert')).getByRole('button', { name: i18n.t('nav.ops') })).toBeInTheDocument();
   });
 
+  it('banner Ops button is enabled when opsUp=true', async () => {
+    vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as never);
+    renderPage({ gatewayUp: true, opsUp: true });
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(within(screen.getByRole('alert')).getByRole('button', { name: i18n.t('nav.ops') })).toBeEnabled();
+  });
+
+  it('banner Ops button is DISABLED when opsUp=false (no bypassable link)', async () => {
+    vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as never);
+    renderPage({ gatewayUp: true, opsUp: false });
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(within(screen.getByRole('alert')).getByRole('button', { name: i18n.t('nav.ops') })).toBeDisabled();
+  });
+
   it('does not render effect-class legend badges anymore', async () => {
     vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as never);
     renderPage({ gatewayUp: true, opsUp: true });

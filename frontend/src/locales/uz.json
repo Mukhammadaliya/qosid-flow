@@ -106,5 +106,7 @@
   "ops.sessionExpired": "Ops sessiyasi tugagan — qayta kiring",
   "ops.logTitle": "Jonli log (gateway.log)",
   "ops.pause": "Pauza",
-  "ops.logEmpty": "Hozircha log satrlari yo'q"
+  "ops.logEmpty": "Hozircha log satrlari yo'q",
+  "ops.unavailable": "Ops bilan aloqa yo'q yoki sessiya tugagan",
+  "ops.reloginHint": "Qayta kirsangiz Ops boshqaruvi tiklanadi"
 }

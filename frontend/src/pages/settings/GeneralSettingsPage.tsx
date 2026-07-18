@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Card, Collapse, Input, Button, Table, Tabs, Space, message } from 'antd';
+import { Alert, Card, Collapse, Input, Button, Table, Tabs, Space, Tooltip, message } from 'antd';
 import { LockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -172,7 +172,9 @@ export function GeneralSettingsPage() {
           message={
             <Space>
               {t('settings.stopToEdit')}
-              <Button type="link" size="small" onClick={() => navigate('/ops')}>{t('nav.ops')}</Button>
+              <Tooltip title={!opsUp ? t('ops.unavailable') : undefined}>
+                <Button type="link" size="small" disabled={!opsUp} onClick={() => navigate('/ops')}>{t('nav.ops')}</Button>
+              </Tooltip>
             </Space>
           }
         />

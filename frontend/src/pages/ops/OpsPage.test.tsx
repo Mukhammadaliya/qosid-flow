@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import '../../i18n';
 import { OpsPage } from './OpsPage';
 import { AuthContext } from '../../auth/AuthContext';
@@ -25,14 +26,18 @@ afterEach(() => { vi.unstubAllGlobals(); });
 function renderOpsPage(
   refresh: () => Promise<void> = vi.fn(),
   attemptHandoff: () => Promise<void> = vi.fn(),
+  opsUp = true,
+  logout: () => Promise<void> = vi.fn(),
 ) {
   return render(
-    <AuthContext.Provider value={{
-      user: 'admin', loading: false, gatewayUp: true, opsUp: true, gatewayAuthExpired: false,
-      login: async () => {}, logout: async () => {}, refresh, attemptHandoff,
-    }}>
-      <OpsPage />
-    </AuthContext.Provider>,
+    <MemoryRouter>
+      <AuthContext.Provider value={{
+        user: 'admin', loading: false, gatewayUp: true, opsUp, gatewayAuthExpired: false,
+        login: async () => {}, logout, refresh, attemptHandoff,
+      }}>
+        <OpsPage />
+      </AuthContext.Provider>
+    </MemoryRouter>,
   );
 }
 
@@ -118,5 +123,20 @@ describe('OpsPage', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('guard: opsUp=false renders the unavailable alert, never polls status, never opens SSE', async () => {
+    (getOpsStatus as Mock).mockClear();
+    renderOpsPage(vi.fn(), vi.fn(), false);
+    expect(screen.getByText("Ops bilan aloqa yo'q yoki sessiya tugagan")).toBeInTheDocument();
+    expect(getOpsStatus).not.toHaveBeenCalled();
+    expect(FakeEventSource.instances.length).toBe(0);
+  });
+
+  it('guard: the re-login button calls logout()', async () => {
+    const logout = vi.fn().mockResolvedValue(undefined);
+    renderOpsPage(vi.fn(), vi.fn(), false, logout);
+    (await screen.findByRole('button', { name: 'Kirish' })).click();
+    await waitFor(() => expect(logout).toHaveBeenCalled());
   });
 });

@@ -1,6 +1,7 @@
-import { Alert, Button, Space } from 'antd';
+import { Alert, Button, Space, Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../auth/AuthContext';
 
 /**
  * Stop-to-edit mode banner shared by the typed settings pages (Source Auth /
@@ -12,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 export function ModeBanner({ editMode }: { editMode: boolean }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { opsUp } = useAuth();
   return editMode ? (
     <Alert style={{ marginBottom: 16 }} type="info" showIcon message={t('settings.appliesOnStart')} />
   ) : (
@@ -22,7 +24,9 @@ export function ModeBanner({ editMode }: { editMode: boolean }) {
       message={
         <Space>
           {t('settings.stopToEdit')}
-          <Button type="link" size="small" onClick={() => navigate('/ops')}>{t('nav.ops')}</Button>
+          <Tooltip title={!opsUp ? t('ops.unavailable') : undefined}>
+            <Button type="link" size="small" disabled={!opsUp} onClick={() => navigate('/ops')}>{t('nav.ops')}</Button>
+          </Tooltip>
         </Space>
       }
     />

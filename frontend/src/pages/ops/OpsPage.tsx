@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, Button, Card, Modal, Space, Switch, Typography, message } from 'antd';
+import { Alert, Badge, Button, Card, Modal, Space, Switch, Typography, message } from 'antd';
 import { PoweroffOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { getOpsStatus, startGateway, stopGateway, ControlResult } from '../../api/ops';
 import { useAuth } from '../../auth/AuthContext';
 
@@ -14,7 +15,8 @@ function is401(err: unknown): boolean {
 
 export function OpsPage() {
   const { t } = useTranslation();
-  const { refresh, attemptHandoff } = useAuth();
+  const { refresh, attemptHandoff, opsUp, logout } = useAuth();
+  const navigate = useNavigate();
   const [up, setUp] = useState<boolean | null>(null); // null = hali noma'lum
   const [busy, setBusy] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -26,6 +28,7 @@ export function OpsPage() {
 
   // Gateway holati: 5s poll
   useEffect(() => {
+    if (!opsUp) return; // Ops o'chiq / sessiya tugagan: guard sahifani himoya qiladi, poll ishga tushmaydi.
     let alive = true;
     const tick = async () => {
       try {
@@ -52,10 +55,11 @@ export function OpsPage() {
     tick();
     const id = setInterval(tick, POLL_MS);
     return () => { alive = false; clearInterval(id); };
-  }, [refresh, attemptHandoff, t]);
+  }, [refresh, attemptHandoff, t, opsUp]);
 
   // Jonli log (SSE). EventSource uzilganda o'zi qayta ulanadi.
   useEffect(() => {
+    if (!opsUp) return; // guard faol bo'lsa SSE ochilmasin.
     const es = new EventSource('/ops/api/logs/stream');
     es.onmessage = (e) => {
       if (pausedRef.current) return;
@@ -66,7 +70,7 @@ export function OpsPage() {
       });
     };
     return () => es.close();
-  }, []);
+  }, [opsUp]);
 
   // Smart auto-scroll: faqat foydalanuvchi pastda turganda ergashamiz.
   useEffect(() => {
@@ -103,6 +107,25 @@ export function OpsPage() {
       runAction(startGateway);
     }
   };
+
+  // Sahifa o'zini himoya qiladi: Ops backend o'chiq YOKI ops sessiyasi tugagan bo'lsa
+  // (to'g'ridan-to'g'ri URL bilan ochilsa ham) o'lik sahifa o'rniga qayta-kirish taklifi.
+  // Barcha hook'lar yuqorida shartsiz chaqirildi — faqat RETURN shartli.
+  if (!opsUp) {
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        message={t('ops.unavailable')}
+        description={t('ops.reloginHint')}
+        action={
+          <Button type="primary" size="small" onClick={() => logout().then(() => navigate('/login'))}>
+            {t('auth.login')}
+          </Button>
+        }
+      />
+    );
+  }
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
