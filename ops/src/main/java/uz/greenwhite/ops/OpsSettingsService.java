@@ -34,10 +34,19 @@ public class OpsSettingsService {
     private final SettingsCipher cipher;
     private final GatewayStatusService status;
 
-    /** All DB rows enriched with registry metadata; secret values never leave as plaintext. */
+    /**
+     * All DB rows enriched with registry metadata; secret values never leave as plaintext.
+     * Internal markers ({@link SettingsRegistry#isInternal}) and db-managed keys
+     * ({@link SettingsRegistry#isDbManaged} — source-auth/AI, which have dedicated typed
+     * pages) are hidden so every setting is listed in exactly one place. Db-managed keys
+     * stay WRITABLE via {@link #put} — only the raw list hides them.
+     */
     public List<Map<String, Object>> list() {
         List<Map<String, Object>> out = new ArrayList<>();
         for (SettingsRecord r : repo.findAll()) {
+            if (SettingsRegistry.isInternal(r.getKey()) || SettingsRegistry.isDbManaged(r.getKey())) {
+                continue;
+            }
             Optional<SettingsRegistry.SettingMeta> meta = SettingsRegistry.all().stream()
                     .filter(m -> m.key().equals(r.getKey()))
                     .findFirst();
@@ -57,6 +66,11 @@ public class OpsSettingsService {
     public ResponseEntity<Map<String, String>> put(String key, String value) {
         if (status.isUp()) {
             return ResponseEntity.status(409).body(Map.of("error", "service-running"));
+        }
+        // Internal markers (admin.*, gateway._meta.*, migration flag) are bookkeeping the
+        // gateway writes for itself — never editable through this generic PUT.
+        if (SettingsRegistry.isInternal(key)) {
+            return bad("not-editable");
         }
         Optional<SettingsRecord> existing = repo.find(key);
         // No row yet: allow first-time creation for registry-known keys AND for the

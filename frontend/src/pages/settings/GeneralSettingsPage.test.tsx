@@ -137,6 +137,35 @@ describe('GeneralSettingsPage — service DOWN, ops session alive (edit mode)', 
   });
 });
 
+describe('GeneralSettingsPage — typed-form / internal key dedup', () => {
+  it('UP mode: hides typed-form keys from the registry but keeps generic keys', async () => {
+    const reg = {
+      settings: [
+        { key: 'gateway.api.base-url', group: 'Endpointlar', label: 'API proxy manzili', type: 'url', effectClass: 'LIVE', value: 'https://a.example.com', secret: false },
+        { key: 'gateway.tenant.field-name', group: 'Tenant', label: 'Tenant field name', type: 'text', effectClass: 'LIVE', value: 'company_id', secret: false },
+      ],
+    };
+    vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(reg as never);
+    renderPage({ gatewayUp: true, opsUp: true });
+    await waitFor(() => expect(screen.getByText('API proxy manzili')).toBeInTheDocument());
+    expect(screen.queryByText('Tenant field name')).toBeNull();
+    expect(screen.queryByDisplayValue('company_id')).toBeNull();
+  });
+
+  it('DOWN mode: hides typed-form + internal keys from the ops list but keeps generic keys', async () => {
+    const rows = [
+      { key: 'gateway.api.base-url', group: 'Endpointlar', label: 'API proxy manzili', type: 'url', value: 'https://a.example.com', secret: false, editable: true },
+      { key: 'gateway.source.auth.type', group: 'Boshqa', label: 'gateway.source.auth.type', type: 'text', value: 'basic', secret: false, editable: true },
+      { key: 'admin.reset-marker', group: 'Boshqa', label: 'admin.reset-marker', type: 'text', value: '1', secret: false, editable: true },
+    ];
+    vi.spyOn(opsSettings, 'getAll').mockResolvedValue(rows as never);
+    renderPage({ gatewayUp: false, opsUp: true });
+    await waitFor(() => expect(screen.getByText('API proxy manzili')).toBeInTheDocument());
+    expect(screen.queryByText('gateway.source.auth.type')).toBeNull();
+    expect(screen.queryByText('admin.reset-marker')).toBeNull();
+  });
+});
+
 describe('GeneralSettingsPage — audit tab, service UP', () => {
   it('audit tab keeps reading from the gateway when it is up', async () => {
     vi.spyOn(settingsApi, 'getRegistry').mockResolvedValue(registry as never);

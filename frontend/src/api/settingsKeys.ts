@@ -13,6 +13,27 @@
 
 export const MASK = '***';
 
+/** Har bir kalit faqat bitta joydan sozlanadi: typed tablar boshqaradigan kalitlar General ro'yxatidan yashiriladi. */
+export const TYPED_FORM_KEYS: ReadonlySet<string> = new Set([
+  'gateway.source.auth.type',
+  'gateway.source.auth.basic.username',
+  'gateway.source.auth.basic.password',
+  'gateway.source.auth.apikey.header',
+  'gateway.source.auth.apikey.value',
+  'gateway.source.auth.oauth2.token-url',
+  'gateway.source.auth.oauth2.client-id',
+  'gateway.source.auth.oauth2.client-secret',
+  'gateway.source.auth.oauth2.scope',
+  'gateway.source.auth.oauth2.cache-ttl-seconds',
+  'gateway.tenant.field-name',
+  'gateway.tenant.extra-field-name',
+  'gateway.tenant.default-rest-tenant',
+  'gateway.tenant.trust-extra-tenant-header',
+  'gateway.ai.base-url',
+  'gateway.ai.api-key',
+  'gateway.ai.model',
+]);
+
 export interface SettingEntry {
   key: string;
   value: string;

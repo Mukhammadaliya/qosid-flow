@@ -6,7 +6,20 @@ import {
   sourceAuthFromRows,
   tenantFromRows,
   aiConfigFromRows,
+  TYPED_FORM_KEYS,
 } from './settingsKeys';
+
+describe('settingsKeys.TYPED_FORM_KEYS', () => {
+  it('covers keys emitted/read by the typed tabs', () => {
+    expect(TYPED_FORM_KEYS.has('gateway.source.auth.oauth2.client-id')).toBe(true);
+    expect(TYPED_FORM_KEYS.has('gateway.tenant.field-name')).toBe(true);
+    expect(TYPED_FORM_KEYS.has('gateway.ai.api-key')).toBe(true);
+  });
+
+  it('does not hide generic registry keys', () => {
+    expect(TYPED_FORM_KEYS.has('gateway.api.base-url')).toBe(false);
+  });
+});
 
 describe('settingsKeys.sourceAuth', () => {
   it('maps a filled basic form to type + username + password entries', () => {

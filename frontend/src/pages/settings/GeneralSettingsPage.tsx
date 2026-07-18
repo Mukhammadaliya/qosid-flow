@@ -5,7 +5,17 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { getRegistry, getAudit } from '../../api/settings';
 import { opsSettings } from '../../api/opsSettings';
+import { TYPED_FORM_KEYS } from '../../api/settingsKeys';
 import { useAuth } from '../../auth/AuthContext';
+
+/** Keys shown only via their typed tabs (Source Auth / Tenant / AI) or that are internal
+ *  bookkeeping markers must never appear in the General list — every setting is configurable
+ *  in exactly one place. Filtered in the frontend so it applies to BOTH data sources. */
+const isHiddenFromGeneral = (key: string): boolean =>
+  TYPED_FORM_KEYS.has(key)
+  || key.startsWith('admin.')
+  || key.startsWith('gateway._meta.')
+  || key === 'gateway.settings.migration-completed';
 
 /** Unified row shape for both data sources (gateway registry / ops sidecar). */
 interface SettingRow {
@@ -72,9 +82,13 @@ export function GeneralSettingsPage() {
     setLoadError(null);
     const fetchRows: Promise<SettingRow[]> = editMode
       ? opsSettings.getAll().then((rows) =>
-          rows.map((r) => ({ key: r.key, group: r.group, label: r.label, type: r.type, value: r.value, secret: r.secret, editable: r.editable })))
+          rows
+            .filter((r) => !isHiddenFromGeneral(r.key))
+            .map((r) => ({ key: r.key, group: r.group, label: r.label, type: r.type, value: r.value, secret: r.secret, editable: r.editable })))
       : getRegistry().then((r) =>
-          r.settings.map((it) => ({ key: it.key, group: it.group, label: it.label, type: it.type, value: it.value, secret: it.secret, editable: false })));
+          r.settings
+            .filter((it) => !isHiddenFromGeneral(it.key))
+            .map((it) => ({ key: it.key, group: it.group, label: it.label, type: it.type, value: it.value, secret: it.secret, editable: false })));
     fetchRows
       .then((rows) => {
         setItems(rows);

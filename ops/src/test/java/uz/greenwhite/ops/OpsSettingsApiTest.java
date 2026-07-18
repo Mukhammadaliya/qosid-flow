@@ -76,7 +76,20 @@ class OpsSettingsApiTest {
     }
 
     @Test
-    void listMasksSecrets() throws Exception {
+    void listHidesInternalAndDbManagedKeys() throws Exception {
+        // Internal bookkeeping markers + db-managed (source-auth/AI) keys are hidden;
+        // only the registry-known key surfaces. (Secret masking in displayValue stays as
+        // defense-in-depth, but the db-managed secret row seeded in seed() is now HIDDEN.)
+        opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, FALSE)",
+                "admin.reset-marker", "1");
+        opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, FALSE)",
+                "gateway._meta.restart-pending", "true");
+        opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, FALSE)",
+                "gateway.settings.migration-completed", "true");
+        opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, FALSE)",
+                "gateway.source.auth.type", "basic");
+        opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, FALSE)",
+                "gateway.ai.model", "gpt-x");
         OpsSession s = login();
         mvc.perform(get("/ops/api/settings").session(s.session()))
                 .andExpect(status().isOk())
@@ -84,8 +97,13 @@ class OpsSettingsApiTest {
                 .andExpect(jsonPath("$[?(@.key=='gateway.api.base-url')].secret").value(false))
                 .andExpect(jsonPath("$[?(@.key=='gateway.api.base-url')].editable").value(true))
                 .andExpect(jsonPath("$[?(@.key=='gateway.api.base-url')].group").value("Endpointlar"))
-                .andExpect(jsonPath("$[?(@.key=='gateway.source.auth.basic.password')].value").value("***"))
-                .andExpect(jsonPath("$[?(@.key=='gateway.source.auth.basic.password')].secret").value(true));
+                // hidden: internal markers, db-managed source-auth/AI keys (incl. the seeded secret)
+                .andExpect(jsonPath("$[?(@.key=='admin.reset-marker')]").isEmpty())
+                .andExpect(jsonPath("$[?(@.key=='gateway._meta.restart-pending')]").isEmpty())
+                .andExpect(jsonPath("$[?(@.key=='gateway.settings.migration-completed')]").isEmpty())
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.auth.type')]").isEmpty())
+                .andExpect(jsonPath("$[?(@.key=='gateway.ai.model')]").isEmpty())
+                .andExpect(jsonPath("$[?(@.key=='gateway.source.auth.basic.password')]").isEmpty());
     }
 
     @Test
@@ -210,6 +228,34 @@ class OpsSettingsApiTest {
         mvc.perform(authedPut(s, "spring.kafka.bootstrap-servers", "kafka:9092"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("not-editable"));
+    }
+
+    @Test
+    void putInternalKeyRejectedAndRowUnchanged() throws Exception {
+        // Internal bookkeeping markers are never editable, even while the gateway is down.
+        when(status.isUp()).thenReturn(false);
+        opsJdbc.update("INSERT INTO settings (skey, svalue, secret) VALUES (?, ?, FALSE)",
+                "admin.reset-marker", "orig");
+        OpsSession s = login();
+        mvc.perform(authedPut(s, "admin.reset-marker", "hacked"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("not-editable"));
+        String dbValue = opsJdbc.queryForObject(
+                "SELECT svalue FROM settings WHERE skey = ?", String.class, "admin.reset-marker");
+        assertThat(dbValue).isEqualTo("orig");
+    }
+
+    @Test
+    void putDbManagedKeyStaysWritable() throws Exception {
+        // Hidden from the list, but the typed forms still save through this generic PUT.
+        when(status.isUp()).thenReturn(false);
+        OpsSession s = login();
+        mvc.perform(authedPut(s, "gateway.source.auth.type", "oauth2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SAVED"));
+        String dbValue = opsJdbc.queryForObject(
+                "SELECT svalue FROM settings WHERE skey = ?", String.class, "gateway.source.auth.type");
+        assertThat(dbValue).isEqualTo("oauth2");
     }
 
     @Test

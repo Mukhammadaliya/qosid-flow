@@ -79,6 +79,19 @@ public final class SettingsRegistry {
         Map.entry("gateway.ai.model", false)
     );
 
+    /**
+     * True when the key is an internal bookkeeping marker — the admin account/reset
+     * markers ({@code admin.*}), transient runtime flags ({@code gateway._meta.*} e.g.
+     * restart-pending), or the one-shot yaml→DB migration flag. These are DB rows the
+     * gateway writes for its own use; they carry no user-facing meaning and must NEVER
+     * surface in any settings UI (list) nor be editable through the generic PUT. Null-safe.
+     */
+    public static boolean isInternal(String key) {
+        return key != null && (key.startsWith("admin.")
+                || key.startsWith("gateway._meta.")
+                || key.equals("gateway.settings.migration-completed"));
+    }
+
     public static List<SettingMeta> all() {
         return SETTINGS;
     }

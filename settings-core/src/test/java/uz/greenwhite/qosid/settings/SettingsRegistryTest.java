@@ -90,6 +90,17 @@ class SettingsRegistryTest {
     }
 
     @Test
+    void isInternalMatchesBookkeepingMarkers() {
+        assertTrue(SettingsRegistry.isInternal("admin.reset-marker"));
+        assertTrue(SettingsRegistry.isInternal("gateway._meta.restart-pending"));
+        assertTrue(SettingsRegistry.isInternal("gateway.settings.migration-completed"));
+        // Real, user-facing keys are NOT internal
+        assertFalse(SettingsRegistry.isInternal("gateway.api.base-url"));
+        assertFalse(SettingsRegistry.isInternal("gateway.source.auth.type"));
+        assertFalse(SettingsRegistry.isInternal(null));
+    }
+
+    @Test
     void allEntriesHaveGroupAndLabel() {
         assertFalse(SettingsRegistry.all().isEmpty());
         SettingsRegistry.all().forEach(m -> {
