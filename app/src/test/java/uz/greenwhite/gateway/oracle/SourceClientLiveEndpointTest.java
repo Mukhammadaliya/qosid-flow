@@ -26,12 +26,12 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 /**
- * Verifies the Biruni source legs target the LIVE base-url + uri read from
+ * Verifies the source client legs target the LIVE base-url + uri read from
  * {@link SettingsService} at request time, not the startup-bound
  * {@link GatewayProperties} value — so admin edits apply without restart.
  */
 @ExtendWith(MockitoExtension.class)
-class BiruniClientLiveEndpointTest {
+class SourceClientLiveEndpointTest {
 
     @Mock SettingsService settings;
     @Mock GatewayProperties props;
@@ -51,7 +51,7 @@ class BiruniClientLiveEndpointTest {
         when(settings.get(eq("gateway.source.request-pull-uri"), any())).thenReturn("/api/pull");
         when(sourceAuthService.authHeaders()).thenReturn(Map.of("Authorization", "Basic xxx"));
 
-        BiruniClient client = new BiruniClient(builder.build(), props, tenantMappingService, sourceAuthService, settings);
+        SourceClient client = new SourceClient(builder.build(), props, tenantMappingService, sourceAuthService, settings);
         client.pullRequests();
 
         server.verify();
@@ -70,7 +70,7 @@ class BiruniClientLiveEndpointTest {
         when(sourceAuthService.authHeaders()).thenReturn(Map.of("Authorization", "Basic xxx"));
         when(tenantMappingService.toExternal(anyLong())).thenReturn(Map.of("company_id", 100L));
 
-        BiruniClient client = new BiruniClient(builder.build(), props, tenantMappingService, sourceAuthService, settings);
+        SourceClient client = new SourceClient(builder.build(), props, tenantMappingService, sourceAuthService, settings);
         boolean saved = client.saveResponse(ResponseSaveRequest.builder()
                 .tenantId(100L)
                 .requestId(1L)

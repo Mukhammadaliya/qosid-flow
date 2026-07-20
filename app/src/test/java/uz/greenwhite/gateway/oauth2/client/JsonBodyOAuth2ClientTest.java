@@ -6,9 +6,9 @@ import uz.greenwhite.gateway.oauth2.model.Token;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class BiruniOAuth2ClientTest {
+class JsonBodyOAuth2ClientTest {
 
-    private final BiruniOAuth2Client client = new BiruniOAuth2Client(null, new ObjectMapper());
+    private final JsonBodyOAuth2Client client = new JsonBodyOAuth2Client(null, new ObjectMapper());
 
     @Test
     void missingRefreshTokenIsTolerated() {

@@ -16,7 +16,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class BiruniClientAuthTest {
+class SourceClientAuthTest {
 
     @Mock GatewayProperties properties;
     @Mock TenantMappingService tenantMappingService;
@@ -32,7 +32,7 @@ class BiruniClientAuthTest {
         when(settingsService.get(anyString(), any())).thenAnswer(inv -> inv.getArgument(1));
         when(sourceAuthService.authHeaders()).thenReturn(Map.of("Authorization", "Basic xxx"));
 
-        BiruniClient client = new BiruniClient(properties, tenantMappingService, sourceAuthService, settingsService);
+        SourceClient client = new SourceClient(properties, tenantMappingService, sourceAuthService, settingsService);
         try { client.pullRequests(); } catch (Exception ignored) { /* connection fails, that's fine */ }
 
         // The point: auth headers were requested from the service, not hardcoded.

@@ -7,7 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import uz.greenwhite.gateway.oauth2.client.BiruniOAuth2Client;
+import uz.greenwhite.gateway.oauth2.client.JsonBodyOAuth2Client;
 import uz.greenwhite.gateway.oauth2.client.StandardOAuth2Client;
 import uz.greenwhite.gateway.oauth2.model.ProviderProperties;
 import uz.greenwhite.gateway.oauth2.model.Token;
@@ -24,14 +24,14 @@ class SourceTokenServiceTest {
 
     @Mock SettingsService settings;
     @Mock StandardOAuth2Client standardClient;
-    @Mock BiruniOAuth2Client biruniClient;
+    @Mock JsonBodyOAuth2Client jsonBodyClient;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> valueOps;
 
     private final ObjectMapper om = new ObjectMapper();
 
     private SourceTokenService service() {
-        return new SourceTokenService(settings, standardClient, biruniClient, redis, om);
+        return new SourceTokenService(settings, standardClient, jsonBodyClient, redis, om);
     }
 
     private void stubOAuthSettings() {
@@ -103,21 +103,38 @@ class SourceTokenServiceTest {
         assertEquals("STD", service().getBearerToken());
 
         verify(standardClient).getAccessToken(any(ProviderProperties.class));
-        verify(biruniClient, never()).getAccessToken(any());
+        verify(jsonBodyClient, never()).getAccessToken(any());
     }
 
     @Test
-    void biruniClientTypeMintsThroughBiruniClient() {
+    void biruniClientTypeMintsThroughJsonBodyClient() {
         when(redis.opsForValue()).thenReturn(valueOps);
         when(valueOps.get("source:oauth2:token")).thenReturn(null);
         stubOAuthSettings();
+        // legacy alias "biruni" must still resolve to the JSON-body client
         when(settings.get("gateway.source.auth.oauth2.client-type", "standard")).thenReturn("biruni");
-        when(biruniClient.getAccessToken(any(ProviderProperties.class)))
+        when(jsonBodyClient.getAccessToken(any(ProviderProperties.class)))
                 .thenReturn(new Token("BIR", 3600_000, "Bearer", null));
 
         assertEquals("BIR", service().getBearerToken());
 
-        verify(biruniClient).getAccessToken(any(ProviderProperties.class));
+        verify(jsonBodyClient).getAccessToken(any(ProviderProperties.class));
+        verify(standardClient, never()).getAccessToken(any());
+    }
+
+    @Test
+    void jsonBodyClientTypeMintsThroughJsonBodyClient() {
+        when(redis.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get("source:oauth2:token")).thenReturn(null);
+        stubOAuthSettings();
+        // canonical new value "json-body" resolves to the JSON-body client
+        when(settings.get("gateway.source.auth.oauth2.client-type", "standard")).thenReturn("json-body");
+        when(jsonBodyClient.getAccessToken(any(ProviderProperties.class)))
+                .thenReturn(new Token("JB", 3600_000, "Bearer", null));
+
+        assertEquals("JB", service().getBearerToken());
+
+        verify(jsonBodyClient).getAccessToken(any(ProviderProperties.class));
         verify(standardClient, never()).getAccessToken(any());
     }
 }

@@ -12,14 +12,25 @@ import uz.greenwhite.gateway.oauth2.model.OAuth2TokenRequest;
 import uz.greenwhite.gateway.oauth2.model.ProviderProperties;
 import uz.greenwhite.gateway.oauth2.model.Token;
 
+/**
+ * OAuth2 {@code client_credentials} client that posts a JSON body to the token
+ * endpoint (as opposed to {@link StandardOAuth2Client}'s RFC 6749
+ * {@code application/x-www-form-urlencoded} form). Used by BOTH the per-request
+ * forwarding path (via {@code OAuth2ProviderService}, keyed by provider type) and the
+ * source channel (via {@code SourceTokenService}).
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class BiruniOAuth2Client implements OAuth2Client {
+public class JsonBodyOAuth2Client implements OAuth2Client {
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
 
+    // Provider-type identity. MUST stay "biruni": this value is matched against the Oracle
+    // bmb_oauth2_providers.type column ('biruni') for per-request provider resolution —
+    // renaming it breaks supplier22 and every biruni-type provider. The class was renamed
+    // to JsonBodyOAuth2Client, but this wire/DB name stays a frozen contract value.
     private static final String NAME = "biruni";
 
     @Override

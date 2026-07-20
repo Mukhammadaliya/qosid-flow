@@ -16,9 +16,9 @@ import uz.greenwhite.gateway.oauth2.model.Token;
 /**
  * Standard RFC 6749 OAuth2 client for the {@code client_credentials} grant.
  * <p>
- * Unlike {@link BiruniOAuth2Client} (which posts a JSON body to Biruni's proprietary
- * token endpoint), this client sends an {@code application/x-www-form-urlencoded} body
- * as required by spec-compliant providers such as Regos ({@code auth.regos.uz}).
+ * Unlike {@link JsonBodyOAuth2Client} (which posts a JSON body to the source system's
+ * token endpoint, e.g. Biruni), this client sends an {@code application/x-www-form-urlencoded}
+ * body as required by spec-compliant providers such as Regos ({@code auth.regos.uz}).
  * <p>
  * The {@code client_credentials} flow has no refresh token, so {@link #refreshAccessToken}
  * simply acquires a fresh token, and the token response is parsed null-safely

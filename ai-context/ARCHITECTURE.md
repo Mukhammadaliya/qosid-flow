@@ -103,10 +103,12 @@ The pipeline has **two entry points** that both feed `gateway.request.new`:
 | **Output** | List of `RequestMessage` objects |
 | **Validation** | `RequestValidator.validate()` — checks tenantId, requestId, baseUrl, method |
 | **On Failure** | Logs error, increments `oraclePullError` metric |
-| **Dormant when unconfigured** | If the effective `gateway.source.base-url` OR `request-pull-uri` (settings-DB → env → yaml) is blank, `BiruniClient.pullRequests()` skips the cycle silently — no HTTP call, no `oraclePullError` increment, returns empty — and logs one WARN per unconfigured episode until the endpoints are set via the Settings UI. |
+| **Dormant when unconfigured** | If the effective `gateway.source.base-url` OR `request-pull-uri` (settings-DB → env → yaml) is blank, `SourceClient.pullRequests()` skips the cycle silently — no HTTP call, no `oraclePullError` increment, returns empty — and logs one WARN per unconfigured episode until the endpoints are set via the Settings UI. |
 | **Flow** | Pull -> Validate each -> Send valid ones to E2 -> DLQ invalid ones |
 
-**Source channel auth (B3):** `BiruniClient.pullRequests()` resolves the outbound auth header via `SourceAuthService.authHeaders()` — `basic` (default, yaml fallback), `apikey`, or `oauth2` per the `gateway.source.auth.type` setting. OAuth2 tokens are minted by `SourceTokenService` and cached under the Redis key `source:oauth2:token`, kept isolated from the per-request forwarding cache (`oauth2:token:<provider>`) — see SAFETY-RULES.md rule 31. The mint client is selectable via `gateway.source.auth.oauth2.client-type` (`standard` = RFC 6749 form-urlencoded via `StandardOAuth2Client` (default); `biruni` = proprietary JSON body via `BiruniOAuth2Client`, for Smartup/Biruni sources).
+> **Source-integration contract:** the pull/save/OAuth2-provider endpoints and JSON shapes qosid-flow expects from ANY source system (Biruni is the reference implementation) are specified in [`SOURCE-INTEGRATION-CONTRACT.md`](SOURCE-INTEGRATION-CONTRACT.md). The connector class is `SourceClient` (renamed from the former Biruni-specific name; package `oracle/` unchanged); the OAuth2 JSON-body client is `JsonBodyOAuth2Client` (its `getName()` still returns `"biruni"` — a frozen provider-type value matched against the Oracle `bmb_oauth2_providers.type` column).
+
+**Source channel auth (B3):** `SourceClient.pullRequests()` resolves the outbound auth header via `SourceAuthService.authHeaders()` — `basic` (default, yaml fallback), `apikey`, or `oauth2` per the `gateway.source.auth.type` setting. OAuth2 tokens are minted by `SourceTokenService` and cached under the Redis key `source:oauth2:token`, kept isolated from the per-request forwarding cache (`oauth2:token:<provider>`) — see SAFETY-RULES.md rule 31. The mint client is selectable via `gateway.source.auth.oauth2.client-type` (`standard` = RFC 6749 form-urlencoded via `StandardOAuth2Client` (default); `json-body`, or the legacy alias `biruni` = JSON body via `JsonBodyOAuth2Client`, for Smartup/Biruni-style sources).
 
 ### E2: Kafka Produce — `RequestProducer.java`
 
@@ -157,20 +159,20 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 | **Oracle save** | `saveWithRetry()` → Biruni API | Yo'q |
 | **Ack** | MANUAL | MANUAL |
 
-**Source channel auth (B3):** `BiruniClient.saveResponse()` (the Oracle-save leg) applies the same `SourceAuthService.authHeaders()` resolution as the E1 pull — same `gateway.source.auth.type` setting, same isolated OAuth2 cache. See CONFIGURATION.md → `gateway.source.auth.*` and SAFETY-RULES.md rule 31.
+**Source channel auth (B3):** `SourceClient.saveResponse()` (the Oracle-save leg) applies the same `SourceAuthService.authHeaders()` resolution as the E1 pull — same `gateway.source.auth.type` setting, same isolated OAuth2 cache. See CONFIGURATION.md → `gateway.source.auth.*` and SAFETY-RULES.md rule 31.
 
 ## Component Map
 
 | Package | Responsibility | Key Classes |
 |---------|---------------|-------------|
-| `oracle/` | E1 (Pull) — Biruni API communication | `RequestPuller`, `BiruniClient` |
+| `oracle/` | E1 (Pull) — source system communication (e.g. Biruni) | `RequestPuller`, `SourceClient` |
 | `kafka/producer/` | E2 — Kafka message production | `RequestProducer` |
 | `kafka/consumer/oracle/` | E3 + E5 — Oracle request/response/DLQ | `OracleRequestConsumer`, `OracleResponseConsumer`, `OracleDlqConsumer` |
 | `kafka/consumer/api/` | E3 + E5 — API request/response/DLQ | `ApiRequestConsumer`, `ApiResponseConsumer`, `ApiDlqConsumer` |
 | `http/` | E4 — HTTP client with CB + OAuth2 | `HttpRequestService` |
 | `state/` | Redis state management + distributed locks | `RequestStateService` |
 | `oauth2/` | OAuth2 token caching + distributed locking | `OAuth2ProviderService`, `OAuth2TokenRedisCache`, `OAuth2ProviderFetcher` |
-| `oauth2/client/` | Pluggable OAuth2 client implementations | `OAuth2Client` (interface), `BiruniOAuth2Client` (`type=biruni`, JSON body), `StandardOAuth2Client` (`type=standard`, RFC 6749 form-urlencoded, e.g. Regos) |
+| `oauth2/client/` | Pluggable OAuth2 client implementations | `OAuth2Client` (interface), `JsonBodyOAuth2Client` (`getName()="biruni"`, JSON body), `StandardOAuth2Client` (`type=standard`, RFC 6749 form-urlencoded, e.g. Regos) |
 | `oauth2/model/` | OAuth2 data models | `Token`, `ProviderProperties`, `OAuth2TokenRequest` |
 | `concurrency/` | Dynamic consumer thread scaling | `DynamicConcurrencyManager`, `ConcurrencyMonitorService`, `ConcurrencyMetrics` |
 | `metrics/` | Centralized metrics (all metrics in one class) | `GatewayMetrics` |
@@ -213,7 +215,7 @@ First-boot default account: `admin` / `admin` (logged as WARN). One-shot reset v
 
 Three pieces make DB-stored settings actually take effect (A-loyiha settings-editability, hardened by D stop-to-edit):
 
-- **`SettingsRegistry`** (static, no Spring): per-key metadata — group, uz label, input type, and effect-class. `LIVE` keys are read per-use via `SettingsService.get(key, fallback)` (e.g. `gateway.api.base-url` in `ProxyController`, `gateway.source.base-url`/pull/save URIs in `BiruniClient`, `gateway.source.oauth2-provider-uri` in `OAuth2ProviderFetcher`, tenant field names in `TenantMappingService`, Loki/Prometheus URLs). `REQUIRES_RESTART` keys are bound into beans at startup (`@ConfigurationProperties`/`@Value`). `READ_ONLY` keys are bootstrap/infra (ports, Kafka, Redis, `gateway.settings.db-path`, active profile) — shown greyed in the UI and rejected on PUT. Unknown keys are NOT editable (`isEditable(key)` is the allowlist: PUT rejects them, boot-time injection skips them); `effectClassOf` still reports `REQUIRES_RESTART` for unknown keys, but that is display-only. Drives `GET /settings/registry`, the `SettingsController` write guard, and the `SettingsEnvironmentPostProcessor` injection allowlist.
+- **`SettingsRegistry`** (static, no Spring): per-key metadata — group, uz label, input type, and effect-class. `LIVE` keys are read per-use via `SettingsService.get(key, fallback)` (e.g. `gateway.api.base-url` in `ProxyController`, `gateway.source.base-url`/pull/save URIs in `SourceClient`, `gateway.source.oauth2-provider-uri` in `OAuth2ProviderFetcher`, tenant field names in `TenantMappingService`, Loki/Prometheus URLs). `REQUIRES_RESTART` keys are bound into beans at startup (`@ConfigurationProperties`/`@Value`). `READ_ONLY` keys are bootstrap/infra (ports, Kafka, Redis, `gateway.settings.db-path`, active profile) — shown greyed in the UI and rejected on PUT. Unknown keys are NOT editable (`isEditable(key)` is the allowlist: PUT rejects them, boot-time injection skips them); `effectClassOf` still reports `REQUIRES_RESTART` for unknown keys, but that is display-only. Drives `GET /settings/registry`, the `SettingsController` write guard, and the `SettingsEnvironmentPostProcessor` injection allowlist.
 - **`SettingsEnvironmentPostProcessor`** (registered in `spring.factories`, ordered after config-data): at boot it opens the H2 settings DB directly (JDBC, `IFEXISTS=TRUE`) and injects non-secret rows as a `settings-db` `MapPropertySource` ranked **above** `application.yml` (below `systemEnvironment`). **Allowlist:** only EDITABLE registry keys (`SettingsRegistry.isEditable`) are injected — read-only infra keys (ports, Kafka, Redis, db-path) and unknown keys in the DB are never injected, so the settings DB cannot repoint infra. For editable keys the DB value overrides both the yaml default AND its `${ENV:default}` placeholder env var (the placeholder resolves inside the lower-ranked yaml source) — this is what makes UI edits of `REQUIRES_RESTART` settings apply on next boot with zero per-consumer changes. Secrets never enter the Environment (runtime `SettingsService.getSecret` only); any failure (first boot, no DB file) is swallowed and yaml defaults apply. **DEPLOY NOTE:** once a `gateway.*` key has a settings-DB row (the B1 migration seeds many on first boot), changing its systemd env var no longer takes effect — the DB/UI is the source of truth for that key.
 - **Stop-to-edit flow (D):** settings are edited ONLY while the gateway JVM is stopped, via the ops sidecar (`GET/PUT /ops/api/settings*` — ops writes the shared H2 directly through settings-core, guarded by `GatewayStatusService.isUp()` → `409 {"error":"service-running"}` while the gateway answers its health URL). Every gateway-side settings write endpoint answers `409 {"error":"stop-required"}` unconditionally. Consequence: by the time the gateway boots, all edits are already in the DB and the `SettingsEnvironmentPostProcessor` applies them — there is no "restart pending" intermediate state anymore (the old `restartPending` flag + `RestartPendingResetRunner` were removed). The SPA reconnects automatically after a start via the login-token handoff (see Ops console below).
 
@@ -269,13 +271,13 @@ with **no** `@JsonProperty("company_id")` binding. The main app's wire shape
 (field names configurable, default `company_id`/`filial_id`) is translated at exactly
 two boundary points by `TenantMappingService` (`tenant/TenantMappingService.java`):
 
-- **Ingress** — `BiruniClient.pullRequests()` maps every raw Biruni pull element through
+- **Ingress** — `SourceClient.pullRequests()` maps every raw source pull element through
   `TenantMappingService.toInternal(JsonNode)`, which builds the `RequestMessage` (via a
   lenient, unknown-properties-tolerant `ObjectMapper` copy) and separately extracts
   `tenantId`/`extraTenantId` using the *configured* field names read from
   `SettingsService` (`gateway.tenant.field-name` / `gateway.tenant.extra-field-name`).
 - **Egress** — `TenantMappingService.toExternal(Long tenantId)` builds a
-  `{configuredField: tenantId}` map, used by both `BiruniClient.saveResponse()` (Biruni
+  `{configuredField: tenantId}` map, used by both `SourceClient.saveResponse()` (source
   save) and `OAuth2ProviderFetcher.fetchFromOracle()` (OAuth2 provider-config fetch).
 
 Both directions read the field names **dynamically per call** from `SettingsService` —

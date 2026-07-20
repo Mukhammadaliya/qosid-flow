@@ -112,7 +112,7 @@ gateway:
     # Request-lifecycle endpoints are configured via the Settings UI (settings DB), not yaml.
     # yaml carries only an empty env-var placeholder as a transitional fallback (same pattern
     # as B3 basic-auth SOURCE_USERNAME/SOURCE_PASSWORD). Precedence: settings-DB row > env var > empty.
-    # Blank base-url/request-pull-uri → pull cycle stays dormant (see BiruniClient.pullRequests).
+    # Blank base-url/request-pull-uri → pull cycle stays dormant (see SourceClient.pullRequests).
     base-url: ${SOURCE_BASE_URL:}
     username: ${SOURCE_USERNAME:}
     password: ${SOURCE_PASSWORD:}

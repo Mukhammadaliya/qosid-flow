@@ -129,7 +129,7 @@ public NewTopic myNewTopic() {
 
 | Type (`getName()`) | Class | Token request format | Use for |
 |--------------------|-------|----------------------|---------|
-| `biruni` | `BiruniOAuth2Client` | JSON body (proprietary Biruni endpoint) | Biruni/smartup providers |
+| `biruni` | `JsonBodyOAuth2Client` | JSON body (posted to the token endpoint) | Biruni/smartup-style providers (type value `"biruni"` is frozen) |
 | `standard` | `StandardOAuth2Client` | `application/x-www-form-urlencoded` (RFC 6749 `client_credentials`, no refresh token) | Spec-compliant providers, e.g. Regos (`auth.regos.uz`) |
 
 **Files to create/modify:**

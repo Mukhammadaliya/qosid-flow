@@ -8,7 +8,7 @@ Complete reference for all configuration parameters. Every property has a defaul
 
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
-| `gateway.source.base-url` | String | `` (empty — configured via Settings UI) | `SOURCE_BASE_URL` | Biruni API base URL. **Request-lifecycle endpoint — configured ONLY via the Settings UI**, not yaml (yaml/env carries an empty transitional fallback). **LIVE-editable** — `BiruniClient` resolves it per call through `SettingsService`. **Dormant pull:** if this OR `request-pull-uri` is blank, the E1 pull cycle skips silently (no HTTP, no pull-error metric) and warns once until configured. |
+| `gateway.source.base-url` | String | `` (empty — configured via Settings UI) | `SOURCE_BASE_URL` | Source system API base URL (e.g. Biruni). **Request-lifecycle endpoint — configured ONLY via the Settings UI**, not yaml (yaml/env carries an empty transitional fallback). **LIVE-editable** — `SourceClient` resolves it per call through `SettingsService`. **Dormant pull:** if this OR `request-pull-uri` is blank, the E1 pull cycle skips silently (no HTTP, no pull-error metric) and warns once until configured. |
 | `gateway.source.username` | String | `` (empty, mandatory env var) | `SOURCE_USERNAME` | Basic Auth username |
 | `gateway.source.password` | String | `` (empty, mandatory env var) | `SOURCE_PASSWORD` | Basic Auth password |
 | `gateway.source.request-pull-uri` | String | `` (empty — configured via Settings UI) | `SOURCE_PULL_URI` | URI for pulling requests. **Request-lifecycle endpoint — configured ONLY via the Settings UI** (empty transitional env fallback). **LIVE-editable** (resolved per call via `SettingsService`). Blank ⇒ E1 pull stays dormant (see `base-url`). |
@@ -18,7 +18,7 @@ Complete reference for all configuration parameters. Every property has a defaul
 
 ## gateway.source.auth.* — Source Channel Outbound Auth (B3)
 
-**No static `*Properties` class** — these 10 keys live only in the settings DB, read per-call via `SettingsService.get`/`getSecret` by `SourceAuthService` (`source/SourceAuthService.java`) and `SourceTokenService` (`source/SourceTokenService.java`). **UI-managed** exclusively via `GET/PUT /qosid/admin/api/source-auth` and `POST /qosid/admin/api/source-auth/test` (`SourceAuthController`) — there is no yaml/env equivalent for these keys except the basic-auth fallback noted below. Applied by `BiruniClient` on both `pullRequests()` (E1) and `saveResponse()` (E5) via `sourceAuthService.authHeaders()`.
+**No static `*Properties` class** — these 10 keys live only in the settings DB, read per-call via `SettingsService.get`/`getSecret` by `SourceAuthService` (`source/SourceAuthService.java`) and `SourceTokenService` (`source/SourceTokenService.java`). **UI-managed** exclusively via `GET/PUT /qosid/admin/api/source-auth` and `POST /qosid/admin/api/source-auth/test` (`SourceAuthController`) — there is no yaml/env equivalent for these keys except the basic-auth fallback noted below. Applied by `SourceClient` on both `pullRequests()` (E1) and `saveResponse()` (E5) via `sourceAuthService.authHeaders()`.
 
 | Property | Type | Default | Secret | Description |
 |----------|------|---------|--------|-------------|
@@ -28,7 +28,7 @@ Complete reference for all configuration parameters. Every property has a defaul
 | `gateway.source.auth.apikey.header` | String | `X-Api-Key` | no | Header name used to carry the API key. |
 | `gateway.source.auth.apikey.value` | String | `` (empty) | **yes** | API key value. |
 | `gateway.source.auth.oauth2.token-url` | String | `` (empty) | no | Token endpoint for the source-channel OAuth2 client (`client_credentials`). Wire format depends on `client-type` below. |
-| `gateway.source.auth.oauth2.client-type` | String | `standard` (values: `standard` \| `biruni`) | no | Which client mints the source token: `standard` = RFC 6749 form-urlencoded (`StandardOAuth2Client`); `biruni` = proprietary JSON body (`BiruniOAuth2Client`, for Smartup/Biruni sources like smartup24). Absent/blank ⇒ `standard` (backwards compatible). |
+| `gateway.source.auth.oauth2.client-type` | String | `standard` (values: `standard` \| `json-body` \| `biruni`) | no | Which client mints the source token: `standard` = RFC 6749 form-urlencoded (`StandardOAuth2Client`); `json-body` (or the legacy alias `biruni`) = JSON body (`JsonBodyOAuth2Client`, for Smartup/Biruni-style sources like smartup24). Absent/blank ⇒ `standard` (backwards compatible). |
 | `gateway.source.auth.oauth2.client-id` | String | `` (empty) | no | OAuth2 client id. |
 | `gateway.source.auth.oauth2.client-secret` | String | `` (empty) | **yes** | OAuth2 client secret. |
 | `gateway.source.auth.oauth2.scope` | String | `` (empty) | no | Optional OAuth2 scope. |

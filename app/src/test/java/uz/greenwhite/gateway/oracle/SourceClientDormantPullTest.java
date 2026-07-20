@@ -34,7 +34,7 @@ import static org.mockito.Mockito.when;
  * dormant — no HTTP call, no auth resolution, empty result, warn logged once.
  */
 @ExtendWith(MockitoExtension.class)
-class BiruniClientDormantPullTest {
+class SourceClientDormantPullTest {
 
     @Mock RestClient restClient;
     @Mock GatewayProperties properties;
@@ -42,8 +42,8 @@ class BiruniClientDormantPullTest {
     @Mock SourceAuthService sourceAuthService;
     @Mock SettingsService settingsService;
 
-    private BiruniClient client() {
-        return new BiruniClient(restClient, properties, tenantMappingService, sourceAuthService, settingsService);
+    private SourceClient client() {
+        return new SourceClient(restClient, properties, tenantMappingService, sourceAuthService, settingsService);
     }
 
     private void stubSettings(String base, String pullUri) {
@@ -88,12 +88,12 @@ class BiruniClientDormantPullTest {
     void twoDormantCycles_invokeHttpZeroTimes_andWarnOnce() {
         stubSettings("", "");
 
-        Logger logger = (Logger) LoggerFactory.getLogger(BiruniClient.class);
+        Logger logger = (Logger) LoggerFactory.getLogger(SourceClient.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
         logger.addAppender(appender);
         try {
-            BiruniClient client = client();
+            SourceClient client = client();
             client.pullRequests();
             client.pullRequests();
 

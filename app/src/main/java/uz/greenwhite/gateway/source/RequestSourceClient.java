@@ -5,9 +5,10 @@ import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import java.util.List;
 
 /**
- * Interface for pulling requests from any data source.
- * Implementations may connect to Oracle/Biruni, PostgreSQL,
- * REST APIs, file systems, or any other source.
+ * Interface for pulling requests from any source system.
+ * Implementations may connect to Oracle-backed REST (e.g. Biruni), PostgreSQL,
+ * REST APIs, file systems, or any other source. {@code SourceClient} is the
+ * reference implementation; see {@code ai-context/SOURCE-INTEGRATION-CONTRACT.md}.
  */
 public interface RequestSourceClient {
 

@@ -138,7 +138,7 @@ that gap.
 
 ### 30. Never bypass TenantMappingService at the Biruni boundary
 
-Biruni pull ingress (`BiruniClient.pullRequests`) MUST route each element through
+Source pull ingress (`SourceClient.pullRequests`) MUST route each element through
 `TenantMappingService.toInternal`, and Biruni save + OAuth fetch egress MUST build
 their tenant key via `toExternal`. The internal model uses `tenantId`/`extraTenantId`
 with NO `@JsonProperty("company_id")` binding — deserializing a Biruni pull directly

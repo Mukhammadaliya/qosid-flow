@@ -35,7 +35,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
  * {@link SettingsService} at request time, not the startup-bound
  * {@link GatewayProperties#getOauth2ProviderUri()} value — so admin edits of
  * {@code gateway.source.oauth2-provider-uri} apply without a restart (mirrors
- * {@code BiruniClientLiveEndpointTest}).
+ * {@code SourceClientLiveEndpointTest}).
  */
 @ExtendWith(MockitoExtension.class)
 class OAuth2ProviderFetcherLiveEndpointTest {

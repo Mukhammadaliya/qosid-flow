@@ -12,7 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Resolves the outbound auth header(s) for the SOURCE channel (Biruni pull/save).
+ * Resolves the outbound auth header(s) for the SOURCE channel (source pull/save, e.g. Biruni).
  * The type ({@code basic}|{@code apikey}|{@code oauth2}) is read per call from
  * settings so a UI change takes effect immediately. Basic falls back to the yaml
  * GatewayProperties when the settings DB has no credentials (dev / pre-migration).

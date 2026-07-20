@@ -14,11 +14,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Anti-corruption boundary between the main app's field names and the internal
+ * Anti-corruption boundary between the source system's field names and the internal
  * tenant model. Ingress ({@link #toInternal}) reads the UI-configured field
- * names (default company_id/filial_id) from a Biruni pull JSON element into
+ * names (default company_id/filial_id) from a source pull JSON element into
  * tenantId/extraTenantId. Egress ({@link #toExternal}) reverses tenantId back to
- * the configured key so bmb receives the shape it expects. Field names are read
+ * the configured key so the source receives the shape it expects. Field names are read
  * per call from SettingsService (dynamic — a UI change takes effect immediately).
  */
 @Slf4j
@@ -32,7 +32,7 @@ public class TenantMappingService {
 
     private final SettingsService settings;
     /**
-     * Lenient copy used ONLY for the Biruni-pull ingress conversion: the configured tenant/extra
+     * Lenient copy used ONLY for the source-pull ingress conversion: the configured tenant/extra
      * field names (e.g. company_id/filial_id) are unknown to RequestMessage and must be tolerated
      * here. This ingress copy-mapper tolerates unknown pull fields; the Kafka round-trip uses
      * spring-kafka's JsonDeserializer (also lenient by default — FAIL_ON_UNKNOWN_PROPERTIES is
@@ -44,7 +44,7 @@ public class TenantMappingService {
     /**
      * Raw JSON keys that carry {@code @JsonAlias} on {@code RequestMessage.tenantId}/
      * {@code extraTenantId} (added for Kafka back-compat — see class javadoc). Left in place,
-     * a Biruni pull element containing one of these would make the ingress
+     * a source pull element containing one of these would make the ingress
      * {@code convertValue} below bind it straight onto the strict {@code Long} tenantId/
      * extraTenantId — defeating the lenient, non-numeric-tolerant {@link #readLong} and
      * throwing on e.g. {@code {"company_id":"abc"}}. (A class-level
@@ -62,7 +62,7 @@ public class TenantMappingService {
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
-    /** INGRESS: build a RequestMessage from a raw Biruni pull element. */
+    /** INGRESS: build a RequestMessage from a raw source pull element. */
     public RequestMessage toInternal(JsonNode element) {
         JsonNode forConversion = element;
         if (element instanceof ObjectNode on && (on.has("company_id") || on.has("filial_id"))) {
@@ -84,7 +84,7 @@ public class TenantMappingService {
         return new TenantPair(tenant, extra);
     }
 
-    /** EGRESS: configured tenant key → value, for the Biruni save / OAuth fetch body. */
+    /** EGRESS: configured tenant key → value, for the source save / OAuth fetch body. */
     public Map<String, Object> toExternal(Long tenantId) {
         String field = settings.get(FIELD_KEY, DEFAULT_FIELD);
         Map<String, Object> out = new LinkedHashMap<>();

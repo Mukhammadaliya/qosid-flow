@@ -99,7 +99,7 @@ public class OAuth2ProviderFetcher {
             body.put("oauth2_provider", providerName);
 
             // LIVE read: admin edits to the provider-data URI apply without a restart
-            // (mirrors BiruniClient's pull/save URI live-reads). yaml value is the fallback.
+            // (mirrors SourceClient's pull/save URI live-reads). yaml value is the fallback.
             String providerUri = settingsService.get(
                     "gateway.source.oauth2-provider-uri", properties.getOauth2ProviderUri());
 

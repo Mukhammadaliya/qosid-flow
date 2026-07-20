@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Component
-public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
+public class SourceClient implements RequestSourceClient, ResponseSinkClient {
 
     private final RestClient restClient;
     private final GatewayProperties properties;
@@ -44,7 +44,7 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
     private final AtomicBoolean pullDisabledWarned = new AtomicBoolean(false);
 
     @Autowired
-    public BiruniClient(GatewayProperties properties, TenantMappingService tenantMappingService,
+    public SourceClient(GatewayProperties properties, TenantMappingService tenantMappingService,
                          SourceAuthService sourceAuthService, SettingsService settingsService) {
         this(buildRestClient(properties), properties, tenantMappingService, sourceAuthService, settingsService);
     }
@@ -53,7 +53,7 @@ public class BiruniClient implements RequestSourceClient, ResponseSinkClient {
      * Test seam: allows binding a {@link org.springframework.test.web.client.MockRestServiceServer}
      * to the RestClient. Production wiring goes through the {@code @Autowired} constructor.
      */
-    BiruniClient(RestClient restClient, GatewayProperties properties, TenantMappingService tenantMappingService,
+    SourceClient(RestClient restClient, GatewayProperties properties, TenantMappingService tenantMappingService,
                  SourceAuthService sourceAuthService, SettingsService settingsService) {
         this.restClient = restClient;
         this.properties = properties;

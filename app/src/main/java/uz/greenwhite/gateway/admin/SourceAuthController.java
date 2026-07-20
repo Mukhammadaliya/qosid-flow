@@ -13,10 +13,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Admin view + diagnostics of the source-channel outbound auth (Biruni pull/save).
+ * Admin view + diagnostics of the source-channel outbound auth (source pull/save, e.g. Biruni).
  * Stop-to-edit: config writes are refused on the running service (409 stop-required) —
  * editing happens via the ops sidecar while the service is stopped. Secrets are masked
- * on read. The test endpoint never calls the Biruni pull endpoint — it consumes pending
+ * on read. The test endpoint never calls the source pull endpoint — it consumes pending
  * production requests, so a live GET there would discard real work as a side effect.
  */
 @Slf4j
@@ -57,7 +57,7 @@ public class SourceAuthController {
     }
 
     /**
-     * Validates and reports the configured source auth without ever calling the Biruni
+     * Validates and reports the configured source auth without ever calling the source
      * pull endpoint — that endpoint CONSUMES pending production requests (drained by
      * RequestPuller every 5s), so a live GET there would discard real work as a side effect.
      */

@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-import uz.greenwhite.gateway.oauth2.client.BiruniOAuth2Client;
+import uz.greenwhite.gateway.oauth2.client.JsonBodyOAuth2Client;
 import uz.greenwhite.gateway.oauth2.client.OAuth2Client;
 import uz.greenwhite.gateway.oauth2.client.StandardOAuth2Client;
 import uz.greenwhite.gateway.oauth2.model.ProviderProperties;
@@ -15,8 +15,8 @@ import uz.greenwhite.gateway.settings.SettingsService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * OAuth2 client_credentials token cache for the SOURCE channel (Biruni pull/save).
- * Deliberately isolated from the per-request provider cache ({@code oauth2:token:*})
+ * OAuth2 client_credentials token cache for the SOURCE channel (source pull/save,
+ * e.g. Biruni). Deliberately isolated from the per-request provider cache ({@code oauth2:token:*})
  * by using the reserved key {@code source:oauth2:token} — a source-channel token
  * must never collide with, or be evicted by, a per-request forwarding provider.
  */
@@ -30,7 +30,7 @@ public class SourceTokenService {
 
     private final SettingsService settings;
     private final StandardOAuth2Client standardClient;
-    private final BiruniOAuth2Client biruniClient;
+    private final JsonBodyOAuth2Client jsonBodyClient;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
@@ -47,13 +47,16 @@ public class SourceTokenService {
 
     /**
      * Selects the token-mint client per {@code gateway.source.auth.oauth2.client-type}:
-     * {@code biruni} = proprietary JSON body (Smartup/Biruni sources), else (default
-     * {@code standard}) = RFC 6749 form-urlencoded. Package-private so the admin test
-     * path shares exactly this selection logic.
+     * {@code json-body} (or the legacy alias {@code biruni}) = JSON body posted to the
+     * token endpoint (Smartup/Biruni-style sources), else (default {@code standard}) =
+     * RFC 6749 form-urlencoded. Package-private so the admin test path shares exactly
+     * this selection logic.
      */
     OAuth2Client selectClient() {
         String clientType = settings.get("gateway.source.auth.oauth2.client-type", "standard");
-        return "biruni".equalsIgnoreCase(clientType) ? biruniClient : standardClient;
+        // "biruni" kept as a backward-compat alias for the pre-rename config value.
+        boolean jsonBody = "json-body".equalsIgnoreCase(clientType) || "biruni".equalsIgnoreCase(clientType);
+        return jsonBody ? jsonBodyClient : standardClient;
     }
 
     private String readCache() {
