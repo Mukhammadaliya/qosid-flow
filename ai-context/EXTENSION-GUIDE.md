@@ -131,6 +131,7 @@ public NewTopic myNewTopic() {
 |--------------------|-------|----------------------|---------|
 | `biruni` | `BiruniOAuth2Client` | JSON body (proprietary Biruni endpoint) | Biruni/smartup providers |
 | `standard` | `StandardOAuth2Client` | `application/x-www-form-urlencoded` (RFC 6749 `client_credentials`, no refresh token) | Spec-compliant providers, e.g. Regos (`auth.regos.uz`) |
+| `mison` | `MisonOAuth2Client` | JSON body `{"api_key": ...}`, no refresh token | MISON POS (`backend.mison.uz`). The API key travels in `clientId` — `OAuth2ProviderFetcher` discards a provider whose `clientId` is null, so it must not be placed in `clientSecret`. |
 
 **Files to create/modify:**
 
