@@ -1,7 +1,7 @@
 package uz.greenwhite.gateway.notification;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import uz.greenwhite.gateway.config.TelegramProperties;
 import uz.greenwhite.gateway.model.kafka.DlqMessage;
+import uz.greenwhite.gateway.settings.SettingsService;
 
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
@@ -16,51 +17,94 @@ import java.util.Map;
 
 @Slf4j
 @Service
-@ConditionalOnProperty(name = "gateway.telegram.enabled", havingValue = "true")
 public class TelegramNotificationService implements NotificationService {
 
     private final TelegramProperties properties;
+    private final SettingsService settings;
     private final RestTemplate restTemplate;
-    private final boolean enabled;
     private static final String TELEGRAM_API = "https://api.telegram.org/bot%s/sendMessage";
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    public TelegramNotificationService(TelegramProperties properties) {
+    @Autowired
+    public TelegramNotificationService(TelegramProperties properties, SettingsService settings) {
+        this(properties, settings, buildRestTemplate(properties));
+    }
+
+    /** Testlar uchun: RestTemplate tashqaridan beriladi. */
+    TelegramNotificationService(TelegramProperties properties, SettingsService settings, RestTemplate restTemplate) {
         this.properties = properties;
-        this.enabled = properties.getBotToken() != null && !properties.getBotToken().isBlank();
+        this.settings = settings;
+        this.restTemplate = restTemplate;
+        log.info("Telegram notification service initialized (per-send config: settings-DB -> env fallback)");
+    }
 
+    private static RestTemplate buildRestTemplate(TelegramProperties p) {
         var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(properties.getConnectTimeoutMs());
-        factory.setReadTimeout(properties.getReadTimeoutMs());
-        this.restTemplate = new RestTemplate(factory);
+        factory.setConnectTimeout(p.getConnectTimeoutMs());
+        factory.setReadTimeout(p.getReadTimeoutMs());
+        return new RestTemplate(factory);
+    }
 
-        if (enabled) {
-            log.info("Telegram notification ENABLED: chatId={}", properties.getChatId());
-        } else {
-            log.warn("Telegram notification DISABLED: bot token is blank (set TELEGRAM_BOT_TOKEN)");
-        }
+    // --- effektiv konfiguratsiya: DB qatori yutadi, yo'q bo'lsa env/yaml (TelegramProperties) ---
+
+    private boolean effectiveEnabled() {
+        return Boolean.parseBoolean(
+                settings.get("gateway.telegram.enabled", String.valueOf(properties.isEnabled())));
+    }
+
+    private String effectiveToken() {
+        String fallback = properties.getBotToken() == null ? "" : properties.getBotToken();
+        return settings.getSecret("gateway.telegram.bot-token", fallback);
+    }
+
+    private String effectiveChatId() {
+        String fallback = properties.getChatId() == null ? "" : String.valueOf(properties.getChatId());
+        return settings.get("gateway.telegram.chat-id", fallback);
+    }
+
+    private String effectiveThreadId() {
+        String fallback = properties.getMessageThreadId() == null ? "" : String.valueOf(properties.getMessageThreadId());
+        return settings.get("gateway.telegram.message-thread-id", fallback);
     }
 
     @Override
     public void sendDlqAlert(DlqMessage message) {
-        if (!enabled) {
+        if (!isEnabled()) {
             log.warn("Telegram disabled — DLQ alert not sent: {}", message.getCompositeId());
             return;
         }
-
         try {
             String text = formatMessage(message);
             sendMessage(text);
             log.info("DLQ alert sent to Telegram: {}", message.getCompositeId());
         } catch (Exception e) {
             log.error("Failed to send DLQ alert to Telegram: {} - {}",
-                    message.getCompositeId(), e.getMessage());
+                    message.getCompositeId(), redact(e.getMessage()));
         }
+    }
+
+    /** Admin test tugmasi: chegaralangan sinov xabari, natija strukturali, token redaksiyada. */
+    public Map<String, Object> sendTest() {
+        if (!isEnabled()) {
+            return Map.of("ok", false, "error", "telegram-disabled");
+        }
+        try {
+            sendMessage("✅ Qosid Flow: Telegram sozlamalari sinov xabari");
+            return Map.of("ok", true);
+        } catch (Exception e) {
+            return Map.of("ok", false, "error", redact(e.getMessage()));
+        }
+    }
+
+    private String redact(String msg) {
+        if (msg == null) return "unknown error";
+        String token = effectiveToken();
+        return token.isBlank() ? msg : msg.replace(token, "***");
     }
 
     @Override
     public boolean isEnabled() {
-        return enabled;
+        return effectiveEnabled() && !effectiveToken().isBlank();
     }
 
     private String formatMessage(DlqMessage msg) {
@@ -150,15 +194,16 @@ public class TelegramNotificationService implements NotificationService {
     }
 
     private void sendMessage(String text) {
-        String url = String.format(TELEGRAM_API, properties.getBotToken());
+        String url = String.format(TELEGRAM_API, effectiveToken());
 
         Map<String, Object> body = new HashMap<>();
-        body.put("chat_id", properties.getChatId());
+        body.put("chat_id", effectiveChatId());
         body.put("text", text);
         body.put("parse_mode", "HTML");
 
-        if (properties.getMessageThreadId() != null) {
-            body.put("message_thread_id", properties.getMessageThreadId());
+        String threadId = effectiveThreadId();
+        if (!threadId.isBlank()) {
+            body.put("message_thread_id", Integer.parseInt(threadId));
         }
 
         HttpHeaders headers = new HttpHeaders();
