@@ -6,6 +6,9 @@ import {
   sourceAuthFromRows,
   tenantFromRows,
   aiConfigFromRows,
+  telegramConfig,
+  telegramConfigFromRows,
+  MASK,
   TYPED_FORM_KEYS,
 } from './settingsKeys';
 
@@ -221,5 +224,38 @@ describe('settingsKeys fromRows helpers (ops GET -> form values)', () => {
         { key: 'gateway.ai.api-key', value: '***' },
       ]),
     ).toEqual({ baseUrl: 'https://llm/v1', apiKey: '', model: 'm1' });
+  });
+});
+
+describe('settingsKeys.telegramConfig', () => {
+  it('TYPED_FORM_KEYS covers telegram keys (hidden from General)', () => {
+    expect(TYPED_FORM_KEYS.has('gateway.telegram.enabled')).toBe(true);
+    expect(TYPED_FORM_KEYS.has('gateway.telegram.bot-token')).toBe(true);
+    expect(TYPED_FORM_KEYS.has('gateway.telegram.chat-id')).toBe(true);
+    expect(TYPED_FORM_KEYS.has('gateway.telegram.message-thread-id')).toBe(true);
+  });
+
+  it('maps form values; blank token omitted (keep-existing)', () => {
+    const entries = telegramConfig({ enabled: true, botToken: '', chatId: '-100', messageThreadId: '8520' });
+    expect(entries).toContainEqual({ key: 'gateway.telegram.enabled', value: 'true', secret: false });
+    expect(entries).toContainEqual({ key: 'gateway.telegram.chat-id', value: '-100', secret: false });
+    expect(entries).toContainEqual({ key: 'gateway.telegram.message-thread-id', value: '8520', secret: false });
+    expect(entries.find((e) => e.key === 'gateway.telegram.bot-token')).toBeUndefined();
+  });
+
+  it('emits a typed token as secret; masked token omitted', () => {
+    expect(telegramConfig({ enabled: false, botToken: '123:abc' }))
+      .toContainEqual({ key: 'gateway.telegram.bot-token', value: '123:abc', secret: true });
+    expect(telegramConfig({ enabled: false, botToken: MASK })
+      .find((e) => e.key === 'gateway.telegram.bot-token')).toBeUndefined();
+  });
+
+  it('telegramConfigFromRows maps rows, token starts blank', () => {
+    const f = telegramConfigFromRows([
+      { key: 'gateway.telegram.enabled', value: 'true' },
+      { key: 'gateway.telegram.bot-token', value: '***' },
+      { key: 'gateway.telegram.chat-id', value: '-100' },
+    ]);
+    expect(f).toEqual({ enabled: true, botToken: '', chatId: '-100', messageThreadId: '' });
   });
 });

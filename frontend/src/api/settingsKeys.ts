@@ -1,6 +1,6 @@
 /**
  * Pure form-values <-> settings-key mappings for the typed settings pages
- * (Source Auth / Tenant Mapping / AI config) in stop-to-edit mode.
+ * (Source Auth / Tenant Mapping / AI / Telegram config) in stop-to-edit mode.
  *
  * While the gateway is DOWN, those pages save through the ops sidecar's generic
  * `PUT /ops/api/settings/{key}` instead of their dedicated gateway endpoints.
@@ -33,6 +33,10 @@ export const TYPED_FORM_KEYS: ReadonlySet<string> = new Set([
   'gateway.ai.base-url',
   'gateway.ai.api-key',
   'gateway.ai.model',
+  'gateway.telegram.enabled',
+  'gateway.telegram.bot-token',
+  'gateway.telegram.chat-id',
+  'gateway.telegram.message-thread-id',
 ]);
 
 export interface SettingEntry {
@@ -162,6 +166,34 @@ export function aiConfigFromRows(rows: Row[]): AiConfigFormValues {
   };
 }
 
+// ------------------------------------------------------------ telegram config
+
+export interface TelegramConfigFormValues {
+  enabled?: boolean;
+  botToken?: string;
+  chatId?: string;
+  messageThreadId?: string;
+}
+
+export function telegramConfig(f: TelegramConfigFormValues): SettingEntry[] {
+  return [
+    plain('gateway.telegram.enabled', String(!!f.enabled)),
+    plain('gateway.telegram.chat-id', f.chatId),
+    plain('gateway.telegram.message-thread-id', f.messageThreadId),
+    ...secretEntry('gateway.telegram.bot-token', f.botToken),
+  ];
+}
+
+export function telegramConfigFromRows(rows: Row[]): TelegramConfigFormValues {
+  const m = byKey(rows);
+  return {
+    enabled: (m['gateway.telegram.enabled'] ?? 'false') === 'true',
+    botToken: '',
+    chatId: m['gateway.telegram.chat-id'] ?? '',
+    messageThreadId: m['gateway.telegram.message-thread-id'] ?? '',
+  };
+}
+
 export const settingsKeys = {
   sourceAuth,
   sourceAuthFromRows,
@@ -169,4 +201,6 @@ export const settingsKeys = {
   tenantFromRows,
   aiConfig,
   aiConfigFromRows,
+  telegramConfig,
+  telegramConfigFromRows,
 };
