@@ -3,6 +3,7 @@ package uz.greenwhite.qosid.settings;
 import org.junit.jupiter.api.Test;
 import uz.greenwhite.qosid.settings.SettingsRegistry.EffectClass;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SettingsRegistryTest {
@@ -109,6 +110,22 @@ class SettingsRegistryTest {
         assertFalse(SettingsRegistry.isInternal("gateway.api.base-url"));
         assertFalse(SettingsRegistry.isInternal("gateway.source.auth.type"));
         assertFalse(SettingsRegistry.isInternal(null));
+    }
+
+    @Test
+    void telegramKeysAreDbManaged() {
+        assertThat(SettingsRegistry.isDbManaged("gateway.telegram.enabled")).isTrue();
+        assertThat(SettingsRegistry.isDbManaged("gateway.telegram.bot-token")).isTrue();
+        assertThat(SettingsRegistry.isDbManaged("gateway.telegram.chat-id")).isTrue();
+        assertThat(SettingsRegistry.isDbManaged("gateway.telegram.message-thread-id")).isTrue();
+        // faqat token sir
+        assertThat(SettingsRegistry.isDbManagedSecret("gateway.telegram.bot-token")).isTrue();
+        assertThat(SettingsRegistry.isDbManagedSecret("gateway.telegram.enabled")).isFalse();
+        assertThat(SettingsRegistry.isDbManagedSecret("gateway.telegram.chat-id")).isFalse();
+        assertThat(SettingsRegistry.isDbManagedSecret("gateway.telegram.message-thread-id")).isFalse();
+        // registr SETTINGS ro'yxatiga KIRMAYDI (General'da ko'rinmasin, boot-injection skip)
+        assertThat(SettingsRegistry.isKnown("gateway.telegram.bot-token")).isFalse();
+        assertThat(SettingsRegistry.isEditable("gateway.telegram.bot-token")).isFalse();
     }
 
     @Test

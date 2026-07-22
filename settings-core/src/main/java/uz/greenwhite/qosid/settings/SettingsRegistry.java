@@ -55,7 +55,7 @@ public final class SettingsRegistry {
     );
 
     /**
-     * DB-only, UI-managed keys (source-channel outbound auth B3 + AI config D5) with
+     * DB-only, UI-managed keys (source-auth B3 + AI D5 + Telegram) with
      * their secret flag — see ai-context/CONFIGURATION.md. They are DELIBERATELY not
      * in {@link #SETTINGS}: they must not appear in {@code GET /settings/registry}
      * ({@link #all()}) and must not be injected into the Environment at boot
@@ -78,7 +78,11 @@ public final class SettingsRegistry {
         Map.entry("gateway.source.auth.oauth2.client-type", false),
         Map.entry("gateway.ai.base-url", false),
         Map.entry("gateway.ai.api-key", true),
-        Map.entry("gateway.ai.model", false)
+        Map.entry("gateway.ai.model", false),
+        Map.entry("gateway.telegram.enabled", false),
+        Map.entry("gateway.telegram.bot-token", true),
+        Map.entry("gateway.telegram.chat-id", false),
+        Map.entry("gateway.telegram.message-thread-id", false)
     );
 
     /**
