@@ -237,6 +237,32 @@ class OpsSettingsApiTest {
     }
 
     @Test
+    void putCreatesTelegramTokenAsSecretWithNoPreexistingRow() throws Exception {
+        // Telegram kalitlari DB_MANAGED: birinchi saqlashda token secret=true bilan yaratiladi.
+        when(status.isUp()).thenReturn(false);
+        OpsSession s = login();
+        mvc.perform(authedPut(s, "gateway.telegram.bot-token", "123:abc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SAVED"));
+        String stored = opsJdbc.queryForObject(
+                "SELECT svalue FROM settings WHERE skey = ?", String.class, "gateway.telegram.bot-token");
+        assertThat(stored).isNotEqualTo("123:abc");
+        assertThat(testCipher.decrypt(stored)).isEqualTo("123:abc");
+        Boolean secretFlag = opsJdbc.queryForObject(
+                "SELECT secret FROM settings WHERE skey = ?", Boolean.class, "gateway.telegram.bot-token");
+        assertThat(secretFlag).isTrue();
+        String auditNew = opsJdbc.queryForObject(
+                "SELECT new_value FROM settings_audit WHERE skey = ?", String.class, "gateway.telegram.bot-token");
+        assertThat(auditNew).isEqualTo("***");
+        // sir bo'lmagan telegram kaliti ham birinchi-yaratishda ochiq saqlanadi
+        mvc.perform(authedPut(s, "gateway.telegram.chat-id", "-100200"))
+                .andExpect(status().isOk());
+        assertThat(opsJdbc.queryForObject(
+                "SELECT svalue FROM settings WHERE skey = ?", String.class, "gateway.telegram.chat-id"))
+                .isEqualTo("-100200");
+    }
+
+    @Test
     void putCreatesDbManagedPlainKeyWithNoPreexistingRow() throws Exception {
         when(status.isUp()).thenReturn(false);
         OpsSession s = login();
