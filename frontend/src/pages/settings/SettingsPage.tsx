@@ -4,6 +4,7 @@ import { SourceAuthPage } from './SourceAuthPage';
 import { TenantMappingPage } from './TenantMappingPage';
 import { GeneralSettingsPage } from './GeneralSettingsPage';
 import { AiConfigPage } from './AiConfigPage';
+import { TelegramConfigPage } from './TelegramConfigPage';
 
 export function SettingsPage() {
   const { t } = useTranslation();
@@ -15,6 +16,7 @@ export function SettingsPage() {
         { key: 'tenant', label: t('settings.tenantMapping'), children: <TenantMappingPage /> },
         { key: 'advanced', label: t('settings.general'), children: <GeneralSettingsPage /> },
         { key: 'ai', label: t('ai.settingsTitle'), children: <AiConfigPage /> },
+        { key: 'telegram', label: t('telegram.settingsTitle'), children: <TelegramConfigPage /> },
       ]}
     />
   );
