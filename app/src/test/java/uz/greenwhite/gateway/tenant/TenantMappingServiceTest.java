@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import uz.greenwhite.gateway.settings.SettingsService;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -100,5 +101,23 @@ class TenantMappingServiceTest {
         RequestMessage msg = service().toInternal(node);
 
         assertEquals(42L, msg.getTenantId());
+    }
+
+    /**
+     * The source pull payload carries no created_at, so ingress must stamp it.
+     * Without it {@code isMessageExpired} always returns false and the CB-blocked
+     * re-queue path (SAFETY-RULES 23) loses its only backstop.
+     */
+    @Test
+    void toInternalStampsCreatedAtWhenSourceOmitsIt() throws Exception {
+        when(settings.get("gateway.tenant.field-name", "company_id")).thenReturn("company_id");
+        when(settings.get("gateway.tenant.extra-field-name", "filial_id")).thenReturn("filial_id");
+        var node = om.readTree("{\"company_id\":100,\"request_id\":900123,\"base_url\":\"https://x\"}");
+
+        RequestMessage msg = service().toInternal(node);
+
+        assertNotNull(msg.getCreatedAt(), "ingress must stamp createdAt — the expiry net depends on it");
+        assertTrue(msg.getCreatedAt().isAfter(LocalDateTime.now().minusMinutes(1)));
+        assertEquals(100L, msg.getTenantId());
     }
 }

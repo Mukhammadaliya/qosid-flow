@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import uz.greenwhite.gateway.settings.SettingsService;
 
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,6 +73,13 @@ public class TenantMappingService {
         TenantPair pair = extract(element);
         msg.setTenantId(pair.tenantId());
         msg.setExtraTenantId(pair.extraTenantId());
+        // The message-expiry net (retry.max-message-age-ms) reads this field, and the
+        // source payload does not carry it. Leaving it null makes isMessageExpired()
+        // always false, which turns the CB-blocked re-queue (SAFETY-RULES 23) and the
+        // OAuth2 evict re-queue (rule 24) into unbounded loops.
+        if (msg.getCreatedAt() == null) {
+            msg.setCreatedAt(LocalDateTime.now());
+        }
         return msg;
     }
 

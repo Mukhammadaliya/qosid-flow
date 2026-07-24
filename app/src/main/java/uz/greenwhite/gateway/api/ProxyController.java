@@ -25,6 +25,7 @@ import uz.greenwhite.gateway.settings.SettingsService;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -207,6 +208,10 @@ public class ProxyController {
                 .fileReferences(fileReferences)
                 .biruniUploadMode(biruniUploadMode)
                 .fileParts(fileParts)
+                // Feeds the message-expiry net (retry.max-message-age-ms). Leaving it
+                // null makes isMessageExpired() always false, which turns the CB-blocked
+                // re-queue (SAFETY-RULES 23) into an unbounded loop.
+                .createdAt(LocalDateTime.now())
                 .build();
 
         String compositeId = message.getCompositeId();
