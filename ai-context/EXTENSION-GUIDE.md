@@ -344,6 +344,6 @@ gateway:
     channel: ${SLACK_CHANNEL:#alerts}
 ```
 
-**Note:** Multiple `NotificationService` implementations can coexist. The `OracleDlqConsumer` and `ApiDlqConsumer` inject the active implementation. Currently, `NoOpNotificationService` is the fallback when `TelegramNotificationService` is disabled.
+**Note:** Multiple `NotificationService` implementations can coexist. The `OracleDlqConsumer` and `ApiDlqConsumer` inject the active implementation. Currently `TelegramNotificationService` is the only implementation — it is **always** the active bean (no separate no-op fallback bean); when Telegram is disabled or unconfigured it resolves that per send (settings-DB → env fallback) and simply warn-logs instead of sending.
 
 **Important:** If you want multiple active notification channels simultaneously, you need to modify the DLQ consumers to inject `List<NotificationService>` instead of a single bean.

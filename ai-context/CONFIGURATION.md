@@ -122,16 +122,18 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 
 ## gateway.telegram.* — Telegram Notifications
 
-**Properties class:** `TelegramProperties.java`
+**Properties class:** `TelegramProperties.java` (env/yaml fallback + timeouts only).
 
-| Property | Type | Default | Env Var | Description |
-|----------|------|---------|---------|-------------|
-| `gateway.telegram.enabled` | boolean | `true` | `TELEGRAM_ENABLED` | Enable Telegram DLQ alerts |
-| `gateway.telegram.bot-token` | String | `` (empty, mandatory env var) | `TELEGRAM_BOT_TOKEN` | Telegram Bot API token. A blank token disables the service with a WARN log (`Telegram notification DISABLED: bot token is blank`) instead of failing startup. |
-| `gateway.telegram.chat-id` | Long | `0` | `TELEGRAM_CHAT_ID` | Target chat ID |
-| `gateway.telegram.message-thread-id` | Integer | `null` | `TELEGRAM_MESSAGE_THREAD_ID` | Optional topic thread ID |
-| `gateway.telegram.connect-timeout-ms` | int | `5000` | — | Telegram API connect timeout |
-| `gateway.telegram.read-timeout-ms` | int | `5000` | — | Telegram API read timeout |
+The four **behavioral** keys below are now **DB-managed** (settings DB, like `gateway.source.auth.*`/`gateway.ai.*`): edited via the SPA's **Telegram** tab (`GET/PUT /qosid/admin/api/telegram-config`, `POST .../test`) or the ops stop-to-edit generic settings API while the gateway is stopped. They are NOT in the editable registry (not shown in the General settings list — see `TYPED_FORM_KEYS`) and are NOT boot-injected into the `Environment`. `TelegramNotificationService` resolves each one **per send**: a settings-DB row wins; when no DB row exists it falls back to the env var (`TelegramProperties`). The two timeout keys have no DB row — they stay env/yaml-only and are read once at bean construction.
+
+| Property | Type | Default | Source | Description |
+|----------|------|---------|--------|-------------|
+| `gateway.telegram.enabled` | boolean | `true` | DB-managed, env fallback `TELEGRAM_ENABLED` | Enable Telegram DLQ alerts. Resolved per send. |
+| `gateway.telegram.bot-token` | String | `` (empty) | DB-managed **secret** (AES), env fallback `TELEGRAM_BOT_TOKEN` | Telegram Bot API token. Masked as `***` on `GET /telegram-config`; a blank effective token disables the service (warn-log only, `sendDlqAlert` skips) instead of failing startup. Requires `SETTINGS_ENCRYPTION_KEY` to store in the DB. |
+| `gateway.telegram.chat-id` | Long | `0` | DB-managed, env fallback `TELEGRAM_CHAT_ID` | Target chat ID. Resolved per send. |
+| `gateway.telegram.message-thread-id` | Integer | `null` | DB-managed, env fallback `TELEGRAM_MESSAGE_THREAD_ID` | Optional topic thread ID. Resolved per send. |
+| `gateway.telegram.connect-timeout-ms` | int | `5000` | env/yaml only | Telegram API connect timeout (bean-construction time). |
+| `gateway.telegram.read-timeout-ms` | int | `5000` | env/yaml only | Telegram API read timeout (bean-construction time). |
 
 ## gateway.redis.* — Redis Settings
 

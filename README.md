@@ -283,19 +283,20 @@ gateway:
 
 **What is it?** Automatic Telegram messages when critical events occur (DLQ messages, system alerts).
 
-**Configuration:**
+**Configuration:** the four behavioral keys are **DB-managed** — edit them in the SPA's **Telegram** settings tab (`/qosid/admin/api/telegram-config`, stop-to-edit via the ops sidecar), where the bot-token is stored AES-encrypted and masked. When no DB row exists, `TelegramNotificationService` falls back per send to the env vars below; the two timeout keys are env/yaml-only.
+
 ```yaml
 gateway:
   telegram:
-    enabled: true
-    bot-token: "123456:ABC-DEF..."
-    chat-id: -1001234567890
-    message-thread-id: 12345       # Optional: send to a specific topic/thread
-    connect-timeout-ms: 5000
-    read-timeout-ms: 5000
+    enabled: ${TELEGRAM_ENABLED:true}                    # DB-managed, env fallback
+    bot-token: ${TELEGRAM_BOT_TOKEN:}                     # DB-managed secret, env fallback
+    chat-id: ${TELEGRAM_CHAT_ID:0}                        # DB-managed, env fallback
+    message-thread-id: ${TELEGRAM_MESSAGE_THREAD_ID:}     # DB-managed, env fallback (optional topic/thread)
+    connect-timeout-ms: 5000                              # env/yaml only
+    read-timeout-ms: 5000                                 # env/yaml only
 ```
 
-**NoOp pattern:** If Telegram is not configured, a `NoOpNotificationService` is used — no errors, just silently skipped. This allows the service to run without Telegram in development environments.
+**Disabled/unconfigured:** `TelegramNotificationService` is always the active bean (no separate no-op fallback bean). When Telegram is disabled or the effective bot-token is blank, DLQ alerts are skipped with a warn-log — no errors — so the service runs fine without Telegram in development.
 
 ### 3.8 🌐 Per-Endpoint HTTP Timeouts
 

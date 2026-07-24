@@ -180,7 +180,7 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 | `model/kafka/` | Kafka message models | `RequestMessage`, `ResponseMessage`, `DlqMessage` |
 | `model/enums/` | Enumerations | `RequestStatus`, `ErrorSource` |
 | `config/` | All configuration and bean definitions | `KafkaConfig`, `RedisConfig`, `HttpClientConfig`, `ThreadPoolConfig`, `*Properties` |
-| `notification/` | Alert notifications | `NotificationService` (interface), `TelegramNotificationService`, `NoOpNotificationService` |
+| `notification/` | Alert notifications | `NotificationService` (interface), `TelegramNotificationService` (always the active bean; config resolved per send from settings-DB → env fallback; disabled → warn-log only) |
 | `validation/` | Validation logic | `RequestValidator` |
 | `source/` | Data source interfaces + source-channel outbound auth (B3) | `RequestSourceClient`, `ResponseSinkClient`, `SourceAuthService` (resolves basic\|apikey\|oauth2 per `gateway.source.auth.type`), `SourceTokenService` (isolated `source:oauth2:token` cache) |
 | `health/` | Custom health checks | `SystemHealthIndicator` |
@@ -208,6 +208,9 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 | GET | `/qosid/admin/api/source-auth` | session | Current source-channel auth config (`SourceAuthController`) — `type` + per-scheme fields, secrets masked (`***`). |
 | PUT | `/qosid/admin/api/source-auth` | session | **Always `409 {"error":"stop-required"}`** (D stop-to-edit) — same for `PUT /ai/config`; tenant keys have no dedicated PUT (they ride the generic settings PUT, equally 409). The diagnostic POSTs (`/source-auth/test`, `/tenant-mapping/test`, `/ai/analyze`) still work while running. |
 | POST | `/qosid/admin/api/source-auth/test` | session | Fires one bounded (5s connect/read) GET against the configured source pull URI using the resolved auth headers; always returns `200` with `{ok, httpStatus, message}` — never throws on an unreachable/misconfigured source. |
+| GET | `/qosid/admin/api/telegram-config` | session | Current DLQ Telegram-alert config (`TelegramConfigController`) — `enabled`/`chatId`/`messageThreadId` plus `botToken` masked as `***`. Backed by the DB-managed `gateway.telegram.*` keys (env-var fallback per send). |
+| PUT | `/qosid/admin/api/telegram-config` | session | **Always `409 {"error":"stop-required"}`** (D stop-to-edit) — editing goes through the ops sidecar's generic settings API while the gateway is stopped. |
+| POST | `/qosid/admin/api/telegram-config/test` | session | Sends one bounded test message using the stored config via `TelegramNotificationService.sendTest()`; always returns `200` with `{ok, ...}` (`{ok:false, error:...}` when disabled/failed, token redacted) — never a 500. |
 
 First-boot default account: `admin` / `admin` (logged as WARN). One-shot reset via `ADMIN_RESET=true` or `ADMIN_PASSWORD_RESET=<value>` — see `ai-context/CONFIGURATION.md` → Admin Account & Reset.
 
