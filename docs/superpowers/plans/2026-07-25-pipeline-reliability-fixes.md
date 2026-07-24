@@ -44,6 +44,16 @@
 
 ### Task 1: `createdAt` ikkala ingress nuqtasida — o'lik xavfsizlik to'rini tiriltirish
 
+> **✅ BAJARILDI** — commit `c3ff6dd`. Amalga oshirilgan test fayllari rejadagidan farq qiladi:
+> `TenantMappingServiceTest.toInternalStampsCreatedAtWhenSourceOmitsIt` (mavjud faylga qo'shildi,
+> JUnit assertion uslubi) + `ProxyControllerCreatedAtTest` (YANGI — rejadagi `MessageExpiryTest`
+> o'rniga: u faqat `LocalDateTime` arifmetikasini tekshirar edi, buning o'rniga `handleRequest`
+> haqiqiy yo'li `ArgumentCaptor` bilan tekshiriladi, ya'ni ingress muhri kafolatlanadi).
+> Natija: app moduli 185/185 yashil (183 + 2).
+> **Muhit eslatmasi:** `app` moduli `frontend` profilini default yoqadi va `npm ci` ishlatadi;
+> tez test uchun `-P '!frontend'` bering (bash'dan; PowerShell `!`ni buzadi). Surefire ko'p test
+> uchun ajratkich — vergul: `-Dtest='A,B'`.
+
 **Muammo:** `RequestMessage.createdAt` prod kodda hech qayerda o'rnatilmaydi (faqat dev `TestController`da). `isMessageExpired` esa `createdAt == null` bo'lsa `false` qaytaradi, ya'ni `retry.max-message-age-ms: 300000` sozlamasi hech qachon ishlamagan. 23- va 24-qoidalar shu to'rni yagona backstop deb ataydi.
 
 **Files:**
