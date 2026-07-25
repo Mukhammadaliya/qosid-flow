@@ -128,6 +128,15 @@ git check-ignore -v .env .env.local .claude/settings.local.json
 git check-ignore -v .env.example   # expect: no output
 ```
 
+**First CI run (2026-07-25, `debug` @ `90d547d`): 273 commits scanned, 11 findings.**
+Three of them are the ones in §1 above. The other eight are `generic-api-key` hits that a
+targeted manual scan does not produce — most are expected to be test fixtures (e.g.
+`gateway.settings.encryption-key=test-key-...` in `@SpringBootTest` properties) rather than live
+credentials, but **each one still needs to be looked at and classified** before the
+`continue-on-error` flag comes off. Download the `gitleaks-report` artifact from the workflow run
+for file, commit and rule per finding. Do not assume the extra eight are benign because this
+document says they probably are.
+
 The `secret-scan` CI workflow runs an equivalent full-history scan on every push to `master`
 and `debug`. While §3 is still open its scan step is `continue-on-error: true` — it reports
 without blocking, because the three historical findings would otherwise fail every push.
