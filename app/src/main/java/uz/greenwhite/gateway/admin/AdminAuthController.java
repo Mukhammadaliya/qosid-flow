@@ -28,7 +28,18 @@ public class AdminAuthController {
             throw new AuthenticationException("Invalid username or password");
         }
         authService.establishSession(request, req.getUsername());
-        return ResponseEntity.ok(Map.of("username", req.getUsername(), "status", "AUTHENTICATED"));
+        return ResponseEntity.ok(session(req.getUsername()));
+    }
+
+    /**
+     * Session body shared by /login and /login-token. {@code passwordChangeRequired} is a UI hint
+     * only — the real enforcement is {@code DefaultPasswordGateFilter} on the admin chain, since
+     * nothing client-side can be trusted. String-valued because the body is a Map&lt;String,String&gt;.
+     */
+    private Map<String, String> session(String username) {
+        return Map.of("username", username,
+                "status", "AUTHENTICATED",
+                "passwordChangeRequired", String.valueOf(authService.isDefaultPassword()));
     }
 
     /**
@@ -44,7 +55,7 @@ public class AdminAuthController {
             return ResponseEntity.status(401).body(Map.of("error", "invalid-token"));
         }
         authService.establishSession(request, username.get());
-        return ResponseEntity.ok(Map.of("username", username.get(), "status", "AUTHENTICATED"));
+        return ResponseEntity.ok(session(username.get()));
     }
 
     @PostMapping("/logout")
@@ -55,10 +66,16 @@ public class AdminAuthController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * The SPA's session probe. It also reports {@code passwordChangeRequired} so a page reload
+     * (which has a session but never saw the login response) still forces the change form.
+     */
     @GetMapping("/me")
     public ResponseEntity<Map<String, String>> me() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
-        return ResponseEntity.ok(Map.of("username", auth != null ? auth.getName() : "anonymous"));
+        return ResponseEntity.ok(Map.of(
+                "username", auth != null ? auth.getName() : "anonymous",
+                "passwordChangeRequired", String.valueOf(authService.isDefaultPassword())));
     }
 
     @PostMapping("/change-password")

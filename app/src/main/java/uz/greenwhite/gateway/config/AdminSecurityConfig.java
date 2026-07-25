@@ -26,9 +26,17 @@ public class AdminSecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    /**
+     * Default-password gate (security-critical, keep on). Only ever false in tests, where most
+     * admin cases legitimately log in with the seeded default password.
+     */
     @Bean
     @Order(1)
-    public SecurityFilterChain adminSecurityChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain adminSecurityChain(
+            HttpSecurity http,
+            org.springframework.beans.factory.ObjectProvider<uz.greenwhite.gateway.admin.AdminAuthService> authService,
+            @org.springframework.beans.factory.annotation.Value("${gateway.admin.force-password-change:true}")
+            boolean forcePasswordChange) throws Exception {
         http
             .securityMatcher("/qosid/admin/api/**")
             .authorizeHttpRequests(auth -> auth
@@ -43,6 +51,13 @@ public class AdminSecurityConfig {
             .exceptionHandling(eh -> eh.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
             .formLogin(fl -> fl.disable())
             .httpBasic(hb -> hb.disable());
+        if (forcePasswordChange) {
+            // AFTER AuthorizationFilter on purpose: unauthenticated callers must still get 401
+            // (SecurityIsolationTest guards that) and learn nothing about the password state.
+            http.addFilterAfter(
+                    new uz.greenwhite.gateway.admin.DefaultPasswordGateFilter(authService.getObject()),
+                    org.springframework.security.web.access.intercept.AuthorizationFilter.class);
+        }
         return http.build();
     }
 

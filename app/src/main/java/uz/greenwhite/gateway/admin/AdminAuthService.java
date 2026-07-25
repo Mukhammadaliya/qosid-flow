@@ -28,10 +28,25 @@ public class AdminAuthService {
      */
     static final String TOKEN_RATE_KEY = "login-token";
 
+    /** The account and password {@link AdminAccountInitializer} seeds on first boot. */
+    private static final String DEFAULT_USERNAME = "admin";
+    private static final String DEFAULT_PASSWORD = "admin";
+
     private final AdminAccountRepository repository;
     private final PasswordEncoder passwordEncoder;
     private final LoginRateLimiter rateLimiter;
     private final LoginHandoffRepository handoffRepository;
+
+    /**
+     * Latches once the stored password is known NOT to be the default. BCrypt matching is
+     * deliberately slow and {@link #isDefaultPassword()} runs on every admin request, so the
+     * steady state (password already changed) must not pay for it. Latching is safe because the
+     * password can never become the default again within one JVM: {@link #changePassword} rejects
+     * the default, and the ADMIN_RESET/ADMIN_PASSWORD_RESET directives are applied by
+     * {@link AdminAccountInitializer} at startup, before any request is served.
+     */
+    private final java.util.concurrent.atomic.AtomicBoolean notDefaultPassword =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     public boolean authenticate(String username, String password) {
         var account = repository.findByUsername(username);
@@ -84,6 +99,26 @@ public class AdminAuthService {
         if (existing != null) existing.invalidate();
         HttpSession session = request.getSession(true);
         session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, context);
+    }
+
+    /**
+     * True while the single admin account still carries the seeded default password. Such an
+     * account may only log in and change its own password — see {@code DefaultPasswordGateFilter}:
+     * with it an attacker could stop the gateway via ops, rewrite {@code gateway.api.base-url} and
+     * restart, redirecting the whole pipeline. A missing account counts as "not default" (nothing
+     * to force).
+     */
+    public boolean isDefaultPassword() {
+        if (notDefaultPassword.get()) {
+            return false;
+        }
+        boolean isDefault = repository.findByUsername(DEFAULT_USERNAME)
+                .map(account -> passwordEncoder.matches(DEFAULT_PASSWORD, account.getPasswordHash()))
+                .orElse(false);
+        if (!isDefault) {
+            notDefaultPassword.set(true);
+        }
+        return isDefault;
     }
 
     public void changePassword(String username, String oldPassword, String newPassword) {
