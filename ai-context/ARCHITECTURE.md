@@ -134,11 +134,13 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 | **Idempotency** | Redis check + lock | Redis check + lock |
 | **On Failure** | Retry → `sendOracleRequest()` or DLQ | Retry → `sendApiRequest()` or DLQ |
 
-**Ack semantics:** `AckMode.MANUAL` + `asyncAcks=true` (both set in `KafkaConfig.buildFactory`,
-for every factory). `ack` is called from the reactive callback once the HTTP response lands, so
-acks arrive **out of offset order** — `asyncAcks` defers the commit until the offset gaps are
-filled (without it a fast higher offset would mask a still-running lower one, which is then
-never redelivered; see SAFETY-RULES rule 32). Nothing is ever acked away silently: on lock
+**Ack semantics:** `AckMode.MANUAL` for every factory (`KafkaConfig.buildFactory`); `asyncAcks`
+is deliberately **off**. `ack` is called from the reactive callback once the HTTP response lands,
+so acks arrive **out of offset order**, which `MANUAL` alone does not handle — a fast higher
+offset can mask a still-running lower one, which is then never redelivered. `asyncAcks` would fix
+that but is mutually exclusive with `nack()`, which both request consumers rely on, so it stays
+off until those paths are converted to a bounded re-queue (SAFETY-RULES rule 32 has the full
+reasoning and the order of work). Nothing is ever acked away silently: on lock
 contention the message is `nack(10s)`-ed back to Kafka (rule 33), on a Redis gate failure
 `nack(5s)` (rule 25), and both an expired message (`gateway.retry.max-message-age-ms`, measured
 from the `createdAt` stamped at ingress) and a message past the CB re-queue cap

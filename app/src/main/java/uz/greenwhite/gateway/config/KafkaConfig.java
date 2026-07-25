@@ -161,12 +161,16 @@ public class KafkaConfig {
         factory.setConsumerFactory(consumerFactory());
         factory.setConcurrency(concurrency);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
-        // Consumer'lar ack'ni CompletableFuture'dan, offset tartibisiz chaqiradi.
-        // asyncAcks offset bo'shliqlari to'lguncha commit'ni kechiktiradi — busiz
-        // tez tugagan katta offset sekin tugayotgan kichigini "commit qilingan"
-        // qilib ko'rsatadi va restart'da u qayta yetkazilmaydi (jim yo'qolish).
-        // SAFETY-RULES 4: AckMode MANUAL o'zgarmaydi, asyncAcks faqat MANUAL bilan ishlaydi.
-        factory.getContainerProperties().setAsyncAcks(true);
+        // DO NOT set asyncAcks(true) here. It looks like the right fix for the
+        // out-of-order commits our async ack path produces, but Spring Kafka's
+        // ConsumerAcknowledgment rejects nack() outright once out-of-order commits are
+        // enabled ("nack() is not supported with out-of-order commits"). Both request
+        // consumers nack — on a Redis-gate failure (SAFETY-RULES 25) and on lock
+        // contention (rule 33) — so enabling it turns those two graceful back-pressure
+        // paths into a thrown exception, which the error handler only logs: the message
+        // is then lost, i.e. the exact opposite of what asyncAcks was meant to prevent.
+        // Fixing out-of-order commits requires first replacing both nack sites with a
+        // bounded re-queue; see KafkaAsyncAcksTest for the guard.
         factory.getContainerProperties().setIdleBetweenPolls(100);
         factory.setCommonErrorHandler(kafkaErrorHandler());
         log.info("{} consumer factory created with concurrency: {}", label, concurrency);

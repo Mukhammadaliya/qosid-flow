@@ -111,8 +111,9 @@ public class DynamicConcurrencyManager {
                 // restart rebalances the whole consumer group and every in-flight
                 // ack that lands after stop() is a no-op — those offsets stay
                 // uncommitted and get redelivered, i.e. messages are lost exactly
-                // when load is highest (SAFETY-RULES 32). Off by default; the new
-                // target still applies on the next natural rebalance or restart.
+                // when load is highest (see this class's row in SAFETY-RULES
+                // "Protected Zones"). Off by default; the new target still applies
+                // on the next natural rebalance or restart.
                 if (properties.isAllowRestartOnScaleUp()) {
                     concurrent.stop();
                     concurrent.start();

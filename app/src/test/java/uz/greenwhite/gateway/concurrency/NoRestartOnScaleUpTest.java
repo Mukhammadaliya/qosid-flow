@@ -19,7 +19,7 @@ import static org.mockito.Mockito.when;
  * <p>The restart triggers a consumer-group rebalance; any in-flight
  * {@code ack.acknowledge()} that lands after the container stopped is a no-op, so
  * those offsets stay uncommitted and get redelivered — message loss triggered
- * precisely by high load. See SAFETY-RULES 32.
+ * precisely by high load. See the DynamicConcurrencyManager row in SAFETY-RULES "Protected Zones".
  */
 class NoRestartOnScaleUpTest {
 

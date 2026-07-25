@@ -43,12 +43,24 @@ class KafkaAsyncAcksTest {
     ConcurrentKafkaListenerContainerFactory<String, Object> dlq;
 
     @Test
-    void everyFactoryIsManualWithAsyncAcks() {
+    void everyFactoryIsManualAndAsyncAcksStaysOff() {
         for (ConcurrentKafkaListenerContainerFactory<String, Object> f :
                 java.util.List.of(apiRequest, oracleRequest, apiResponse, oracleResponse, dlq)) {
             ContainerProperties p = f.getContainerProperties();
+
+            // SAFETY-RULES 4.
             assertThat(p.getAckMode()).isEqualTo(ContainerProperties.AckMode.MANUAL);
-            assertThat(p.isAsyncAcks()).isTrue();
+
+            // asyncAcks must stay OFF while the request consumers nack. Spring Kafka's
+            // ConsumerAcknowledgment throws "nack() is not supported with out-of-order
+            // commits" as soon as asyncAcks is enabled, so turning it on breaks the
+            // Redis-gate nack (rule 25) and the lock-contention nack (rule 33): the
+            // throw escapes the listener, the error handler only logs it, and the
+            // message is lost — the very outcome asyncAcks was supposed to prevent.
+            assertThat(p.isAsyncAcks())
+                    .as("asyncAcks is incompatible with nack(); replace both nack sites "
+                            + "with a bounded re-queue before enabling it")
+                    .isFalse();
         }
     }
 }

@@ -170,14 +170,27 @@ eviction wipe the source token (stalling all pulls) or a "source"-named provider
 collide with it. Keep the two caches separate; keep the source cache TTL capped at
 the token's own `expires_in` so an expired token is never served on the pull/save channel.
 
-### 32. Never remove `setAsyncAcks(true)` from `KafkaConfig.buildFactory`
+### 32. Never enable `setAsyncAcks(true)` in `KafkaConfig.buildFactory` while the request consumers `nack`
 
-Both request consumers call `ack` from the reactive/`CompletableFuture` path, i.e. acks arrive
-out of offset order. `AckMode.MANUAL` only commits the highest acknowledged offset, so without
-`asyncAcks` a fast-finishing higher offset marks a still-running lower offset as "committed" —
-on restart that message is never redelivered. Silent message loss: no DLQ record, no alert,
-nothing in the metrics. `asyncAcks` defers the commit until the offset gaps are filled. It only
-works together with `MANUAL`, so read this rule with rule 4: MANUAL never changes either.
+`asyncAcks` looks like the obvious fix for a real defect: both request consumers call `ack` from
+the reactive/`CompletableFuture` path, so acks arrive **out of offset order**, and `AckMode.MANUAL`
+commits only the highest acknowledged offset — a fast-finishing higher offset can mark a
+still-running lower offset as "committed", and on restart that message is never redelivered
+(silent loss: no DLQ record, no alert, no metric).
+
+**But it cannot be enabled as things stand.** Spring Kafka's `ConsumerAcknowledgment.nack(Duration)`
+opens with `Assert.state(..., "nack() is not supported with out-of-order commits")` — verified in
+the bytecode of `spring-kafka-3.2.0`. Both request consumers `nack`: on a Redis-gate failure
+(rule 25) and on lock contention (rule 33). Turning `asyncAcks` on therefore converts those two
+graceful back-pressure paths into a thrown `IllegalStateException`, which escapes the listener into
+an error handler that only logs — so the message is lost on exactly the paths that exist to prevent
+loss. It makes the problem worse, not better.
+
+**Order of work if you want to fix out-of-order commits:** first replace both `nack` sites with a
+bounded re-queue (the `incrementCbRequeue` pattern from rule 23 is the model — note a Redis outage
+must not degrade into "DLQ everything", which is why `nack` is still the better answer for the
+rule-25 path today), and only then enable `asyncAcks`. `KafkaAsyncAcksTest` guards the current
+state and explains why. Read with rule 4: `MANUAL` never changes either way.
 
 ### 33. Never ack a request message on Redis lock contention
 
