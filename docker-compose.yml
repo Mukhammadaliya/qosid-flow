@@ -1,5 +1,18 @@
 version: '3.8'
 
+# ============================================================
+# PORT BINDING POLICY — hamma published port 127.0.0.1'ga bog'langan
+# ============================================================
+# "6379:6379" ko'rinishi Docker'da 0.0.0.0'ga bog'lanadi VA host firewall'ini (ufw/iptables
+# INPUT) chetlab o'tadi, chunki Docker DOCKER-USER/nat zanjiriga qoida yozadi. Ya'ni
+# autentifikatsiyasiz Redis, Redpanda, Grafana (admin/admin123), redis-commander va
+# redpanda-console prod serverida butun tarmoqqa ochiq bo'lardi.
+# "127.0.0.1:<port>:<port>" faqat host'ning o'zidan (yoki SSH tunnel orqali) ochadi.
+# Kontenerlar bir-biriga compose tarmog'i ichida servis nomi bilan boradi (redpanda:9092,
+# redis:6379) — bu binding ularga TEGMAYDI. Gateway JVM ham host'da ishlaydi
+# (KAFKA_BOOTSTRAP_SERVERS=localhost:19092, REDIS_HOST=localhost), demak loopback yetarli.
+# Tashqaridan kirish kerak bo'lsa: SSH tunnel yoki nginx reverse-proxy + auth.
+
 services:
   # ==========================================
   # REDPANDA (Kafka)
@@ -22,10 +35,10 @@ services:
       - --mode dev-container
       - --default-log-level=info
     ports:
-      - "18081:18081"
-      - "18082:18082"
-      - "19092:19092"
-      - "19644:9644"
+      - "127.0.0.1:18081:18081"
+      - "127.0.0.1:18082:18082"
+      - "127.0.0.1:19092:19092"
+      - "127.0.0.1:19644:9644"
     volumes:
       - redpanda_data:/var/lib/redpanda/data
     healthcheck:
@@ -44,7 +57,7 @@ services:
       redpanda:
         condition: service_healthy
     ports:
-      - "8082:8080"
+      - "127.0.0.1:8082:8080"
     environment:
       CONFIG_FILEPATH: /tmp/config.yml
       CONSOLE_CONFIG_FILE: |
@@ -90,7 +103,7 @@ services:
     image: redis:7.2-alpine
     container_name: redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
@@ -110,7 +123,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8085:8081"
+      - "127.0.0.1:8085:8081"
     environment:
       REDIS_HOSTS: local:redis:6379
 
@@ -124,7 +137,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "9121:9121"
+      - "127.0.0.1:9121:9121"
     environment:
       REDIS_ADDR: redis://redis:6379
     restart: unless-stopped
@@ -155,7 +168,7 @@ services:
     depends_on:
       - prometheus
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin123
@@ -170,7 +183,7 @@ services:
     image: prom/alertmanager:v0.28.0
     container_name: alertmanager
     ports:
-      - "9093:9093"
+      - "127.0.0.1:9093:9093"
     volumes:
       - ./infrastructure/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     command:
