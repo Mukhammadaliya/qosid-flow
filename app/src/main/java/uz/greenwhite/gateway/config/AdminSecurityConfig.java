@@ -36,7 +36,9 @@ public class AdminSecurityConfig {
             HttpSecurity http,
             org.springframework.beans.factory.ObjectProvider<uz.greenwhite.gateway.admin.AdminAuthService> authService,
             @org.springframework.beans.factory.annotation.Value("${gateway.admin.force-password-change:true}")
-            boolean forcePasswordChange) throws Exception {
+            boolean forcePasswordChange,
+            @org.springframework.beans.factory.annotation.Value("${gateway.security.cookie-secure:false}")
+            boolean cookieSecure) throws Exception {
         http
             .securityMatcher("/qosid/admin/api/**")
             .authorizeHttpRequests(auth -> auth
@@ -44,7 +46,7 @@ public class AdminSecurityConfig {
                         "/qosid/admin/api/health").permitAll()
                 .anyRequest().authenticated())
             .csrf(csrf -> csrf
-                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                .csrfTokenRepository(csrfTokenRepository(cookieSecure))
                 .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
             .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
@@ -59,6 +61,34 @@ public class AdminSecurityConfig {
                     org.springframework.security.web.access.intercept.AuthorizationFilter.class);
         }
         return http.build();
+    }
+
+    /**
+     * CSRF cookie hardening. Three deliberate choices:
+     *
+     * <ul>
+     *   <li><b>HttpOnly stays FALSE</b> ({@code withHttpOnlyFalse}) — the SPA reads
+     *       {@code XSRF-TOKEN} with {@code getCookie()} in {@code frontend/src/api/client.ts}
+     *       and echoes it in {@code X-XSRF-TOKEN}. Making it HttpOnly 403s every admin write.</li>
+     *   <li><b>SameSite=Lax</b> — the SPA is same-origin (nginx serves the bundle and proxies
+     *       {@code /qosid/}), so same-origin XHR is unaffected, while a cross-site POST no longer
+     *       carries the cookie. {@code Strict} is avoided only because it would also drop the
+     *       cookie on a top-level navigation INTO the console from an external link.</li>
+     *   <li><b>Secure is opt-in</b> via {@code gateway.security.cookie-secure} ({@code COOKIE_SECURE}).
+     *       Production is currently reached over plain HTTP through an SSH tunnel — a hard-coded
+     *       {@code Secure} would make the browser drop the cookie and break login outright. Left
+     *       off, the attribute is not set explicitly at all, so Spring's existing
+     *       {@code request.isSecure()} fallback still marks it Secure on a genuine HTTPS request.
+     *       Turn it on once TLS/nginx fronts the console.</li>
+     * </ul>
+     */
+    private static CookieCsrfTokenRepository csrfTokenRepository(boolean cookieSecure) {
+        CookieCsrfTokenRepository repo = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        repo.setCookieCustomizer(cookie -> cookie.sameSite("Lax"));
+        if (cookieSecure) {
+            repo.setSecure(true);
+        }
+        return repo;
     }
 
     @Bean

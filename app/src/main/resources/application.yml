@@ -62,6 +62,20 @@ server:
     max-http-form-post-size: 2MB
     threads:
       max: ${TOMCAT_MAX_THREADS:2000}
+  servlet:
+    session:
+      cookie:
+        # JSESSIONID hardening. HttpOnly is also Tomcat's default — set explicitly so an
+        # audit can read it here and a future container default cannot silently loosen it.
+        http-only: true
+        # SPA is same-origin (nginx serves the bundle and proxies /qosid/), so Lax does not
+        # affect its XHR; it does stop the cookie riding along on a cross-site POST.
+        same-site: lax
+        # DEFERRED UNTIL TLS: prod is reached over plain HTTP through an SSH tunnel, so
+        # forcing Secure would make the browser drop the cookie and break login immediately.
+        # Tomcat ORs this with request.isSecure(), so `false` keeps HTTPS auto-detection.
+        # Set COOKIE_SECURE=true once nginx/TLS fronts the console.
+        secure: ${COOKIE_SECURE:false}
 
 # ============================================================
 # ACTUATOR & MONITORING
@@ -171,6 +185,15 @@ gateway:
     prefix: /qosid/api/v1/queue
     context-path: /qosid
     trusted-proxies: ${TRUSTED_PROXIES:127.0.0.1}
+    # Max NON-multipart request body (bytes) — 413 above this, <=0 disables the check.
+    # 20 MiB = the Kafka message ceiling already configured above (max.request.size /
+    # fetch.max.bytes = 20971520). The body travels as a JSON string field of RequestMessage,
+    # so the record is never smaller than the body: anything over 20 MiB already fails at the
+    # producer today. Same number therefore cannot reject a request that currently works — it
+    # only stops the bytes being buffered on a worker thread first.
+    # NOT applied to the BiruniUpload multipart branch: real S3 uploads keep the larger
+    # spring.servlet.multipart limits (50MB file / 52MB request) untouched.
+    max-body-size: ${PROXY_MAX_BODY_SIZE:20971520}
 
   # --- Tenant mapping (C-faza; field names configurable, default keeps bmb working) ---
   tenant:
@@ -233,6 +256,10 @@ gateway:
     # Callback (X-Callback-Url) host allowlist. Empty = any PUBLIC host allowed
     # (private/loopback/link-local are always blocked).
     callback-allowed-hosts: ${CALLBACK_ALLOWED_HOSTS:}
+    # DEFERRED UNTIL TLS: adds Secure to the XSRF-TOKEN cookie (AdminSecurityConfig).
+    # Same env var as server.servlet.session.cookie.secure so one switch covers both cookies
+    # on both JVMs. MUST stay false while the console is served over plain HTTP.
+    cookie-secure: ${COOKIE_SECURE:false}
 
   # --- Telegram Notifications ---
   telegram:
@@ -285,20 +312,21 @@ logging:
     org.apache.kafka.clients.Metadata: INFO
   pattern:
     console: "%d{HH:mm:ss.SSS} %-5level [%15.15thread] %-40.40logger{39} : %msg%n"
----
-# DEV-ONLY hujjat: lokal ops-local-stop.cmd POST /actuator/shutdown bilan graceful to'xtatishi uchun.
-# Windows'da console-siz JVM'ga SIGTERM yuborib bo'lmaydi (Stop-Process -Force = hech qanday
-# shutdown-hook ishlamaydi). Prod'da bu profil FAOL EMAS — systemctl SIGTERM yuboradi va
-# server.shutdown: graceful o'zi ishlaydi; shutdown endpoint prod'da yopiq qoladi.
-spring:
-  config:
-    activate:
-      on-profile: dev
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus,shutdown
-  endpoint:
-    shutdown:
-      enabled: true
+
+# ============================================================
+# O'CHIRILGAN: `dev` profil actuator `shutdown` endpoint'i
+# ============================================================
+# Ilgari bu faylda `on-profile: dev` hujjati bor edi va u actuator `shutdown` endpoint'ini
+# ochardi (`include: ...,shutdown` + `endpoint.shutdown.enabled: true`) — lokal
+# `ops-local-stop.cmd` skripti JVM'ni graceful to'xtatishi uchun. Sabablar bilan olib tashlandi:
+#   1. Management port (8091) autentifikatsiyasiz — `POST /actuator/shutdown` bu portga
+#      yeta oladigan har kimga autentifikatsiyasiz remote kill switch beradi. `dev` profil
+#      xato bilan prod'da yoqilsa (SPRING_PROFILES_ACTIVE), gateway'ni bir so'rov o'ldiradi.
+#   2. Hech narsa unga bog'lanmagan: `ops-local-stop.cmd` repoda mavjud emas, ops sidecar
+#      `OPS_GATEWAY_STOP_COMMAND=systemctl stop gateway-service` ishlatadi, va hech bir
+#      test/skript `/actuator/shutdown`ga murojaat qilmaydi (grep bilan tasdiqlangan).
+#   3. `server.shutdown: graceful` + SIGTERM prod'da allaqachon ishlaydi.
+# Lokal Windows'da to'xtatish uchun: konsolda Ctrl+C, yoki ops sidecar stop-command'ini
+# JVM'ni port bo'yicha o'ldiradigan skriptga qarating. `@Profile("dev")` TestController
+# annotatsiya bilan ishlaydi — bu hujjatga bog'liq emas.
+# Guard: `ActuatorShutdownDisabledTest` — qayta qo'shilsa build yiqiladi.

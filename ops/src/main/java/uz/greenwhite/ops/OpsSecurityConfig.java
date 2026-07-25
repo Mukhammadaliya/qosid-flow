@@ -17,16 +17,31 @@ public class OpsSecurityConfig {
     /**
      * @param forcePasswordChange default-password gate (security-critical, keep on). Only ever
      *                            false in tests — see {@code src/test/resources/application.properties}.
+     * @param cookieSecure ops twin of {@code gateway.security.cookie-secure}. Off by default:
+     *                     prod reaches :8092 over plain HTTP through an SSH tunnel, so a
+     *                     hard-coded {@code Secure} would make the browser drop the cookie and
+     *                     break ops login. Set {@code COOKIE_SECURE=true} once TLS/nginx fronts
+     *                     the console. Left off, the attribute is not set explicitly, so Spring's
+     *                     {@code request.isSecure()} fallback still applies it over real HTTPS.
+     *                     <p>{@code HttpOnly} stays FALSE on {@code OPS-XSRF-TOKEN} — the SPA
+     *                     reads it in {@code frontend/src/api/ops.ts} and echoes it in
+     *                     {@code X-OPS-XSRF-TOKEN}; HttpOnly here 403s every ops write.
+     *                     {@code SameSite=Lax} is safe: the SPA is same-origin.</p>
      */
     @Bean
     public SecurityFilterChain opsChain(
             HttpSecurity http,
             ObjectProvider<AdminAuthDao> authDao,
-            @Value("${ops.admin.force-password-change:true}") boolean forcePasswordChange) throws Exception {
+            @Value("${ops.admin.force-password-change:true}") boolean forcePasswordChange,
+            @Value("${ops.security.cookie-secure:false}") boolean cookieSecure) throws Exception {
         CsrfTokenRequestAttributeHandler csrf = new CsrfTokenRequestAttributeHandler(); // plain (no XOR) — avoids the SPA breakage seen in B1
         CookieCsrfTokenRepository csrfRepo = CookieCsrfTokenRepository.withHttpOnlyFalse();
         csrfRepo.setCookieName("OPS-XSRF-TOKEN");      // gateway XSRF-TOKEN bilan to'qnashmasin
         csrfRepo.setHeaderName("X-OPS-XSRF-TOKEN");
+        csrfRepo.setCookieCustomizer(cookie -> cookie.sameSite("Lax"));
+        if (cookieSecure) {
+            csrfRepo.setSecure(true);
+        }
         http
             .securityMatcher("/ops/**")
             .authorizeHttpRequests(a -> a

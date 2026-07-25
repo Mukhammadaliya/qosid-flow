@@ -57,6 +57,12 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.PAYLOAD_TOO_LARGE, e.getMessage());
     }
 
+    @ExceptionHandler(PayloadTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handlePayloadTooLarge(PayloadTooLargeException e) {
+        log.warn("Request body exceeds max size: {}", e.getMessage());
+        return build(HttpStatus.PAYLOAD_TOO_LARGE, e.getMessage());
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException e) {
         log.debug("No route matched: {}", e.getResourcePath());

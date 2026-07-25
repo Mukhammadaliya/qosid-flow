@@ -14,6 +14,7 @@ import uz.greenwhite.gateway.auth.AuthContext;
 import uz.greenwhite.gateway.auth.AuthResult;
 import uz.greenwhite.gateway.auth.AuthorizationProvider;
 import uz.greenwhite.gateway.exception.AuthorizationDeniedException;
+import uz.greenwhite.gateway.exception.PayloadTooLargeException;
 import uz.greenwhite.gateway.exception.RequestValidationException;
 import uz.greenwhite.gateway.config.ApiProperties;
 import uz.greenwhite.gateway.config.ProxyProperties;
@@ -23,7 +24,9 @@ import uz.greenwhite.gateway.kafka.producer.RequestProducer;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import uz.greenwhite.gateway.settings.SettingsService;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -186,7 +189,7 @@ public class ProxyController {
         } else if (biruniUpload != null) {
             throw new RequestValidationException("Invalid value for BiruniUpload header: " + biruniUpload);
         } else {
-            bodyStr = new String(request.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            bodyStr = new String(readBodyBounded(request), StandardCharsets.UTF_8);
             contentType = request.getContentType();
         }
 
@@ -235,6 +238,51 @@ public class ProxyController {
     }
 
     // ==================== HELPERS ====================
+
+    /**
+     * Read the raw (non-multipart) request body, refusing anything above
+     * {@code gateway.proxy.max-body-size} instead of buffering it.
+     *
+     * <p>Two checks, because either alone is insufficient: {@code Content-Length} is
+     * client-supplied so an understated value must not win, and a chunked request carries no
+     * length at all — hence the streaming counter that aborts as soon as the cap is crossed,
+     * before the extra bytes are retained.</p>
+     *
+     * <p>Applies only to this branch. The {@code BiruniUpload} multipart branch keeps its own
+     * (larger) {@code spring.servlet.multipart.*} limits so real S3 uploads are unaffected —
+     * see {@link ProxyProperties#getMaxBodySize()} for the sizing rationale.</p>
+     */
+    private byte[] readBodyBounded(HttpServletRequest request) throws IOException {
+        long max = proxyProperties.getMaxBodySize();
+        if (max <= 0) {
+            return request.getInputStream().readAllBytes();
+        }
+
+        long declared = request.getContentLengthLong();
+        if (declared > max) {
+            throw new PayloadTooLargeException(
+                    "Request body of " + declared + " bytes exceeds the " + max + " byte limit"
+                            + " (gateway.proxy.max-body-size)");
+        }
+
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream(
+                declared > 0 ? (int) Math.min(declared, 64 * 1024) : 8192);
+        byte[] chunk = new byte[8192];
+        long total = 0;
+        try (InputStream in = request.getInputStream()) {
+            int read;
+            while ((read = in.read(chunk)) != -1) {
+                total += read;
+                if (total > max) {
+                    throw new PayloadTooLargeException(
+                            "Request body exceeds the " + max + " byte limit"
+                                    + " (gateway.proxy.max-body-size)");
+                }
+                buffer.write(chunk, 0, read);
+            }
+        }
+        return buffer.toByteArray();
+    }
 
     private static Long parseLongOrNull(String s) {
         try {
