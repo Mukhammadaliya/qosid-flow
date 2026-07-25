@@ -87,6 +87,37 @@ public class OpsAuthController {
         return ResponseEntity.ok(Map.of("token", token));
     }
 
+    public record ChangePasswordRequest(String oldPassword, String newPassword) {}
+
+    /**
+     * Ops-local password change — same contract as the gateway's
+     * {@code POST /qosid/admin/api/change-password} (204 on success, 400 + {@code error} message on
+     * a rule violation; the session is invalidated so the operator must log in again).
+     *
+     * <p>It has to live here as well: in the normal stop-to-edit state the gateway is DOWN, so its
+     * change-password endpoint is unreachable. Without this, an operator gated by
+     * {@link OpsDefaultPasswordGateFilter} on the default password would have nowhere left to
+     * change it. Rules and storage are {@link AdminAuthDao#changePassword} — no second copy of the
+     * password policy, no second encoder.
+     *
+     * <p>Answered directly (no 400 mapping) because ops has no GlobalExceptionHandler — same
+     * reasoning as the 429 in {@link #login}.
+     */
+    @PostMapping("/change-password")
+    public ResponseEntity<Map<String, String>> changePassword(@RequestBody ChangePasswordRequest req,
+                                                              HttpServletRequest request) {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        try {
+            authDao.changePassword(auth.getName(), req.oldPassword(), req.newPassword());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+        HttpSession session = request.getSession(false);
+        if (session != null) session.invalidate();
+        SecurityContextHolder.clearContext();
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/me")
     public ResponseEntity<Map<String, Object>> me() {
         var auth = SecurityContextHolder.getContext().getAuthentication();

@@ -16,6 +16,10 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class AdminAuthDao {
 
+    /** The account and password the gateway's AdminAccountInitializer seeds on first boot. */
+    private static final String DEFAULT_USERNAME = "admin";
+    private static final String DEFAULT_PASSWORD = "admin";
+
     private final AdminAccountRepository accounts;
     private final LoginRateLimiter rateLimiter;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
@@ -42,6 +46,53 @@ public class AdminAuthDao {
         }
         rateLimiter.recordFailure(username);
         return false;
+    }
+
+    /**
+     * True while the shared admin account still carries the seeded default password — see
+     * {@link OpsDefaultPasswordGateFilter}: with it an attacker stops the gateway here, rewrites
+     * {@code gateway.api.base-url} through the stop-to-edit settings API and starts it again,
+     * redirecting the whole pipeline. A missing account (or an unreachable DB) counts as
+     * "not default": there is nothing to force, and login is impossible anyway.
+     *
+     * <p>Deliberately NOT latched, unlike the gateway's {@code AdminAuthService.isDefaultPassword()}:
+     * the ops JVM outlives gateway restarts, so an {@code ADMIN_RESET} directive applied by the
+     * gateway at ITS startup can put the default password back underneath a long-running ops
+     * process — a latch would then keep the gate open on a default account. The BCrypt cost is
+     * irrelevant here because the gate never consults this for allowlisted routes (the SPA's
+     * frequent poll is {@code /ops/api/status}), only for rare operator actions.
+     */
+    public boolean isDefaultPassword() {
+        return findWithRetry(DEFAULT_USERNAME)
+                .map(account -> encoder.matches(DEFAULT_PASSWORD, account.getPasswordHash()))
+                .orElse(false);
+    }
+
+    /**
+     * Ops-side password change. It exists because settings are edited while the gateway is STOPPED:
+     * in that state the gateway's own {@code /qosid/admin/api/change-password} is unreachable, so
+     * without this endpoint a gated operator on the default password could not recover anywhere.
+     *
+     * <p>Same rules as the gateway's {@code AdminAuthService.changePassword} (old password must
+     * match, min 8 chars, the default value is refused) writing through the same shared
+     * {@link AdminAccountRepository} — one place decides what a valid admin password is.
+     *
+     * @throws IllegalArgumentException when the account is missing or a rule is violated
+     */
+    public void changePassword(String username, String oldPassword, String newPassword) {
+        AdminAccount account = findWithRetry(username)
+                .orElseThrow(() -> new IllegalArgumentException("Admin account not found"));
+        if (oldPassword == null || !encoder.matches(oldPassword, account.getPasswordHash())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new IllegalArgumentException("New password too short (min 8 chars)");
+        }
+        if (DEFAULT_PASSWORD.equalsIgnoreCase(newPassword)) {
+            throw new IllegalArgumentException("New password must not be the default");
+        }
+        accounts.updatePassword(username, encoder.encode(newPassword));
+        log.info("Admin password changed via ops for {}", username);
     }
 
     /**
