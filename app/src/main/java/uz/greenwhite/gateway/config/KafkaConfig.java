@@ -161,6 +161,12 @@ public class KafkaConfig {
         factory.setConsumerFactory(consumerFactory());
         factory.setConcurrency(concurrency);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
+        // Consumer'lar ack'ni CompletableFuture'dan, offset tartibisiz chaqiradi.
+        // asyncAcks offset bo'shliqlari to'lguncha commit'ni kechiktiradi — busiz
+        // tez tugagan katta offset sekin tugayotgan kichigini "commit qilingan"
+        // qilib ko'rsatadi va restart'da u qayta yetkazilmaydi (jim yo'qolish).
+        // SAFETY-RULES 4: AckMode MANUAL o'zgarmaydi, asyncAcks faqat MANUAL bilan ishlaydi.
+        factory.getContainerProperties().setAsyncAcks(true);
         factory.getContainerProperties().setIdleBetweenPolls(100);
         factory.setCommonErrorHandler(kafkaErrorHandler());
         log.info("{} consumer factory created with concurrency: {}", label, concurrency);
