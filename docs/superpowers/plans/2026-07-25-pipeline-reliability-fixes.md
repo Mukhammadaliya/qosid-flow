@@ -8,6 +8,20 @@
 
 **Tech Stack:** Java 21, Spring Boot 3.3.0, Spring Kafka, Redis (Lettuce), JUnit 5 + Mockito + AssertJ, Maven reactor (`settings-core` / `app` / `ops`).
 
+## Bajarilish holati (2026-07-25)
+
+| Task | Commit | Natija |
+|------|--------|--------|
+| 1 — `createdAt` ikkala ingress'da | `c3ff6dd` | ✅ app 185/185 |
+| 2 — CB qayta-navbat cap'i | `dd23cbc` | ✅ app 189/189 |
+| 3 — `setAsyncAcks(true)` | `de030a5` | ✅ (alohida worktree'da tekshirilgan, Task 2 bilan parallel edi) |
+| 4 — qulf raqobatida `nack` | `3108bb8` | ✅ app 191/191 |
+| 5 — scale-up stop/start o'chirildi | `eb5c31a` | ✅ app 194/194 |
+| 6 — hujjatlash + verifikatsiya | — | jarayonda |
+
+Har bir taskda RED→GREEN→commit tsikli bajarilgan; RED chiqishi commit xabarida emas,
+sessiya jurnalida. Boshlang'ich baza 183 test, yakuniy 194 (+11).
+
 ## Global Constraints
 
 - **Maven PATH'da YO'Q.** Har bir buyruqda to'liq yo'ldan foydalaning:
