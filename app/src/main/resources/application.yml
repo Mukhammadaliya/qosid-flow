@@ -159,6 +159,7 @@ gateway:
     scale-cooldown-ms: ${CONCURRENCY_COOLDOWN:30000}
     topic-partitions: ${KAFKA_PARTITIONS:10}
     thread-pool-multiplier: ${THREAD_POOL_MULTIPLIER:2}
+    allow-restart-on-scale-up: ${CONCURRENCY_ALLOW_RESTART:false}
     thread-pool-queue-capacity: ${THREAD_POOL_QUEUE:50}
 
   # --- API Proxy ---

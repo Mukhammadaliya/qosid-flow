@@ -107,9 +107,20 @@ public class DynamicConcurrencyManager {
             // Instead of stop/start — only applied on next rebalance.
             // This does not halt existing threads, just sets the new target.
             if (newConcurrency > current) {
-                // Scale UP — restart needed to spawn new consumer threads
-                concurrent.stop();
-                concurrent.start();
+                // Scale UP would need a restart to spawn new consumer threads, but a
+                // restart rebalances the whole consumer group and every in-flight
+                // ack that lands after stop() is a no-op — those offsets stay
+                // uncommitted and get redelivered, i.e. messages are lost exactly
+                // when load is highest (SAFETY-RULES 32). Off by default; the new
+                // target still applies on the next natural rebalance or restart.
+                if (properties.isAllowRestartOnScaleUp()) {
+                    concurrent.stop();
+                    concurrent.start();
+                } else {
+                    log.info("Scale-up target set for [{}] but restart is disabled — "
+                                    + "concurrency {} applies on next rebalance/restart",
+                            listenerId, newConcurrency);
+                }
             }
             // Scale DOWN — no stop/start needed, threads reduce on next rebalance
 

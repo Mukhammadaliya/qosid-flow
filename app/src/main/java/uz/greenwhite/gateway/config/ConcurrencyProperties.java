@@ -32,6 +32,16 @@ public class ConcurrencyProperties {
     private int threadPoolMultiplier = 2;
     private int threadPoolQueueCapacity = 50;
 
+    /**
+     * Whether a scale-up may stop()/start() a live listener container.
+     * Default false: the restart triggers a consumer-group rebalance, and any
+     * in-flight ack that lands after the container stopped is a no-op, so the
+     * uncommitted offsets are redelivered — losing messages exactly when load is
+     * highest. With false the new concurrency is still recorded and takes effect
+     * on the next natural rebalance or restart (see SAFETY-RULES 32).
+     */
+    private boolean allowRestartOnScaleUp = false;
+
     @PostConstruct
     public void validate() {
         validateRange("oracle", oracleMin, oracleMax);
