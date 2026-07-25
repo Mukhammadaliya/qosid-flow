@@ -136,7 +136,7 @@ public class OracleRequestConsumer {
         }
 
         if (requestStateService.getState(key).isEmpty()) {
-            requestStateService.createInitialState(key);
+            requestStateService.createInitialState(key, message.getSource());
         }
         requestStateService.updateStatus(key, RequestStatus.SENT);
 

@@ -45,6 +45,11 @@ public class StatusController {
     @Value("${gateway.response.threshold-size:1024}")
     private int responseThresholdSize;
 
+    /** ORACLE-sourced ids are enumerable and their result belongs to the source system only. */
+    private boolean isExternallyReadable(RequestState state) {
+        return !"ORACLE".equalsIgnoreCase(state.getSource());
+    }
+
     // ==================== STATUS ====================
 
     @GetMapping("/{id}/status")
@@ -55,6 +60,11 @@ public class StatusController {
         }
 
         RequestState state = stateOpt.get();
+        if (!isExternallyReadable(state)) {
+            log.debug("Refusing status read for source-owned request: {}", id);
+            return ResponseEntity.notFound().build();
+        }
+
         StatusResponse.StatusResponseBuilder builder = StatusResponse.builder()
                 .requestId(id)
                 .status(state.getStatus().name());
@@ -117,6 +127,13 @@ public class StatusController {
 
     @GetMapping("/{id}/result")
     public ResponseEntity<byte[]> getResult(@PathVariable String id) {
+        Optional<RequestState> stateOpt = requestStateService.getState(id);
+        if (stateOpt.isEmpty() || !isExternallyReadable(stateOpt.get())) {
+            // No state (expired/unknown) or source-owned -> 404 without touching RocksDB.
+            log.debug("Refusing result read for unknown or source-owned request: {}", id);
+            return ResponseEntity.notFound().build();
+        }
+
         ResponseMetadata meta = responseStorageService.getResponseMetadata(id);
         if (meta == null) {
             return ResponseEntity.notFound().build();

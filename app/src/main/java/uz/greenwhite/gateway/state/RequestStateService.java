@@ -66,13 +66,24 @@ public class RequestStateService {
     }
 
     /**
-     * Create initial state for new request
+     * Backwards-compatible overload; prefer the two-arg form so {@code /status} and
+     * {@code /result} can gate on source.
      */
     public RequestState createInitialState(String compositeId) {
+        return createInitialState(compositeId, null);
+    }
+
+    /**
+     * Create initial state for a new request, recording which ingress it came from
+     * ({@code "ORACLE"} | {@code "API"}). The polling endpoints refuse reads of
+     * ORACLE-sourced requests, so this field must be persisted.
+     */
+    public RequestState createInitialState(String compositeId, String source) {
         RequestState state = RequestState.builder()
                 .compositeId(compositeId)
                 .status(RequestStatus.PROCESSING)
                 .attemptCount(0)
+                .source(source)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
