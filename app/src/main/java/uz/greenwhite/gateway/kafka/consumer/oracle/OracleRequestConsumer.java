@@ -84,9 +84,15 @@ public class OracleRequestConsumer {
             }
 
             if (!requestStateService.tryLock(key)) {
-                log.warn("[ORACLE] Request is being processed by another instance: {}", key);
+                // A held lock does NOT always mean "another instance is working on it":
+                // after a restart or SIGKILL the dead instance's locks stay orphaned
+                // until the lock TTL (300s) expires. Acking here would silently discard
+                // every message redelivered during that window (SAFETY-RULES 33), so we
+                // nack and let Kafka bring it back once the holder finishes or the TTL
+                // reaps the lock.
+                log.warn("[ORACLE] Lock held for {} — nack, will redeliver", key);
                 metrics.getConsumerLockFailed().increment();
-                ack.acknowledge();
+                ack.nack(Duration.ofSeconds(10));
                 return;
             }
         } catch (Exception e) {
