@@ -245,6 +245,64 @@ rewrite `gateway.api.base-url`, start it). Because settings are edited while the
 **stopped**, the ops side must also keep its own `change-password` route reachable — otherwise
 an operator on a fresh install can neither edit settings nor fix the password anywhere.
 
+### 36. Never make the XSRF cookies `HttpOnly`, and never hard-code `Secure` on the console cookies
+
+Both CSRF repositories are built with `CookieCsrfTokenRepository.withHttpOnlyFalse()` on purpose.
+The SPA reads `XSRF-TOKEN` (`frontend/src/api/client.ts`) and `OPS-XSRF-TOKEN`
+(`frontend/src/api/ops.ts`) from `document.cookie` and echoes the raw value in
+`X-XSRF-TOKEN` / `X-OPS-XSRF-TOKEN` — the pattern `SpaCsrfTokenRequestHandler` exists to
+support. "Hardening" either cookie to `HttpOnly` makes the SPA unable to read it, so every
+state-changing admin/ops call answers `403`. `HttpOnly` on the two **session** cookies
+(`JSESSIONID`, `OPS_SESSION`) is unconditional and correct — no JS reads those.
+
+`Secure` is the mirror-image trap. Production currently has **no TLS and no nginx**: the
+console is reached over plain HTTP through an SSH tunnel, and a browser silently *discards* a
+`Secure` cookie on a plain-HTTP response — no error, login just never sticks. It therefore
+stays behind `COOKIE_SECURE` (default `false`, wired to `server.servlet.session.cookie.secure`
+in both modules plus `gateway.security.cookie-secure` / `ops.security.cookie-secure`). Do not
+"fix" the default to `true`; flip the env var in **both** systemd units the day TLS lands.
+Note that `false` does not disable HTTPS detection: Tomcat ORs it with `request.isSecure()`,
+and the CSRF repositories only call `setSecure(true)` when the flag is on — so never replace
+that conditional with an unconditional `setSecure(cookieSecure)`, which would strip `Secure`
+from genuine HTTPS responses. `SameSite=Lax` (not `Strict`) is also deliberate: same-origin
+XHR is unaffected by either, but `Strict` drops the cookie on a top-level navigation into the
+console. Guards: `AdminCookieHardeningTest`, `AdminCookieSecureFlagTest`, `OpsCookieHardeningTest`.
+
+### 37. Never expose the actuator `shutdown` endpoint, in any profile
+
+The management port (8091) has no authentication, so `POST /actuator/shutdown` is an
+unauthenticated remote kill switch — and a single mis-set `SPRING_PROFILES_ACTIVE=dev` would
+carry a "dev-only" exposure straight into production. The `on-profile: dev` document in
+`application.yml` that used to add it (`include: …,shutdown` + `endpoint.shutdown.enabled: true`)
+was removed; nothing depended on it (the `ops-local-stop.cmd` its comment named is not in the
+repo, the ops sidecar stops the gateway with `systemctl stop gateway-service`, and no test or
+script calls the endpoint). Prod already stops cleanly via SIGTERM + `server.shutdown: graceful`;
+local dev stops with Ctrl+C. `ActuatorShutdownDisabledTest` reads the shipped yaml and fails the
+build if `shutdown` reappears in any profile document — do not weaken it to a
+context-boot test, which cannot see a profile document that is not active.
+
+### 38. Never lower `gateway.proxy.max-body-size` below what the pipeline already carries, and never extend it to the multipart branch
+
+`ProxyController.readBodyBounded` bounds only the **non-multipart** body (previously an
+unbounded `readAllBytes()` — a memory-exhaustion vector on an endpoint that is unauthenticated
+by default). Two properties of the default are load-bearing:
+
+- **20 MiB is not arbitrary** — it is the Kafka message ceiling already configured on every leg
+  (`max.request.size`, `fetch.max.bytes`, `max.partition.fetch.bytes` = `20971520`). The body
+  rides as a JSON string field of `RequestMessage`, so the record is never smaller than the
+  body: anything larger already fails at the producer today. Matching the numbers is what makes
+  the gate provably unable to reject a request that currently succeeds. Lowering it (e.g. to a
+  "sensible" 1 MB) starts 413-ing live traffic; raising it without raising the three Kafka
+  limits in lockstep just moves the failure back to the producer.
+- **The `BiruniUpload` multipart branch must stay excluded** — real S3 uploads are bounded by
+  `spring.servlet.multipart.max-file-size` (50MB) / `max-request-size` (52MB). Applying the
+  20 MiB proxy limit there would break production file uploads.
+
+Keep both checks in `readBodyBounded`: `Content-Length` alone is client-supplied (an
+understated value would walk straight through) and a chunked request carries no length at all,
+so the streaming counter is what actually enforces the cap. Guard:
+`ProxyControllerBodyLimitTest`.
+
 ---
 
 ## Protected Zones
@@ -263,12 +321,13 @@ These files contain production-critical logic. Before modifying any of them, run
 | `CallbackSender.java` | `@Retryable` (3 attempts, 1s backoff) + `@Recover` swallow | Lost callbacks, consumer stalls on bad URL |
 | `RocksDBConfig.java` | Singleton DB instance + `@PreDestroy` close | On-disk corruption across restarts |
 | `ResponseStorageService.java` | Scheduled retention cleanup + body/metadata dual-write | Disk exhaustion, orphaned metadata |
-| `ProxyController.java` | Auth gate + URL prefix strip (`/qosid/api/v1/queue`) + BiruniUpload parsing + S3 retry/fallback + hop-by-hop + Accept-Encoding filter + `files` header + `source="API"` tagging | Bypass of auth, cross-source mix-up, unvalidated uploads, S3 fallback failure, Cloudflare gzip decode artifacts |
+| `ProxyController.java` | Auth gate + URL prefix strip (`/qosid/api/v1/queue`) + BiruniUpload parsing + S3 retry/fallback + hop-by-hop + Accept-Encoding filter + `files` header + `source="API"` tagging + bounded raw-body read (`readBodyBounded`) | Bypass of auth, cross-source mix-up, unvalidated uploads, S3 fallback failure, Cloudflare gzip decode artifacts, unbounded body buffering (see rule 38) |
 | `FileService.java` | S3 upload with 3x retry + content-type validation + fallback flag | Unvalidated uploads, missing retry on S3 failure |
 | `ContentTypeValidator.java` | MIME whitelist enforcement | Open file store, security exposure |
 | `HttpClientConfig.java` | Netty `HttpClient` setup — pool, timeouts, **no `.compress(true)`** (see Rule 17) | Re-enabling Netty compression reintroduces Cloudflare gzip decode artifacts |
 | `GlobalExceptionHandler.java` | `@RestControllerAdvice` mapping of auth / validation / upload / not-found / generic exceptions to uniform `ErrorResponse` | Unmapped routes leak 500, validation errors become opaque stack traces to clients |
-| `AdminSecurityConfig.java` | Two isolated `SecurityFilterChain` beans (admin session-gated, pipeline permitAll) with explicit `@Order` + `securityMatcher` | Merging chains or dropping `securityMatcher` locks the pipeline/actuator behind admin auth (see Rule 29) |
+| `AdminSecurityConfig.java` | Two isolated `SecurityFilterChain` beans (admin session-gated, pipeline permitAll) with explicit `@Order` + `securityMatcher`; CSRF cookie built `withHttpOnlyFalse()` + `SameSite=Lax` + conditional `setSecure` | Merging chains or dropping `securityMatcher` locks the pipeline/actuator behind admin auth (see Rule 29); HttpOnly-ing the XSRF cookie or hard-coding `Secure` breaks the SPA / login (see Rule 36) |
+| `OpsSecurityConfig.java` | Renamed ops cookies (`OPS_SESSION` / `OPS-XSRF-TOKEN`) + same `withHttpOnlyFalse()` / `SameSite=Lax` / conditional `setSecure` contract + ops default-password gate | Cookie-name collision with the gateway on one origin corrupts both sessions; HttpOnly/`Secure` mistakes break ops login (see Rules 35, 36) |
 | `TenantMappingService.java` | Biruni-boundary `toInternal`/`toExternal` field-name translation (dynamic, per-call from `SettingsService`) | Bypassing it at ingress leaves `tenantId` null (all requests → DLQ); bypassing at egress or hardcoding the field name breaks any deployment with reconfigured field names (see Rule 30) |
 | `SourceTokenService.java` | Isolated `source:oauth2:token` cache key + TTL capped at token's `expires_in` | Sharing the per-request `oauth2:token:*` namespace lets a provider eviction stall all Biruni pulls, or serves an expired token on the source channel (see Rule 31) |
 | `DynamicConcurrencyManager.java` | Lag-driven `setConcurrency`; container stop/start on scale-up is OFF by default (`gateway.concurrency.allow-restart-on-scale-up`) | A restart triggers a consumer-group rebalance and every in-flight ack landing after `stop()` is a no-op — those offsets stay uncommitted and get redelivered, i.e. message loss exactly when load is highest |
@@ -298,6 +357,6 @@ These files can be modified without the above checklist:
 | `application.yml` | Adding new config properties is safe (existing ones have defaults) |
 | New `*Properties.java` classes | Adding config classes doesn't affect existing logic |
 | `ai-context/` and other docs | Documentation files |
-| `docker-compose.yml` | Local dev infrastructure only |
+| `docker-compose.yml` | Infrastructure only — no gateway runtime logic. **Not "local dev only":** production runs this same file for Redpanda/Redis/Prometheus/Grafana/Loki (only the JVMs are outside Docker), so every published port is bound to `127.0.0.1`. A bare `"6379:6379"` binds `0.0.0.0` **and bypasses the host firewall** (Docker writes its own nat/`DOCKER-USER` rules, so `ufw deny` does not apply) — that is how unauthenticated Redis/Redpanda/Grafana ended up network-reachable. Keep the `127.0.0.1:` prefix on every port; container-to-container traffic uses compose DNS names on the internal network and is unaffected. |
 | `logback-spring.xml` | Logging config changes |
 | `pom.xml` | Adding dependencies (but verify compatibility) |
