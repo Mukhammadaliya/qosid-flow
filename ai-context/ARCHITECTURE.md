@@ -84,6 +84,14 @@ Oracle/Biruni                    (RedPanda)                  External APIs
      +-->  /qosid/api/v1/callback              CallbackController
 ```
 
+**Read gate (v1.15.0):** both polling endpoints refuse **ORACLE-sourced** requests with `404`,
+and `/result` performs that check before touching RocksDB. The endpoints are unauthenticated by
+design (B4), which is only safe for REST-sourced ids because those are `UUID`-derived (~59 bits);
+an ORACLE composite id is `<small tenantId>:<sequential request_id>` and therefore enumerable.
+The discriminator is `RequestState.source`, persisted by
+`RequestStateService.createInitialState(compositeId, source)`. A `null` source stays readable so
+pre-upgrade Redis rows do not start 404-ing. See SAFETY-RULES rule 34.
+
 The pipeline has **two entry points** that both feed `gateway.request.new`:
 
 - **E1 Oracle pull** — original polling loop, tags `RequestMessage.source="ORACLE"`.
@@ -204,6 +212,20 @@ from the `createdAt` stamped at ingress) and a message past the CB re-queue cap
 **B1 note:** the settings/admin control-plane is additive — it does not touch the E1-E5 pipeline. `AdminSecurityConfig` isolates it behind its own `SecurityFilterChain` so the pipeline and actuator remain permitAll (see Cross-Cutting Concerns → Admin Control-Plane Security below).
 
 ## Admin Control-Plane API
+
+**Forced password change (v1.15.0).** While the stored admin password still matches the seeded
+default, every admin route except an exact allowlist (`login`, `login-token`, `logout`, `me`,
+`change-password`, `health`) answers `403 {"error":"password-change-required"}`. Enforcement is
+server-side — `DefaultPasswordGateFilter`, registered only on `adminSecurityChain` and **after**
+`AuthorizationFilter` so anonymous callers still get `401` and learn nothing about the password
+state. `gateway.admin.force-password-change` (default `true`) gates it; the login and `me`
+responses carry a `passwordChangeRequired` hint the SPA uses to force its form.
+
+The ops sidecar enforces the same gate against the same shared H2 account — without it the
+attack the gate exists to stop is untouched (log in on :8092, stop the gateway, rewrite
+`gateway.api.base-url`, start it again). Because settings are edited while the gateway is
+**stopped**, ops also exposes its own `change-password`; otherwise a fresh install could be
+locked out with no reachable way to leave the default password. See SAFETY-RULES rule 35.
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|

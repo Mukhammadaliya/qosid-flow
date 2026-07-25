@@ -201,6 +201,50 @@ instance's locks stay orphaned until the lock TTL (300s, rule 2) reaps them, and
 silently discard every message redelivered inside that window. Rule 25 covers a Redis gate
 *failure*; this rule covers lock *contention* — both end in `nack`, never in a silent drop.
 
+### 34. Never remove the ORACLE-source gate from `StatusController`
+
+`/qosid/api/v1/requests/{id}/{status,result}` is unauthenticated by design (the B4 decision:
+the transparent proxy and its `request_id` polling cannot carry inbound auth). That is
+acceptable only because REST-sourced ids are `UUID`-derived (~59 bits, unguessable). The
+**ORACLE-sourced half is not**: `request_id` is a source-side sequential integer and
+`tenantId` is a small integer, so `100:900123` and its neighbours are trivially enumerable.
+On 2026-07-24 an unauthenticated `GET .../result` returned HTTP 200 with a 20,022-byte
+upstream response body.
+
+Both endpoints therefore refuse ORACLE-sourced requests, and `getResult` performs that check
+**before touching RocksDB**. Two details that look incidental but are not:
+
+- The refusal is **404, not 403**. A 403 confirms the id exists and hands an enumerator a
+  working oracle. Do not "improve" the status code.
+- A `null` source stays readable, so Redis rows written before `source` was persisted do not
+  suddenly 404. Removing that fallback would break in-flight requests on the deploy that ships
+  a change here.
+
+The gate depends on `RequestStateService.createInitialState(compositeId, source)` actually
+being called with `message.getSource()` from both request consumers. Drop that argument and the
+gate silently stops gating — nothing fails, reads just become open again.
+
+### 35. Never move the default-password gate onto `apiSecurityChain`
+
+`DefaultPasswordGateFilter` blocks every admin route except an exact allowlist
+(`login`, `login-token`, `logout`, `me`, `change-password`, `health`) while the stored admin
+password still matches the seeded default. It is registered **only** on `adminSecurityChain`,
+**after** Spring Security's `AuthorizationFilter`.
+
+Both of those placements are load-bearing. On `apiSecurityChain` the filter would block
+`/qosid/api/**` and stop the pipeline accepting requests (rule 29). Before the
+`AuthorizationFilter` it would answer `403` to unauthenticated callers, telling an anonymous
+prober that the deployment is still on the default password.
+
+Match the allowlist by **exact path**, never by prefix — a prefix match on `settings` would
+expose `settings/audit`.
+
+The ops sidecar carries the same gate for the same reason: it authenticates against the same
+shared H2 account, so leaving it ungated would keep the whole attack open (stop the gateway,
+rewrite `gateway.api.base-url`, start it). Because settings are edited while the gateway is
+**stopped**, the ops side must also keep its own `change-password` route reachable — otherwise
+an operator on a fresh install can neither edit settings nor fix the password anywhere.
+
 ---
 
 ## Protected Zones
@@ -228,6 +272,8 @@ These files contain production-critical logic. Before modifying any of them, run
 | `TenantMappingService.java` | Biruni-boundary `toInternal`/`toExternal` field-name translation (dynamic, per-call from `SettingsService`) | Bypassing it at ingress leaves `tenantId` null (all requests → DLQ); bypassing at egress or hardcoding the field name breaks any deployment with reconfigured field names (see Rule 30) |
 | `SourceTokenService.java` | Isolated `source:oauth2:token` cache key + TTL capped at token's `expires_in` | Sharing the per-request `oauth2:token:*` namespace lets a provider eviction stall all Biruni pulls, or serves an expired token on the source channel (see Rule 31) |
 | `DynamicConcurrencyManager.java` | Lag-driven `setConcurrency`; container stop/start on scale-up is OFF by default (`gateway.concurrency.allow-restart-on-scale-up`) | A restart triggers a consumer-group rebalance and every in-flight ack landing after `stop()` is a no-op — those offsets stay uncommitted and get redelivered, i.e. message loss exactly when load is highest |
+| `StatusController.java` | Public polling endpoints: ORACLE-source refusal (404) before any RocksDB read | Enumerable composite ids expose every source-originated response body of the retention window (see rule 34) |
+| `DefaultPasswordGateFilter.java` (gateway) + the ops sidecar's equivalent | Blocks all but an exact allowlist while the admin password is the seeded default | On the wrong chain it kills the pipeline; misplaced it leaks password state to anonymous callers; a missing ops-side gate leaves the redirect attack fully open (see rule 35) |
 
 ## Required Checklist
 
