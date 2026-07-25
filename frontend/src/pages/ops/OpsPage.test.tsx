@@ -32,7 +32,7 @@ function renderOpsPage(
   return render(
     <MemoryRouter>
       <AuthContext.Provider value={{
-        user: 'admin', loading: false, gatewayUp: true, opsUp, gatewayAuthExpired: false,
+        user: 'admin', loading: false, gatewayUp: true, opsUp, gatewayAuthExpired: false, passwordChangeRequired: false,
         login: async () => {}, logout, refresh, attemptHandoff,
       }}>
         <OpsPage />

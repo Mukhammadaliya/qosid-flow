@@ -13,6 +13,10 @@ interface AuthState {
   /** True only when the gateway /me probe reached the gateway and got 401'd (session expired) —
    * as opposed to the gateway being unreachable. gatewayUp is false in both cases. */
   gatewayAuthExpired: boolean;
+  /** Gateway hint (from /login and /me): the admin password is still the seeded default, so the
+   * gateway 403s every admin route but login/me/logout/change-password/health. Enforcement is
+   * server-side (DefaultPasswordGateFilter) — this only drives the forced change form. */
+  passwordChangeRequired: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   /** opts.silent skips the loading flag flip so RequireAuth's spinner doesn't unmount the
@@ -40,6 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [gatewayUp, setGatewayUp] = useState(false);
   const [opsUp, setOpsUp] = useState(false);
   const [gatewayAuthExpired, setGatewayAuthExpired] = useState(false);
+  const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
   // Re-entrancy guard: the 401 interceptor calls refresh(), whose own /me probe can itself
   // 401 and re-fire the interceptor — without this, that's an unbounded network loop.
   const refreshing = useRef(false);
@@ -62,6 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setGatewayAuthExpired(gw.status === 'rejected' && is401(gw.reason));
       setGatewayUp(gw.status === 'fulfilled');
       setOpsUp(ops.status === 'fulfilled');
+      // /me reports the flag too, so a page reload (session but no login response) still forces
+      // the change form. Sent as a string because the body is a Map<String, String>.
+      setPasswordChangeRequired(gw.status === 'fulfilled'
+              && String(gw.value.data.passwordChangeRequired) === 'true');
       setUser(gwUser ?? opsUser);
     } finally {
       refreshing.current = false;
@@ -74,6 +83,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       api.post(`${BASE}/login`, { username, password }),
       opsLogin(username, password),
     ]);
+    if (gw.status === 'fulfilled') {
+      setPasswordChangeRequired(String(gw.value.data.passwordChangeRequired) === 'true');
+    }
     const ok = gw.status === 'fulfilled' || ops.status === 'fulfilled';
     if (!ok) {
       // A 401 from either backend is authoritative (both check the same H2 account).
@@ -100,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setGatewayUp(false);
     setOpsUp(false);
     setGatewayAuthExpired(false);
+    setPasswordChangeRequired(false);
   }, []);
 
   // Mid-session gateway 401 (expired/invalidated session): re-probe instead of hard logout,
@@ -110,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => { refresh(); }, [refresh]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, gatewayUp, opsUp, gatewayAuthExpired, login, logout, refresh, attemptHandoff }}>
+    <AuthContext.Provider value={{ user, loading, gatewayUp, opsUp, gatewayAuthExpired, passwordChangeRequired, login, logout, refresh, attemptHandoff }}>
       {children}
     </AuthContext.Provider>
   );

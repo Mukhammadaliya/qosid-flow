@@ -39,7 +39,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   const userMenu = {
     items: [
-      { key: 'change-password', label: t('auth.changePassword'), onClick: () => navigate('/settings') },
+      { key: 'change-password', label: t('auth.changePassword'), onClick: () => navigate('/change-password') },
       { key: 'logout', label: t('auth.logout'), onClick: () => { logout().then(() => navigate('/login')); } },
     ],
   };

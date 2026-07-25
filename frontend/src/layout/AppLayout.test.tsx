@@ -7,7 +7,7 @@ import { AuthContext } from '../auth/AuthContext';
 
 function renderLayout(overrides: Partial<{ gatewayUp: boolean; opsUp: boolean; gatewayAuthExpired: boolean }> = {}) {
   return render(
-    <AuthContext.Provider value={{ user: 'admin', loading: false, gatewayUp: true, opsUp: true, gatewayAuthExpired: false, ...overrides, login: async () => {}, logout: async () => {}, refresh: async () => {}, attemptHandoff: async () => {} }}>
+    <AuthContext.Provider value={{ user: 'admin', loading: false, gatewayUp: true, opsUp: true, gatewayAuthExpired: false, passwordChangeRequired: false, ...overrides, login: async () => {}, logout: async () => {}, refresh: async () => {}, attemptHandoff: async () => {} }}>
       <MemoryRouter initialEntries={['/settings']}>
         <AppLayout><div>content-here</div></AppLayout>
       </MemoryRouter>
