@@ -45,6 +45,7 @@ public class ApiKeyAuthorizationProvider implements AuthorizationProvider {
 - **Client IP**: `context.getClientIp()` already resolves `X-Forwarded-For` (leftmost) / `X-Real-IP` / remote addr — don't re-parse `X-Forwarded-For` yourself.
 - **Status code**: pass a specific HTTP code on denial (`AuthResult.denied(reason, 401)`). Without it the default is 403, which is wrong for a missing-credential case.
 - **Multiple implementations**: if you register more than one `AuthorizationProvider` bean Spring will fail with a "multiple beans" error — either `@Primary` one of them or combine the logic into a single composite provider.
+- **Supplying a resolved tenant**: if your auth scheme can resolve the tenant itself (e.g. from an API-key → tenant lookup), return `AuthResult.allowed(tenantId, extraTenantId)` instead of the no-arg `allowed()` — both are `Long` (nullable); `ProxyController` uses them directly and only falls back to `gateway.tenant.default-rest-tenant` when `tenantId` is null.
 
 ---
 
@@ -128,7 +129,7 @@ public NewTopic myNewTopic() {
 
 | Type (`getName()`) | Class | Token request format | Use for |
 |--------------------|-------|----------------------|---------|
-| `biruni` | `BiruniOAuth2Client` | JSON body (proprietary Biruni endpoint) | Biruni/smartup providers |
+| `biruni` | `JsonBodyOAuth2Client` | JSON body (posted to the token endpoint) | Biruni/smartup-style providers (type value `"biruni"` is frozen) |
 | `standard` | `StandardOAuth2Client` | `application/x-www-form-urlencoded` (RFC 6749 `client_credentials`, no refresh token) | Spec-compliant providers, e.g. Regos (`auth.regos.uz`) |
 
 **Files to create/modify:**
@@ -343,6 +344,6 @@ gateway:
     channel: ${SLACK_CHANNEL:#alerts}
 ```
 
-**Note:** Multiple `NotificationService` implementations can coexist. The `OracleDlqConsumer` and `ApiDlqConsumer` inject the active implementation. Currently, `NoOpNotificationService` is the fallback when `TelegramNotificationService` is disabled.
+**Note:** Multiple `NotificationService` implementations can coexist. The `OracleDlqConsumer` and `ApiDlqConsumer` inject the active implementation. Currently `TelegramNotificationService` is the only implementation — it is **always** the active bean (no separate no-op fallback bean); when Telegram is disabled or unconfigured it resolves that per send (settings-DB → env fallback) and simply warn-logs instead of sending.
 
 **Important:** If you want multiple active notification channels simultaneously, you need to modify the DLQ consumers to inject `List<NotificationService>` instead of a single bean.

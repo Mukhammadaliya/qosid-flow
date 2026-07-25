@@ -98,9 +98,152 @@ The API proxy composes upstream URLs as `baseUrl + <stripped client URI>`. By co
 
 CB-blocked responses (HTTP 503 from `HttpRequestService.buildCircuitBreakerResponse`) are **transient back-pressure**, not external API failures. Both `OracleRequestConsumer` and `ApiRequestConsumer` must short-circuit on `"CIRCUIT_BREAKER".equals(errorSourceStr)` to **re-queue the message via `sendOracleRequest`/`sendApiRequest` without incrementing `attemptCount`**. The `processRequest` message-expiry check (`max-message-age-ms`, default 5 min) is the safety net that converts genuinely-stuck CB-blocked messages into DLQ alerts after the deadline. If you re-add CIRCUIT_BREAKER to the `isNonRetryableSource` predicate (or any equivalent), every CB-OPEN burst will produce one DLQ alert per blocked request — the v1.0.8 incident produced ~2200 Telegram alerts/day from this exact bug. OAuth2 stays non-retryable (real auth issue, immediate DLQ); only CIRCUIT_BREAKER changed.
 
+**v1.15.0 fix — the net was dead until 2026-07-24.** `RequestMessage.createdAt` was never
+set on any production ingress path (only in the dev-profile `TestController`), and
+`isMessageExpired` returns `false` when `createdAt` is null — so the safety net described
+above never fired once and the CB-blocked re-queue looped at Kafka round-trip speed
+(root cause of the 2026-05-18 Redpanda 57 GB disk-full outage). `createdAt` is now stamped
+at **both** ingress points — `ProxyController` (REST) and `TenantMappingService.toInternal`
+(source pull) — **never remove either one**, or this rule's backstop (and rule 24's) goes
+dead again. Second layer: `gateway.retry.cb-max-requeues` (default 50) counts the re-queues
+in Redis via `RequestStateService.incrementCbRequeue` (`request:cb-requeue:<compositeId>`,
+request-state TTL, `Integer.MAX_VALUE` fail-closed per rule 8) and past the cap the message
+takes the normal `handlePermanentFailure` → DLQ path, incrementing
+`gateway.http.circuitbreaker.requeue.exhausted`. `attemptCount` is STILL not incremented and
+CIRCUIT_BREAKER is STILL never added to `isNonRetryableSource` — the cap only bounds a
+genuinely stuck message, so the v1.0.8 alert-per-request storm cannot come back.
+
 ### 24. Never call `OAuth2ProviderService.evictToken` without also setting `RequestStateService.markTokenEvicted`
 
 The 401-retry-with-fresh-token path in `OracleRequestConsumer.handleFailedResponse` and `ApiRequestConsumer.handleFailedResponse` evicts the cached OAuth2 token and re-queues the message **without incrementing `attemptCount`** — same back-pressure-style pattern as CB-blocked re-queue (Rule 23). The `markTokenEvicted` flag is the loop guard: on the second 401 for the same `compositeId`, `isTokenEvicted` returns true, the eviction branch is skipped, and the request falls through to the standard retry/permanent-failure path. Removing the flag write turns this into an infinite evict→re-mint→401→evict loop that hammers the OAuth endpoint forever (and the `processRequest` `max-message-age-ms` safety net is the only thing that would eventually stop it, ~5 min later, after the OAuth endpoint has been pounded). The flag's TTL matches request state TTL (default 72h) so it dies with the request lifecycle. `isTokenEvicted` returns `true` on Redis failure (fail-closed) — a Redis outage degrades to existing pre-v1.1.0 behavior (immediate DLQ on 401), never to a runaway loop.
+
+### 25. Never ack a request message when the Redis idempotency gate itself fails
+
+`OracleRequestConsumer`/`ApiRequestConsumer` wrap `isCompleted`+`tryLock` in a dedicated
+try/catch that calls `ack.nack(Duration.ofSeconds(5))` and returns. Acking on a Redis
+outage silently drops the message (pre-A-faza bug). Do not "simplify" this into the
+generic catch below it — that one acks.
+
+### 26. Never swallow RocksDB write failures
+
+`RocksDBClient.putResponse`/`putResponseMetadata` throw `StorageWriteException` on failure
+and `ResponseStorageService.saveResponse` propagates it. Response consumers catch it and
+keep `hasResult=false`. Swallowing the exception re-creates phantom COMPLETED states whose
+`/result` returns 404.
+
+### 27. Never release a Redis lock without ownership check
+
+Both `RequestStateService.releaseLock` and `OAuth2TokenRedisCache.releaseLock` use a
+compare-and-delete Lua script against the owner token issued at acquire time. A blind
+`DEL` deletes another instance's lock after TTL takeover → concurrent processing.
+
+### 28. Never forward X-Callback-Url without CallbackUrlValidator
+
+`ProxyController` validates the callback URL at accept time: http/https only, public
+addresses only, optional `gateway.security.callback-allowed-hosts` allowlist. Removing the
+check reopens SSRF (internal endpoints, cloud metadata) via a client-controlled header.
+`CallbackSender` re-validates at send time (its `callbackUrlValidator.validate(url)` call
+is the first line of `sendCallback`, before the retryable HTTP POST) to narrow the
+DNS-rebinding window between accept and delivery — removing either check reopens SSRF via
+that gap.
+
+### 29. Never merge the admin SecurityFilterChain with the pipeline chain
+
+`AdminSecurityConfig` defines TWO chains: `adminSecurityChain` (order 1, `/qosid/admin/api/**`, session-required, SPA-compatible CSRF on) and `apiSecurityChain` (order 2, everything else, permitAll, CSRF disabled). Collapsing them into one, removing the `securityMatcher`, or re-enabling CSRF on the api chain, locks or breaks `/qosid/api/**` — the pipeline stops accepting requests (a re-enabled CSRF filter alone breaks every `POST /qosid/api/v1/queue/**`). Actuator runs on the separate management port (8091) with its own context, so it is not governed by this main-context chain. `SecurityIsolationTest` guards the pipeline GET **and** POST openness; keep it green.
+
+### 30. Never bypass TenantMappingService at the Biruni boundary
+
+Source pull ingress (`SourceClient.pullRequests`) MUST route each element through
+`TenantMappingService.toInternal`, and Biruni save + OAuth fetch egress MUST build
+their tenant key via `toExternal`. The internal model uses `tenantId`/`extraTenantId`
+with NO `@JsonProperty("company_id")` binding — deserializing a Biruni pull directly
+into `RequestMessage` again would leave `tenantId` null (all requests → DLQ). The
+default field names are `company_id`/`filial_id` so bmb is unaffected; hardcoding the
+key instead of reading the setting breaks any deployment that reconfigures it.
+
+### 31. Never cache the source OAuth2 token under the per-request namespace
+
+`SourceTokenService` caches the source-channel token under `source:oauth2:token`,
+deliberately isolated from the per-request forwarding cache (`oauth2:token:<provider>`,
+`OAuth2TokenRedisCache`). Using the shared namespace would let a per-request provider
+eviction wipe the source token (stalling all pulls) or a "source"-named provider
+collide with it. Keep the two caches separate; keep the source cache TTL capped at
+the token's own `expires_in` so an expired token is never served on the pull/save channel.
+
+### 32. Never enable `setAsyncAcks(true)` in `KafkaConfig.buildFactory` while the request consumers `nack`
+
+`asyncAcks` looks like the obvious fix for a real defect: both request consumers call `ack` from
+the reactive/`CompletableFuture` path, so acks arrive **out of offset order**, and `AckMode.MANUAL`
+commits only the highest acknowledged offset — a fast-finishing higher offset can mark a
+still-running lower offset as "committed", and on restart that message is never redelivered
+(silent loss: no DLQ record, no alert, no metric).
+
+**But it cannot be enabled as things stand.** Spring Kafka's `ConsumerAcknowledgment.nack(Duration)`
+opens with `Assert.state(..., "nack() is not supported with out-of-order commits")` — verified in
+the bytecode of `spring-kafka-3.2.0`. Both request consumers `nack`: on a Redis-gate failure
+(rule 25) and on lock contention (rule 33). Turning `asyncAcks` on therefore converts those two
+graceful back-pressure paths into a thrown `IllegalStateException`, which escapes the listener into
+an error handler that only logs — so the message is lost on exactly the paths that exist to prevent
+loss. It makes the problem worse, not better.
+
+**Order of work if you want to fix out-of-order commits:** first replace both `nack` sites with a
+bounded re-queue (the `incrementCbRequeue` pattern from rule 23 is the model — note a Redis outage
+must not degrade into "DLQ everything", which is why `nack` is still the better answer for the
+rule-25 path today), and only then enable `asyncAcks`. `KafkaAsyncAcksTest` guards the current
+state and explains why. Read with rule 4: `MANUAL` never changes either way.
+
+### 33. Never ack a request message on Redis lock contention
+
+When `tryLock` returns false, `OracleRequestConsumer`/`ApiRequestConsumer` must call
+`ack.nack(Duration.ofSeconds(10))`, **not** `ack.acknowledge()`. "Another instance is working
+on it" only holds in a healthy multi-instance steady state; after a restart or SIGKILL the dead
+instance's locks stay orphaned until the lock TTL (300s, rule 2) reaps them, and acking would
+silently discard every message redelivered inside that window. Rule 25 covers a Redis gate
+*failure*; this rule covers lock *contention* — both end in `nack`, never in a silent drop.
+
+### 34. Never remove the ORACLE-source gate from `StatusController`
+
+`/qosid/api/v1/requests/{id}/{status,result}` is unauthenticated by design (the B4 decision:
+the transparent proxy and its `request_id` polling cannot carry inbound auth). That is
+acceptable only because REST-sourced ids are `UUID`-derived (~59 bits, unguessable). The
+**ORACLE-sourced half is not**: `request_id` is a source-side sequential integer and
+`tenantId` is a small integer, so `100:900123` and its neighbours are trivially enumerable.
+On 2026-07-24 an unauthenticated `GET .../result` returned HTTP 200 with a 20,022-byte
+upstream response body.
+
+Both endpoints therefore refuse ORACLE-sourced requests, and `getResult` performs that check
+**before touching RocksDB**. Two details that look incidental but are not:
+
+- The refusal is **404, not 403**. A 403 confirms the id exists and hands an enumerator a
+  working oracle. Do not "improve" the status code.
+- A `null` source stays readable, so Redis rows written before `source` was persisted do not
+  suddenly 404. Removing that fallback would break in-flight requests on the deploy that ships
+  a change here.
+
+The gate depends on `RequestStateService.createInitialState(compositeId, source)` actually
+being called with `message.getSource()` from both request consumers. Drop that argument and the
+gate silently stops gating — nothing fails, reads just become open again.
+
+### 35. Never move the default-password gate onto `apiSecurityChain`
+
+`DefaultPasswordGateFilter` blocks every admin route except an exact allowlist
+(`login`, `login-token`, `logout`, `me`, `change-password`, `health`) while the stored admin
+password still matches the seeded default. It is registered **only** on `adminSecurityChain`,
+**after** Spring Security's `AuthorizationFilter`.
+
+Both of those placements are load-bearing. On `apiSecurityChain` the filter would block
+`/qosid/api/**` and stop the pipeline accepting requests (rule 29). Before the
+`AuthorizationFilter` it would answer `403` to unauthenticated callers, telling an anonymous
+prober that the deployment is still on the default password.
+
+Match the allowlist by **exact path**, never by prefix — a prefix match on `settings` would
+expose `settings/audit`.
+
+The ops sidecar carries the same gate for the same reason: it authenticates against the same
+shared H2 account, so leaving it ungated would keep the whole attack open (stop the gateway,
+rewrite `gateway.api.base-url`, start it). Because settings are edited while the gateway is
+**stopped**, the ops side must also keep its own `change-password` route reachable — otherwise
+an operator on a fresh install can neither edit settings nor fix the password anywhere.
 
 ---
 
@@ -125,6 +268,12 @@ These files contain production-critical logic. Before modifying any of them, run
 | `ContentTypeValidator.java` | MIME whitelist enforcement | Open file store, security exposure |
 | `HttpClientConfig.java` | Netty `HttpClient` setup — pool, timeouts, **no `.compress(true)`** (see Rule 17) | Re-enabling Netty compression reintroduces Cloudflare gzip decode artifacts |
 | `GlobalExceptionHandler.java` | `@RestControllerAdvice` mapping of auth / validation / upload / not-found / generic exceptions to uniform `ErrorResponse` | Unmapped routes leak 500, validation errors become opaque stack traces to clients |
+| `AdminSecurityConfig.java` | Two isolated `SecurityFilterChain` beans (admin session-gated, pipeline permitAll) with explicit `@Order` + `securityMatcher` | Merging chains or dropping `securityMatcher` locks the pipeline/actuator behind admin auth (see Rule 29) |
+| `TenantMappingService.java` | Biruni-boundary `toInternal`/`toExternal` field-name translation (dynamic, per-call from `SettingsService`) | Bypassing it at ingress leaves `tenantId` null (all requests → DLQ); bypassing at egress or hardcoding the field name breaks any deployment with reconfigured field names (see Rule 30) |
+| `SourceTokenService.java` | Isolated `source:oauth2:token` cache key + TTL capped at token's `expires_in` | Sharing the per-request `oauth2:token:*` namespace lets a provider eviction stall all Biruni pulls, or serves an expired token on the source channel (see Rule 31) |
+| `DynamicConcurrencyManager.java` | Lag-driven `setConcurrency`; container stop/start on scale-up is OFF by default (`gateway.concurrency.allow-restart-on-scale-up`) | A restart triggers a consumer-group rebalance and every in-flight ack landing after `stop()` is a no-op — those offsets stay uncommitted and get redelivered, i.e. message loss exactly when load is highest |
+| `StatusController.java` | Public polling endpoints: ORACLE-source refusal (404) before any RocksDB read | Enumerable composite ids expose every source-originated response body of the retention window (see rule 34) |
+| `DefaultPasswordGateFilter.java` (gateway) + the ops sidecar's equivalent | Blocks all but an exact allowlist while the admin password is the seeded default | On the wrong chain it kills the pipeline; misplaced it leaks password state to anonymous callers; a missing ops-side gate leaves the redirect attack fully open (see rule 35) |
 
 ## Required Checklist
 

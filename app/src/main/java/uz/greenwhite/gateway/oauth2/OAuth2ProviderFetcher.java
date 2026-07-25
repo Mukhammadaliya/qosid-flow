@@ -1,0 +1,156 @@
+package uz.greenwhite.gateway.oauth2;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+import uz.greenwhite.gateway.config.GatewayProperties;
+import uz.greenwhite.gateway.oauth2.model.ProviderProperties;
+import uz.greenwhite.gateway.settings.SettingsService;
+import uz.greenwhite.gateway.source.SourceAuthService;
+import uz.greenwhite.gateway.tenant.TenantMappingService;
+
+import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+@Slf4j
+@Component
+public class OAuth2ProviderFetcher {
+
+    private static final String CACHE_PREFIX = "oauth2:provider:";
+    private static final Duration CACHE_TTL = Duration.ofHours(1);
+
+    private final RestClient restClient;
+    private final GatewayProperties properties;
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
+    private final TenantMappingService tenantMappingService;
+    private final SettingsService settingsService;
+    private final SourceAuthService sourceAuthService;
+
+    // Ikki konstruktorli klassda Spring tanlovi aniq bo'lishi shart — busiz kontekst yiqiladi.
+    @Autowired
+    public OAuth2ProviderFetcher(GatewayProperties properties,
+                                 StringRedisTemplate redisTemplate,
+                                 ObjectMapper objectMapper,
+                                 TenantMappingService tenantMappingService,
+                                 SettingsService settingsService,
+                                 SourceAuthService sourceAuthService) {
+        this(RestClient.builder().baseUrl(properties.getBaseUrl()).build(),
+                properties, redisTemplate, objectMapper, tenantMappingService, settingsService, sourceAuthService);
+    }
+
+    /**
+     * Test seam: allows binding a {@link org.springframework.test.web.client.MockRestServiceServer}
+     * to the RestClient. Production wiring goes through the public constructor.
+     */
+    OAuth2ProviderFetcher(RestClient restClient,
+                          GatewayProperties properties,
+                          StringRedisTemplate redisTemplate,
+                          ObjectMapper objectMapper,
+                          TenantMappingService tenantMappingService,
+                          SettingsService settingsService,
+                          SourceAuthService sourceAuthService) {
+        this.restClient = restClient;
+        this.properties = properties;
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
+        this.tenantMappingService = tenantMappingService;
+        this.settingsService = settingsService;
+        this.sourceAuthService = sourceAuthService;
+    }
+
+    /**
+     * Fetch provider credentials: Redis cache → Oracle HTTP fallback
+     */
+    public ProviderProperties fetch(String providerName, Long tenantId) {
+        ProviderProperties cached = getFromCache(providerName);
+        if (cached != null) {
+            log.debug("OAuth2 provider '{}' found in cache", providerName);
+            return cached;
+        }
+
+        ProviderProperties fetched = fetchFromOracle(providerName, tenantId);
+        if (fetched == null) {
+            throw new RuntimeException("OAuth2 provider not found in Oracle: " + providerName);
+        }
+
+        saveToCache(providerName, fetched);
+        log.info("OAuth2 provider '{}' fetched from Oracle and cached", providerName);
+
+        return fetched;
+    }
+
+    /**
+     * Evict cached provider credentials (e.g., when credentials are updated)
+     */
+    public void evictCache(String providerName) {
+        redisTemplate.delete(CACHE_PREFIX + providerName);
+        log.info("OAuth2 provider cache evicted: {}", providerName);
+    }
+
+    private ProviderProperties fetchFromOracle(String providerName, Long tenantId) {
+        try {
+            Map<String, Object> body = new LinkedHashMap<>(tenantMappingService.toExternal(tenantId));
+            body.put("oauth2_provider", providerName);
+
+            // LIVE read: admin edits to the provider-data URI apply without a restart
+            // (mirrors SourceClient's pull/save URI live-reads). yaml value is the fallback.
+            String providerUri = settingsService.get(
+                    "gateway.source.oauth2-provider-uri", properties.getOauth2ProviderUri());
+
+            // B3: bu egress ham source-channel auth'ga bo'ysunadi (pull/save bilan bir xil) —
+            // avval legacy yaml Basic ishlatilardi, lokalda bo'sh creds 401 berardi.
+            Map<String, String> authHeaders = sourceAuthService.authHeaders();
+
+            String response = restClient.post()
+                    .uri(providerUri)
+                    .headers(h -> authHeaders.forEach(h::add))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(String.class);
+
+            if (response == null || response.isBlank()) {
+                return null;
+            }
+
+            ProviderProperties props = objectMapper.readValue(response, ProviderProperties.class);
+
+            if (props.getTokenUrl() == null || props.getClientId() == null) {
+                log.warn("OAuth2 provider '{}' returned incomplete data from Oracle", providerName);
+                return null;
+            }
+
+            return props;
+
+        } catch (Exception e) {
+            log.error("Failed to fetch OAuth2 provider '{}' from Oracle: {}", providerName, e.getMessage(), e);
+            throw new RuntimeException("Oracle OAuth2 provider fetch failed: " + e.getMessage(), e);
+        }
+    }
+
+    private ProviderProperties getFromCache(String providerName) {
+        try {
+            String json = redisTemplate.opsForValue().get(CACHE_PREFIX + providerName);
+            if (json == null) return null;
+            return objectMapper.readValue(json, ProviderProperties.class);
+        } catch (Exception e) {
+            log.warn("Failed to read OAuth2 provider from cache: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void saveToCache(String providerName, ProviderProperties props) {
+        try {
+            String json = objectMapper.writeValueAsString(props);
+            redisTemplate.opsForValue().set(CACHE_PREFIX + providerName, json, CACHE_TTL);
+        } catch (Exception e) {
+            log.warn("Failed to cache OAuth2 provider: {}", e.getMessage());
+        }
+    }
+}

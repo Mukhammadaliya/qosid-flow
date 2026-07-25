@@ -1,0 +1,79 @@
+# Manual test-plan — v1.14 (lokal, 2026-07-18)
+
+Muhit: gateway :8090, ops :8092, SPA :5173, smartup24 :8080, docker infra (Redis/RedPanda/Loki/Prometheus).
+Belgilar: `[x]` — o'tdi, `[!]` — xato topildi (izoh yozing), `[ ]` — hali qilinmagan, `[-]` — skip.
+
+---
+
+## A. Oracle (Biruni) oqimi — E1→E5
+
+- [x] **A1. Oddiy so'rov to'liq sikli** — smartup24'da request yaratish → 5s ichida pull → COMPLETED, javob Biruni'ga saqlanadi. *(315 bilan o'tdi, idempotency skip ham ko'rindi)*
+- [x] **A2. OAuth2 provider so'rovi (supplier22)** — provider-config fetch (Bearer) → supplier token → yuborish → save. *(315)*
+- [ ] **A3. Parallel yuklama** — smartup24'da ketma-ket 5–10 ta request yaratish → hammasi COMPLETED, birortasi ikki marta yuborilmagan (log'da duplicate-skip bo'lishi normal, natija bitta).
+- [ ] **A4. Muvaffaqiyatsiz maqsad → DLQ** — mavjud bo'lmagan URL'ga (masalan `http://localhost:9/xyz`) request yaratish → retry'lar (default 3) → `Sending to Oracle DLQ` → Biruni'da holat **F**. DLQ xabari Errors modulida ko'rinadi (F1 bilan bog'liq).
+- [ ] **A5. Katta javob** — threshold'dan (1024 B) katta javob qaytaruvchi so'rov → RocksDB'ga yoziladi, Biruni'ga saqlanadi, `/status`da inline emas `resultUrl`.
+- [ ] **A6. Pull dormant→uyg'onish** — (xohlasangiz) Endpointlar'dan base-url'ni bo'shatib saqlang → restart → log'da BITTA warn, xato-spam yo'q → qiymatni qaytarib saqlang → restart'siz (LIVE) pull tiklanadi.
+
+## B. REST API oqimi (`/qosid/api/v1/queue/**`) — 2026-07-18 echo-server + real smoke bilan o'tkazildi
+
+- [x] **B1. Oddiy proxy POST** — 202 + requestId → COMPLETED, inline result. Real smoke: `/queue/biruni/bmb/requests$get_oauth_provider_data` Bearer bilan smartup24'dan javob oldi.
+- [x] **B2. GET metodi ham proxy'lanadi** — ✓. **BUG topildi va tuzatildi:** query-string `?`siz yopishtirilardi (`/smalla=1`) — `HttpRequestService.buildFullUrl` separator qo'shadigan qilindi (+4 unit test).
+- [x] **B3. Inline vs resultUrl** — kichik → inline; 6.2KB → `resultUrl`, `/result` to'liq body + `application/json`.
+- [x] **B4. Callback (SSRF himoyasi)** — localhost callback DIZAYN bo'yicha bloklandi ("must point to a public address"). Haqiqiy yetkazish testi public receiver talab qiladi (masalan webhook.site) — prod smoke'da.
+- [x] **B5. BiruniUpload** — ikkala yo'l: S3 mock bilan fayl bucket'ga tushdi, `\u0000<i>` placeholder SHA bilan almashdi (birinchi urinish SDK xatosida retry+exists-check ham ishladi); S3 o'chiq holda multipart fallback maqsadga yetdi. Eslatma: placeholder JSON.stringify'dagi `\u0000` MATN shakli bo'lishi kerak (haqiqiy NUL bayt emas).
+- [x] **B6. Noma'lum request id** — status ham result ham 404.
+- [x] **B7. Accept-Encoding stripping** — echo `accept_encoding_seen: ABSENT` ko'rsatdi.
+
+## C. Sozlamalar / stop-to-edit
+
+- [x] **C1. UP rejim read-only** — qulflar, banner, PUT'lar 409. *(walkthrough)*
+- [x] **C2. Stop → edit → start → avto-ulanish (login'siz)**. *(walkthrough)*
+- [x] **C3. Endpointlar UI'dan** — union ro'yxat, saqlash, LIVE ta'sir. *(walkthrough)*
+- [ ] **C4. Secret round-trip** — Source Auth'da client-secret'ni qayta kiritib saqlash → GET'da `***` → bo'sh qoldirib qayta saqlash → eski qiymat SAQLANADI (Sinash o'tishi bilan isbot).
+- [ ] **C5. Umumiy Saqlash tugmasi** — 2-3 qatorni birga o'zgartirish → `Saqlash (3)` → bitta bosishda hammasi, "3 ta sozlama saqlandi".
+- [ ] **C6. Audit** — Sozlamalar → Audit tab: bugungi o'zgarishlar ro'yxati (kim/qachon/eski-yangi, secretlar masked).
+
+## D. Source auth variantlari
+
+- [x] **D1. oauth2 + biruni client-type** — token mint + pull/save/provider-fetch Bearer. *(315)*
+- [ ] **D2. basic'ka qaytarish** — type=basic + smartup24 login/parol → restart → pull ishlaydi (Bearer'siz). Keyin oauth2'ga qaytaring.
+- [ ] **D3. Sinash tugmasi** — basic'da ham, oauth2'da ham to'g'ri natija; noto'g'ri parol bilan aniq xato xabari (500 emas).
+- [ ] **D4. Token keshi** — Redis'da `source:oauth2:token` kaliti paydo bo'ladi (`docker exec redis redis-cli GET source:oauth2:token`); TTL bor; `DEL` qilsangiz keyingi pull yangi token oladi.
+
+## E. Ops konsoli
+
+- [x] **E1. Start/Stop + confirm + badge**. *(walkthrough)*
+- [x] **E2. Jonli SSE log** — API'dan tasdiqlandi (`data:` qatorlar oqdi). UI Pauza + reconnect qo'lda tekshiriladi.
+- [x] **E3. Ops login rate-limit** — 6:429. **BUG topildi+tuzatildi:** H2 AUTO_SERVER multi-NIC'da LAN IP e'lon qilib ops loginni 12.5s timeout qilardi (rate-limit ham yashiringan edi) → `h2.bindAddress=127.0.0.1` (`SettingsDbUrl`); login 0.085s.
+- [ ] **E4. Degraded rejim** — gateway STOP holatida brauzerni yangilash → login → to'g'ri /ops'ga tushadi, faqat Ops+Sozlamalar ochiq, banner bor. *(UI'da qo'lda)*
+
+## F. Errors moduli (Loki)
+
+- [ ] **F1. DLQ sahifasi** — A4'dan tushgan DLQ yozuvi ko'rinadi (request id, sabab); drawer ochiladi.
+- [ ] **F2. JAR log** — bugungi gateway loglari, filtr/qidiruv ishlaydi.
+- [ ] **F3. Docker log** — konteyner tanlash (redis/redpanda) → loglar keladi.
+- [-] **F4. AI tahlil** — default OFF; sozlamoqchi bo'lsangiz `gateway.ai.*` to'ldirib bitta xatoni analyze qiling.
+
+## G. Statistics (Prometheus)
+
+- [ ] **G1. KPI kartalari** — bugungi testlardan keyin so'rovlar soni/foizlar > 0.
+- [ ] **G2. Grafiklar** — funnel, throughput, errors, p95 latency — A3/A4 dan keyin ma'noli qiymatlar.
+
+## H. Chidamlilik (ixtiyoriy, buzuvchi — oxirida qiling)
+
+- [ ] **H1. Stop paytida kelgan so'rovlar** — gateway'ni STOP qiling → smartup24'da 2-3 request yarating → START → hammasi avtomatik pull qilinib COMPLETED bo'ladi (confirm-modal va'dasi).
+- [ ] **H2. Circuit Breaker** — A4 turidagi (o'chiq server) so'rovlardan ketma-ket 5-10 ta → log'da CB OPEN → shu domenga yangi so'rovlar darhol 503 (kutmasdan) → server "qaytgach" (boshqa ishlaydigan domen bilan) normal.
+  - *v1.15.0 eslatma:* CB-blocked qayta-navbat endi CHEKLANGAN — `gateway.retry.cb-max-requeues` (default 50) Redis'da sanaydi (`request:cb-requeue:<compositeId>`), va `createdAt` ikkala ingress'da muhrlangani uchun `retry.max-message-age-ms` muddat-to'ri ham haqiqatan ishlaydi. Nimaga qarash kerak: `docker exec redpanda rpk topic describe gateway.api.request` — yozuv soni cap atrofida TO'XTAShi kerak (cheksiz o'smasligi, 2026-05-18 Redpanda 57GB avariyasi shundan bo'lgan); cap oshgach DLQ topikida yozuv + `gateway.http.circuitbreaker.requeue.exhausted` metrikasi o'sadi; `docker exec redis redis-cli KEYS "request:cb-requeue:*"` → TTL'li hisoblagich kalitlari.
+- [ ] **H3. RedPanda restart** — `docker restart redpanda` → gateway qayta ulanadi, so'rovlar yo'qolmaydi.
+- [ ] **H4. Redis restart** — `docker restart redis` → qisqa uzilishdan keyin normal; cheksiz retry siklі YO'Q (safety net).
+
+## I. Admin / xavfsizlik
+
+- [ ] **I1. Parol o'zgartirish (v1.15.0: MAJBURIY oqim)** — yangi o'rnatishda `admin`/`admin` bilan kirish ISHLAYDI, lekin boshqa hech narsa ishlamaydi: `GET /qosid/admin/api/settings` → **403 `password-change-required`**, ops'da `POST /ops/api/stop` ham → **403**. SPA majburiy formani ko'rsatadi. Parolni almashtirgandan keyin sessiya tugaydi → yangi parol bilan ikkala backend'ga login → hammasi ochiladi. Ops tomonida ham `POST /ops/api/change-password` bor (gateway o'chiq bo'lganda parolni almashtirishning yagona yo'li — busiz yangi o'rnatishda qulflanib qolinadi).
+- [ ] **I4. ORACLE javobini tashqaridan o'qish (IDOR)** — Oracle oqimidan kelgan so'rovning composite id'sini oling (log'dan yoki `redis-cli KEYS "request:state:*"`), keyin autentifikatsiyasiz `GET /qosid/api/v1/requests/<id>/result` → **404** bo'lishi kerak (403 EMAS). REST orqali yuborilgan so'rovning `/result`i esa avvalgidek **200** qaytaradi — ikkisini ham tekshiring, aks holda gate ishlayaptimi yoki hammasini sindirdimi bilinmaydi.
+- [ ] **I2. Gateway login rate-limit** — 5 xato → 429.
+- [ ] **I3. CSRF himoyasi** — cookie'siz curl bilan `PUT /ops/api/settings/...` → 403.
+
+---
+
+**Yakun mezoni:** A–G to'liq yashil (H/I ixtiyoriy) → `debug` push + v1.15.0 release PR.

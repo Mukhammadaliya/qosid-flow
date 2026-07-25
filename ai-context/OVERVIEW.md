@@ -5,7 +5,7 @@
 | Field | Value |
 |-------|-------|
 | **Name** | Qosid Flow (qosid-flow) |
-| **Version** | 1.0.1 |
+| **Version** | 2.0.0 |
 | **Language** | Java 21 |
 | **Framework** | Spring Boot 3.3.0 |
 | **Base Package** | `uz.greenwhite.gateway` |
@@ -19,7 +19,7 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 
 ## What This Is NOT
 
-- **Not a UI application** — purely backend service, no frontend
+- **Not primarily a UI application** — the core is a backend gateway; the React SPA (`frontend/`, served by nginx since v1.7.0, cutover v1.13.0) is a control-plane/admin surface layered on top, not the product itself
 - **Not a monolith** — single-purpose microservice focused on request gateway processing
 - **Not a CRUD app** — does not manage entities; it orchestrates HTTP request delivery with resilience
 
@@ -76,8 +76,9 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 ## Repository Structure
 
 ```
-qosid-flow/
-  src/main/java/uz/greenwhite/gateway/   # Application source code
+qosid-flow/                              # Maven reactor (qosid-parent): settings-core + app + ops
+  settings-core/                         # Shared settings module (qosid-settings-core, plain JAR)
+  app/src/main/java/uz/greenwhite/gateway/   # Gateway application source code
     api/             # REST API layer (ProxyController, StatusController, CallbackController)
     auth/            # Pluggable authorization SPI
     callback/        # Outbound callback dispatch with retry
@@ -98,9 +99,12 @@ qosid-flow/
     storage/         # RocksDB response body storage
     concurrency/     # Dynamic concurrency scaling
     validation/      # Request validation
-  src/main/resources/
+  app/src/main/resources/
     application.yml      # All configuration with env var overrides
     logback-spring.xml   # Logging configuration
+  ops/                   # Ops console sidecar (qosid-ops, separate JVM :8092) + stop-to-edit settings API
+  frontend/              # React SPA (Vite; not a Maven module — app's default-on `frontend` profile builds dist; nginx serves it in prod)
+  deploy/                # Reference nginx config (nginx-qosid.conf)
   infrastructure/        # Docker monitoring stack configs
     prometheus/          # Prometheus scrape config + alert rules
     alertmanager/        # AlertManager configuration
@@ -108,7 +112,7 @@ qosid-flow/
   .github/workflows/     # CI/CD: build JAR + create GitHub Release
   ai-context/            # AI tool documentation (this folder)
   docker-compose.yml     # Local dev: RedPanda, Redis, Prometheus, Grafana
-  pom.xml                # Maven dependencies
+  pom.xml                # Root aggregator pom (qosid-parent); module poms in settings-core/, app/, ops/
   VERSION.md             # Version number (triggers CI/CD release)
   README.md              # Human-readable documentation
 ```
@@ -116,14 +120,14 @@ qosid-flow/
 ## Quick Commands
 
 ```bash
-# Build
+# Build (root'da — reactor: core+app+ops)
 mvn clean package -DskipTests
 
 # Run locally
-mvn spring-boot:run
+mvn spring-boot:run -pl app
 
 # Run with dev profile (enables TestController)
-mvn spring-boot:run -Dspring-boot.run.profiles=dev
+mvn spring-boot:run -pl app -Dspring-boot.run.profiles=dev
 
 # Start infrastructure (Kafka, Redis, Prometheus, Grafana)
 docker-compose up -d

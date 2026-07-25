@@ -1,0 +1,304 @@
+# ============================================================
+# QOSID FLOW — Unified Configuration
+# ============================================================
+# All values use: ${ENV_VAR:default_value}
+# Dev: default values work out of the box
+# Prod: set OS environment variables to override
+# ============================================================
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  application:
+    name: qosid-flow
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 52MB
+      file-size-threshold: 128KB
+      resolve-lazily: true
+
+  kafka:
+    bootstrap-servers: ${gateway.kafka.bootstrap-servers}
+    consumer:
+      group-id: ${gateway.kafka.group-id}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+        fetch.max.bytes: "20971520"
+        max.partition.fetch.bytes: "20971520"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        max.request.size: "20971520"
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+
+# ============================================================
+# SERVER
+# ============================================================
+server:
+  port: ${SERVER_PORT:8090}
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,application/javascript,application/json
+    min-response-size: 2KB
+  tomcat:
+    accept-count: ${TOMCAT_ACCEPT_COUNT:1000}
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:10000}
+    connection-timeout: ${TOMCAT_CONNECTION_TIMEOUT:20s}
+    max-http-form-post-size: 2MB
+    threads:
+      max: ${TOMCAT_MAX_THREADS:2000}
+
+# ============================================================
+# ACTUATOR & MONITORING
+# ============================================================
+management:
+  server:
+    port: ${MANAGEMENT_PORT:8091}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+  health:
+    db:
+      enabled: false   # control-plane H2 must not affect gateway health
+  metrics:
+    distribution:
+      percentiles-histogram:
+        gateway.request.e2e.duration: true
+        gateway.http.request.duration: true
+
+# ============================================================
+# GATEWAY CONFIGURATION
+# ============================================================
+gateway:
+
+  # --- Redis TTL ---
+  redis:
+    state-ttl-hours: ${REDIS_STATE_TTL_HOURS:72}
+    lock-ttl-seconds: ${REDIS_LOCK_TTL_SECONDS:300}
+
+  # --- Kafka ---
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19092}
+    group-id: ${KAFKA_GROUP_ID:gateway-service-group}
+    topics:
+      oracle-request: ${KAFKA_TOPIC_ORACLE_REQUEST:gateway.oracle.request}
+      oracle-response: ${KAFKA_TOPIC_ORACLE_RESPONSE:gateway.oracle.response}
+      oracle-dlq: ${KAFKA_TOPIC_ORACLE_DLQ:gateway.oracle.dlq}
+      api-request: ${KAFKA_TOPIC_API_REQUEST:gateway.api.request}
+      api-response: ${KAFKA_TOPIC_API_RESPONSE:gateway.api.response}
+      api-dlq: ${KAFKA_TOPIC_API_DLQ:gateway.api.dlq}
+
+  # --- Data Source (Oracle/Biruni) ---
+  source:
+    # Request-lifecycle endpoints are configured via the Settings UI (settings DB), not yaml.
+    # yaml carries only an empty env-var placeholder as a transitional fallback (same pattern
+    # as B3 basic-auth SOURCE_USERNAME/SOURCE_PASSWORD). Precedence: settings-DB row > env var > empty.
+    # Blank base-url/request-pull-uri → pull cycle stays dormant (see SourceClient.pullRequests).
+    base-url: ${SOURCE_BASE_URL:}
+    username: ${SOURCE_USERNAME:}
+    password: ${SOURCE_PASSWORD:}
+    request-pull-uri: ${SOURCE_PULL_URI:}
+    response-save-uri: ${SOURCE_SAVE_URI:}
+    oauth2-provider-uri: ${SOURCE_OAUTH2_PROVIDER_URI:}
+    connection-timeout: ${SOURCE_TIMEOUT:60}
+
+  # --- Polling ---
+  polling:
+    enabled: ${POLLING_ENABLED:true}
+    interval-ms: ${POLLING_INTERVAL_MS:5000}
+    batch-size: ${POLLING_BATCH_SIZE:100}
+
+  # --- HTTP Client ---
+  http:
+    connect-timeout-ms: ${HTTP_CONNECT_TIMEOUT:10000}
+    read-timeout-ms: ${HTTP_READ_TIMEOUT:30000}
+    write-timeout-ms: ${HTTP_WRITE_TIMEOUT:30000}
+    endpoint-timeouts: {}
+    max-connections: ${HTTP_MAX_CONNECTIONS:500}
+    max-idle-time-ms: ${HTTP_MAX_IDLE_TIME:60000}
+    max-life-time-ms: ${HTTP_MAX_LIFE_TIME:300000}
+    pending-acquire-timeout-ms: ${HTTP_PENDING_ACQUIRE:45000}
+
+  # --- Retry ---
+  retry:
+    max-attempts: ${RETRY_MAX_ATTEMPTS:3}
+    interval-ms: ${RETRY_INTERVAL_MS:3000}
+    retryable-statuses: ${RETRY_STATUSES:408,429,500,502,503,504}
+    max-message-age-ms: ${RETRY_MAX_MESSAGE_AGE:300000}
+    cb-max-requeues: ${RETRY_CB_MAX_REQUEUES:50}
+
+  # --- Dynamic Concurrency ---
+  concurrency:
+    oracle-min: ${ORACLE_CONCURRENCY_MIN:5}
+    oracle-max: ${ORACLE_CONCURRENCY_MAX:10}
+    api-min: ${API_CONCURRENCY_MIN:5}
+    api-max: ${API_CONCURRENCY_MAX:10}
+    monitor-interval-ms: ${CONCURRENCY_MONITOR_INTERVAL:10000}
+    scale-up-threshold: ${CONCURRENCY_SCALE_UP:50}
+    scale-down-threshold: ${CONCURRENCY_SCALE_DOWN:10}
+    scale-step: ${CONCURRENCY_SCALE_STEP:2}
+    scale-cooldown-ms: ${CONCURRENCY_COOLDOWN:30000}
+    topic-partitions: ${KAFKA_PARTITIONS:10}
+    thread-pool-multiplier: ${THREAD_POOL_MULTIPLIER:2}
+    allow-restart-on-scale-up: ${CONCURRENCY_ALLOW_RESTART:false}
+    thread-pool-queue-capacity: ${THREAD_POOL_QUEUE:50}
+
+  # --- API Proxy ---
+  api:
+    base-url: ${API_BASE_URL:}
+
+  # --- Proxy (REST API entry point) ---
+  proxy:
+    prefix: /qosid/api/v1/queue
+    context-path: /qosid
+    trusted-proxies: ${TRUSTED_PROXIES:127.0.0.1}
+
+  # --- Tenant mapping (C-faza; field names configurable, default keeps bmb working) ---
+  tenant:
+    field-name: ${TENANT_FIELD:company_id}
+    extra-field-name: ${EXTRA_TENANT_FIELD:filial_id}
+    default-rest-tenant: ${DEFAULT_REST_TENANT:0}
+
+  # --- Response handling ---
+  response:
+    threshold-size: ${RESPONSE_THRESHOLD_SIZE:1024}
+
+  # --- RocksDB (response body storage) ---
+  rocksdb:
+    path: ${ROCKSDB_PATH:./data/rocksdb}
+    response-retention-days: ${ROCKSDB_RETENTION_DAYS:7}
+    cleanup-cron: "0 0 0 * * *"
+
+  # --- S3 (object storage for file uploads) ---
+  s3:
+    enabled: ${S3_ENABLED:false}
+    endpoint: ${S3_ENDPOINT:}
+    access-key: ${S3_ACCESS_KEY:}
+    secret-key: ${S3_SECRET_KEY:}
+    temp-bucket: ${S3_TEMP_BUCKET:}
+    permanent-bucket: ${S3_PERMANENT_BUCKET:}
+    link-expiration-hours: ${S3_LINK_EXPIRY:24}
+
+  # --- Security (allowed content types) ---
+  security:
+    content-types:
+      - application/json
+      - application/javascript
+      - application/x-www-form-urlencoded
+      - text/plain
+      - multipart/form-data
+      - image/jpeg
+      - image/png
+      - image/gif
+      - image/webp
+      - image/svg+xml
+      - image/tiff
+      - image/bmp
+      - image/x-icon
+      - image/heic
+      - image/heif
+      - audio/mpeg
+      - audio/wav
+      - audio/ogg
+      - audio/midi
+      - audio/x-m4a
+      - audio/webm
+      - audio/aac
+      - video/mp4
+      - video/mpeg
+      - video/webm
+      - video/quicktime
+      - video/x-msvideo
+      - video/x-matroska
+      - video/3gpp
+    # Callback (X-Callback-Url) host allowlist. Empty = any PUBLIC host allowed
+    # (private/loopback/link-local are always blocked).
+    callback-allowed-hosts: ${CALLBACK_ALLOWED_HOSTS:}
+
+  # --- Telegram Notifications ---
+  telegram:
+    enabled: ${TELEGRAM_ENABLED:true}
+    bot-token: ${TELEGRAM_BOT_TOKEN:}
+    chat-id: ${TELEGRAM_CHAT_ID:0}
+    message-thread-id: ${TELEGRAM_MESSAGE_THREAD_ID:}
+
+  # --- Loki (Errors UI log source, D2) ---
+  loki:
+    url: ${LOKI_URL:http://localhost:3100}
+
+  # --- Prometheus (Stats dashboard metrics source, D3) ---
+  prometheus:
+    url: ${PROMETHEUS_URL:http://localhost:9090}
+
+  # --- Settings control-plane (B1) ---
+  settings:
+    db-path: ${SETTINGS_DB_PATH:./data/settings}
+    encryption-key: ${SETTINGS_ENCRYPTION_KEY:}
+    session-ttl-minutes: ${ADMIN_SESSION_TTL_MIN:480}
+
+# ============================================================
+# CIRCUIT BREAKER
+# ============================================================
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        slow-call-duration-threshold: 10s
+        slow-call-rate-threshold: 50
+        automatic-transition-from-open-to-half-open-enabled: true
+
+# ============================================================
+# LOGGING
+# ============================================================
+logging:
+  level:
+    root: INFO
+    uz.greenwhite.gateway: ${LOG_LEVEL:DEBUG}
+    org.apache.kafka.clients.producer.ProducerConfig: WARN
+    org.apache.kafka.clients.consumer.ConsumerConfig: WARN
+    org.apache.kafka.clients.admin.AdminClientConfig: WARN
+    org.apache.kafka: WARN
+    org.springframework.kafka.listener: INFO
+    org.apache.kafka.clients.Metadata: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%15.15thread] %-40.40logger{39} : %msg%n"
+---
+# DEV-ONLY hujjat: lokal ops-local-stop.cmd POST /actuator/shutdown bilan graceful to'xtatishi uchun.
+# Windows'da console-siz JVM'ga SIGTERM yuborib bo'lmaydi (Stop-Process -Force = hech qanday
+# shutdown-hook ishlamaydi). Prod'da bu profil FAOL EMAS — systemctl SIGTERM yuboradi va
+# server.shutdown: graceful o'zi ishlaydi; shutdown endpoint prod'da yopiq qoladi.
+spring:
+  config:
+    activate:
+      on-profile: dev
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,shutdown
+  endpoint:
+    shutdown:
+      enabled: true

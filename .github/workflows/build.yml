@@ -22,7 +22,7 @@ jobs:
         id: version
         run: |
           VERSION=$(head -1 VERSION.md | tr -d '[:space:]')
-          ARTIFACT=$(mvn help:evaluate -Dexpression=project.artifactId -q -DforceStdout)
+          ARTIFACT=$(mvn -f app/pom.xml help:evaluate -Dexpression=project.artifactId -q -DforceStdout)
           TAG="v${VERSION}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "artifact=$ARTIFACT" >> $GITHUB_OUTPUT
@@ -51,6 +51,8 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: "${{ steps.version.outputs.artifact }} ${{ steps.version.outputs.tag }}"
           generate_release_notes: true
-          files: target/*.jar
+          files: |
+            app/target/*.jar
+            ops/target/qosid-ops.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

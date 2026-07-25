@@ -1,0 +1,21 @@
+server:
+  port: ${OPS_PORT:8092}
+  servlet:
+    session:
+      cookie:
+        name: OPS_SESSION   # bitta domen ostida gateway JSESSIONID bilan to'qnashmaslik uchun
+
+ops:
+  gateway:
+    health-url: ${OPS_GATEWAY_HEALTH_URL:http://localhost:8090/qosid/admin/api/health}
+    start-command: ${OPS_GATEWAY_START_COMMAND:}
+    stop-command: ${OPS_GATEWAY_STOP_COMMAND:}
+  log-file: ${OPS_LOG_FILE:./logs/gateway.log}
+  settings-db-path: ${OPS_SETTINGS_DB_PATH:./data/settings}
+  # Same key as the gateway's SETTINGS_ENCRYPTION_KEY — secrets must round-trip between both JVMs.
+  settings-encryption-key: ${SETTINGS_ENCRYPTION_KEY:}
+
+logging:
+  level:
+    root: INFO
+    uz.greenwhite.ops: INFO

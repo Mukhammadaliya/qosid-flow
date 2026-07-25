@@ -40,5 +40,26 @@ build/
 
 ### Runtime data ###
 data/
-logs/
+/logs/
+/app/logs/
 tools/s3-mock/s3-data/
+
+frontend/node_modules
+frontend/dist
+
+ops-local-start.cmd
+ops-local-stop.cmd
+
+# --- Secrets: never commit ---
+# The prod deployment keeps every live secret in a .env file (SAFETY-RULES),
+# and this repo previously leaked three real secrets into git history.
+# These entries make a stray `git add -A` incapable of repeating that.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Contains a prod IP, an SSH key path and a `curl -u "$SOURCE_USERNAME:$SOURCE_PASSWORD"`
+# command. Until now it was only excluded by the developer's GLOBAL gitignore,
+# so a fresh clone on another machine would have committed it.
+.claude/settings.local.json
