@@ -95,7 +95,8 @@ gateway:
 | `gateway.retry.max-attempts` | int | `3` | `RETRY_MAX_ATTEMPTS` | Maximum retry attempts |
 | `gateway.retry.interval-ms` | long | `3000` | `RETRY_INTERVAL_MS` | Interval between retries (ms) |
 | `gateway.retry.retryable-statuses` | String | `408,429,500,502,503,504` | `RETRY_STATUSES` | HTTP statuses that trigger retry |
-| `gateway.retry.max-message-age-ms` | long | `300000` | `RETRY_MAX_MESSAGE_AGE` | Max message age (ms) before expiry. Default 5 min. |
+| `gateway.retry.max-message-age-ms` | long | `300000` | `RETRY_MAX_MESSAGE_AGE` | Max message age (ms) before expiry. Default 5 min. Measured from `createdAt`, stamped at both ingress points (`ProxyController`, `TenantMappingService.toInternal`). |
+| `gateway.retry.cb-max-requeues` | int | `50` | `RETRY_CB_MAX_REQUEUES` | Cap on CB-blocked re-queues per request (Redis counter `request:cb-requeue:<compositeId>`); past the cap the message goes to DLQ. `attemptCount` is still untouched — see SAFETY-RULES rule 23. |
 
 ## gateway.concurrency.* — Dynamic Scaling
 
@@ -117,6 +118,7 @@ Oracle and API flows have **independent** concurrency and thread pool settings:
 | `gateway.concurrency.topic-partitions` | int | `10` | `KAFKA_PARTITIONS` | Kafka partitions per topic |
 | `gateway.concurrency.thread-pool-multiplier` | int | `2` | `THREAD_POOL_MULTIPLIER` | HTTP thread pool max = `oracleMax/apiMax * multiplier` |
 | `gateway.concurrency.thread-pool-queue-capacity` | int | `50` | `THREAD_POOL_QUEUE` | HTTP thread pool queue size before rejection |
+| `gateway.concurrency.allow-restart-on-scale-up` | boolean | `false` | `CONCURRENCY_ALLOW_RESTART` | Allow `stop()`/`start()` of the listener container on scale-up. **Off by default** — a restart rebalances the consumer group and in-flight acks landing after `stop()` are lost; the new concurrency target still applies on the next natural rebalance/restart. See SAFETY-RULES → Protected Zones (`DynamicConcurrencyManager.java`). |
 
 **Thread pools:** `oracleHttpExecutor` (oracle-min/max) and `apiHttpExecutor` (api-min/max) — mustaqil.
 

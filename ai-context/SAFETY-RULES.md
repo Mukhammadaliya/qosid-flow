@@ -98,6 +98,21 @@ The API proxy composes upstream URLs as `baseUrl + <stripped client URI>`. By co
 
 CB-blocked responses (HTTP 503 from `HttpRequestService.buildCircuitBreakerResponse`) are **transient back-pressure**, not external API failures. Both `OracleRequestConsumer` and `ApiRequestConsumer` must short-circuit on `"CIRCUIT_BREAKER".equals(errorSourceStr)` to **re-queue the message via `sendOracleRequest`/`sendApiRequest` without incrementing `attemptCount`**. The `processRequest` message-expiry check (`max-message-age-ms`, default 5 min) is the safety net that converts genuinely-stuck CB-blocked messages into DLQ alerts after the deadline. If you re-add CIRCUIT_BREAKER to the `isNonRetryableSource` predicate (or any equivalent), every CB-OPEN burst will produce one DLQ alert per blocked request — the v1.0.8 incident produced ~2200 Telegram alerts/day from this exact bug. OAuth2 stays non-retryable (real auth issue, immediate DLQ); only CIRCUIT_BREAKER changed.
 
+**v1.15.0 fix — the net was dead until 2026-07-24.** `RequestMessage.createdAt` was never
+set on any production ingress path (only in the dev-profile `TestController`), and
+`isMessageExpired` returns `false` when `createdAt` is null — so the safety net described
+above never fired once and the CB-blocked re-queue looped at Kafka round-trip speed
+(root cause of the 2026-05-18 Redpanda 57 GB disk-full outage). `createdAt` is now stamped
+at **both** ingress points — `ProxyController` (REST) and `TenantMappingService.toInternal`
+(source pull) — **never remove either one**, or this rule's backstop (and rule 24's) goes
+dead again. Second layer: `gateway.retry.cb-max-requeues` (default 50) counts the re-queues
+in Redis via `RequestStateService.incrementCbRequeue` (`request:cb-requeue:<compositeId>`,
+request-state TTL, `Integer.MAX_VALUE` fail-closed per rule 8) and past the cap the message
+takes the normal `handlePermanentFailure` → DLQ path, incrementing
+`gateway.http.circuitbreaker.requeue.exhausted`. `attemptCount` is STILL not incremented and
+CIRCUIT_BREAKER is STILL never added to `isNonRetryableSource` — the cap only bounds a
+genuinely stuck message, so the v1.0.8 alert-per-request storm cannot come back.
+
 ### 24. Never call `OAuth2ProviderService.evictToken` without also setting `RequestStateService.markTokenEvicted`
 
 The 401-retry-with-fresh-token path in `OracleRequestConsumer.handleFailedResponse` and `ApiRequestConsumer.handleFailedResponse` evicts the cached OAuth2 token and re-queues the message **without incrementing `attemptCount`** — same back-pressure-style pattern as CB-blocked re-queue (Rule 23). The `markTokenEvicted` flag is the loop guard: on the second 401 for the same `compositeId`, `isTokenEvicted` returns true, the eviction branch is skipped, and the request falls through to the standard retry/permanent-failure path. Removing the flag write turns this into an infinite evict→re-mint→401→evict loop that hammers the OAuth endpoint forever (and the `processRequest` `max-message-age-ms` safety net is the only thing that would eventually stop it, ~5 min later, after the OAuth endpoint has been pounded). The flag's TTL matches request state TTL (default 72h) so it dies with the request lifecycle. `isTokenEvicted` returns `true` on Redis failure (fail-closed) — a Redis outage degrades to existing pre-v1.1.0 behavior (immediate DLQ on 401), never to a runaway loop.
@@ -155,6 +170,24 @@ eviction wipe the source token (stalling all pulls) or a "source"-named provider
 collide with it. Keep the two caches separate; keep the source cache TTL capped at
 the token's own `expires_in` so an expired token is never served on the pull/save channel.
 
+### 32. Never remove `setAsyncAcks(true)` from `KafkaConfig.buildFactory`
+
+Both request consumers call `ack` from the reactive/`CompletableFuture` path, i.e. acks arrive
+out of offset order. `AckMode.MANUAL` only commits the highest acknowledged offset, so without
+`asyncAcks` a fast-finishing higher offset marks a still-running lower offset as "committed" —
+on restart that message is never redelivered. Silent message loss: no DLQ record, no alert,
+nothing in the metrics. `asyncAcks` defers the commit until the offset gaps are filled. It only
+works together with `MANUAL`, so read this rule with rule 4: MANUAL never changes either.
+
+### 33. Never ack a request message on Redis lock contention
+
+When `tryLock` returns false, `OracleRequestConsumer`/`ApiRequestConsumer` must call
+`ack.nack(Duration.ofSeconds(10))`, **not** `ack.acknowledge()`. "Another instance is working
+on it" only holds in a healthy multi-instance steady state; after a restart or SIGKILL the dead
+instance's locks stay orphaned until the lock TTL (300s, rule 2) reaps them, and acking would
+silently discard every message redelivered inside that window. Rule 25 covers a Redis gate
+*failure*; this rule covers lock *contention* — both end in `nack`, never in a silent drop.
+
 ---
 
 ## Protected Zones
@@ -181,6 +214,7 @@ These files contain production-critical logic. Before modifying any of them, run
 | `AdminSecurityConfig.java` | Two isolated `SecurityFilterChain` beans (admin session-gated, pipeline permitAll) with explicit `@Order` + `securityMatcher` | Merging chains or dropping `securityMatcher` locks the pipeline/actuator behind admin auth (see Rule 29) |
 | `TenantMappingService.java` | Biruni-boundary `toInternal`/`toExternal` field-name translation (dynamic, per-call from `SettingsService`) | Bypassing it at ingress leaves `tenantId` null (all requests → DLQ); bypassing at egress or hardcoding the field name breaks any deployment with reconfigured field names (see Rule 30) |
 | `SourceTokenService.java` | Isolated `source:oauth2:token` cache key + TTL capped at token's `expires_in` | Sharing the per-request `oauth2:token:*` namespace lets a provider eviction stall all Biruni pulls, or serves an expired token on the source channel (see Rule 31) |
+| `DynamicConcurrencyManager.java` | Lag-driven `setConcurrency`; container stop/start on scale-up is OFF by default (`gateway.concurrency.allow-restart-on-scale-up`) | A restart triggers a consumer-group rebalance and every in-flight ack landing after `stop()` is a no-op — those offsets stay uncommitted and get redelivered, i.e. message loss exactly when load is highest |
 
 ## Required Checklist
 

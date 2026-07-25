@@ -134,6 +134,16 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 | **Idempotency** | Redis check + lock | Redis check + lock |
 | **On Failure** | Retry → `sendOracleRequest()` or DLQ | Retry → `sendApiRequest()` or DLQ |
 
+**Ack semantics:** `AckMode.MANUAL` + `asyncAcks=true` (both set in `KafkaConfig.buildFactory`,
+for every factory). `ack` is called from the reactive callback once the HTTP response lands, so
+acks arrive **out of offset order** — `asyncAcks` defers the commit until the offset gaps are
+filled (without it a fast higher offset would mask a still-running lower one, which is then
+never redelivered; see SAFETY-RULES rule 32). Nothing is ever acked away silently: on lock
+contention the message is `nack(10s)`-ed back to Kafka (rule 33), on a Redis gate failure
+`nack(5s)` (rule 25), and both an expired message (`gateway.retry.max-message-age-ms`, measured
+from the `createdAt` stamped at ingress) and a message past the CB re-queue cap
+(`gateway.retry.cb-max-requeues`) go to the DLQ via `handlePermanentFailure` (rule 23).
+
 ### E4: HTTP Request — `HttpRequestService.java`
 
 | Aspect | Detail |
@@ -371,6 +381,7 @@ ResponseSaveRequest (Oracle save payload)
 - **Cooldown:** 30s minimum between scaling events
 - **Threshold:** Scale up when lag > 50, scale down when lag < 10
 - **Scope:** Request and Response consumers scaled independently
+- **No restart on scale-up (v1.15.0):** the manager only calls `setConcurrency(...)`; it does NOT `stop()`/`start()` the container unless `gateway.concurrency.allow-restart-on-scale-up` is explicitly enabled (default `false`). A restart rebalances the group and in-flight acks landing after `stop()` are lost — the new target applies on the next natural rebalance/restart instead.
 
 ### Thread Pool & Backpressure
 
@@ -381,7 +392,7 @@ ResponseSaveRequest (Oracle save payload)
 - **Rejection Policy:** `RejectWithLogging` — when queue full, throws `RejectedExecutionException`. Consumer catches it and re-queues the message to Kafka without incrementing attempt count. Consumer thread stays free.
 - **Non-blocking:** Both request consumers use `.subscribe()` instead of `.block()` — threads are freed immediately after dispatching HTTP request.
 - **Message Expiry:** Messages older than `gateway.retry.max-message-age-ms` (default 5 min) are failed immediately to prevent infinite re-queue loops.
-- **CB-aware retry:** OAuth2 errors are NOT retried — they cause immediate DLQ. Circuit Breaker blocks (`errorSource=CIRCUIT_BREAKER`) ARE retried by transparent re-queue (no attempt count increment) — CB-blocked is transient back-pressure, not a permanent failure. The message-expiry safety net (`max-message-age-ms`) ensures genuinely down upstreams still surface in DLQ after the deadline.
+- **CB-aware retry:** OAuth2 errors are NOT retried — they cause immediate DLQ. Circuit Breaker blocks (`errorSource=CIRCUIT_BREAKER`) ARE retried by transparent re-queue (no attempt count increment) — CB-blocked is transient back-pressure, not a permanent failure. The message-expiry safety net (`max-message-age-ms`) ensures genuinely down upstreams still surface in DLQ after the deadline. **Re-queue cap (v1.15.0):** the re-queues are also counted in Redis (`request:cb-requeue:<compositeId>`, `RequestStateService.incrementCbRequeue`) and bounded by `gateway.retry.cb-max-requeues` (default 50) — past the cap the message takes the permanent-failure → DLQ path and increments `gateway.http.circuitbreaker.requeue.exhausted`. Redis down ⇒ `Integer.MAX_VALUE` ⇒ immediate DLQ (fail-closed), never an unbounded loop.
 - **OAuth2-aware 401 retry (v1.1.0):** When an upstream API returns 401 to a request whose `oauth2_provider` is set, the consumer evicts the cached token (`OAuth2ProviderService.evictToken`) and re-queues the request without incrementing the attempt counter. A per-request flag (`request:token-evicted:<compositeId>`, same TTL as request state) prevents repeating the eviction more than once per request — on the second 401 the request falls through to the standard permanent-failure path. Recovers from smartup's periodic "stuck token" glitch in one Kafka round-trip instead of waiting 3h for token TTL expiry.
 
 ### Admin Control-Plane Security (B1)
