@@ -209,8 +209,25 @@ public class ApiRequestConsumer {
         String errorSourceStr = response != null ? response.getErrorSource() : null;
 
         if ("CIRCUIT_BREAKER".equals(errorSourceStr)) {
+            // SAFETY-RULES 23: CB-blocked is transient back-pressure — attemptCount stays
+            // untouched and CIRCUIT_BREAKER is never added to isNonRetryableSource. The
+            // re-queues are counted separately so a long CB outage cannot spin at Kafka
+            // round-trip speed forever; past the cap the message becomes a normal
+            // permanent failure (one DLQ record), which is what the message-expiry net
+            // was always meant to do.
+            int requeues = requestStateService.incrementCbRequeue(key);
+            if (requeues > retryProperties.getCbMaxRequeues()) {
+                metrics.getCbRequeueExhausted().increment();
+                log.error("[API] CB requeue cap exceeded ({} > {}), sending to DLQ: {}",
+                        requeues, retryProperties.getCbMaxRequeues(), key);
+                handlePermanentFailure(key, message, httpStatus,
+                        "Circuit breaker still open after " + requeues + " requeues",
+                        ErrorSource.SYSTEM);
+                return;
+            }
             metrics.getHttpRetry().increment();
-            log.warn("[API] CB-blocked, requeueing without attempt increment: {}", key);
+            log.warn("[API] CB-blocked, requeueing without attempt increment ({}/{}): {}",
+                    requeues, retryProperties.getCbMaxRequeues(), key);
             requestProducer.sendApiRequest(message);
             return;
         }

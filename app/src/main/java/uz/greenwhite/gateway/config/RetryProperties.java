@@ -43,6 +43,14 @@ public class RetryProperties {
     private long maxMessageAgeMs = 300_000;
 
     /**
+     * Maximum number of CB-blocked re-queues for one message before it is sent to the DLQ.
+     * SAFETY-RULES 23 keeps attemptCount untouched on that path, so this separate cap is
+     * what bounds the loop and stops the Kafka write amplification a long CB outage causes.
+     * Default: 50
+     */
+    private int cbMaxRequeues = 50;
+
+    /**
      * Cached set of retryable status codes, parsed once at startup
      */
     private Set<Integer> retryableStatusSet;

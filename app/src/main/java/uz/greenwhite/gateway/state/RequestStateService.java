@@ -26,6 +26,7 @@ public class RequestStateService {
     private static final String STATE_PREFIX = "request:state:";
     private static final String LOCK_PREFIX = "request:lock:";
     private static final String TOKEN_EVICTED_PREFIX = "request:token-evicted:";
+    private static final String CB_REQUEUE_PREFIX = "request:cb-requeue:";
 
     private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> COMPARE_AND_DELETE =
             new org.springframework.data.redis.core.script.DefaultRedisScript<>(
@@ -269,6 +270,37 @@ public class RequestStateService {
             log.warn("Redis error checking token-evicted flag for {}: {}. " +
                     "Returning true to avoid evict loop.", compositeId, e.getMessage());
             return true;
+        }
+    }
+
+    /**
+     * Count one CB-blocked re-queue for this request and return the new total.
+     *
+     * <p>SAFETY-RULES 23 requires the CB re-queue path to leave {@code attemptCount}
+     * untouched, so this is a deliberately separate counter whose only job is to stop
+     * the loop from running forever. The caller sends the message to the DLQ once the
+     * total passes {@code gateway.retry.cb-max-requeues}.
+     *
+     * <p>Returns {@link Integer#MAX_VALUE} when Redis is unavailable — the same
+     * fail-closed convention as {@link #incrementAttempt} (rule 8), so a Redis outage
+     * degrades to an immediate DLQ rather than an unbounded re-queue loop.
+     *
+     * <p>TTL matches request state, so the counter dies with the request lifecycle.
+     */
+    public int incrementCbRequeue(String compositeId) {
+        String key = CB_REQUEUE_PREFIX + compositeId;
+        try {
+            Long count = redisTemplate.opsForValue().increment(key);
+            if (count == null) {
+                log.warn("Redis returned null for CB requeue count {} — failing closed", compositeId);
+                return Integer.MAX_VALUE;
+            }
+            redisTemplate.expire(key, redisProperties.getStateTtlHours(), TimeUnit.HOURS);
+            return count.intValue();
+        } catch (Exception e) {
+            log.error("Redis unavailable for CB requeue count {} — failing closed: {}",
+                    compositeId, e.getMessage());
+            return Integer.MAX_VALUE;
         }
     }
 }

@@ -51,6 +51,7 @@ public class GatewayMetrics {
     private final Counter httpTimeout;
     private final Counter httpRetry;
     private final Counter httpCircuitBreakerOpen;
+    private final Counter cbRequeueExhausted;
     private final Counter poolRejection;
 
     // ==================== E5: Oracle Save ====================
@@ -191,6 +192,11 @@ public class GatewayMetrics {
 
         this.httpCircuitBreakerOpen = Counter.builder("gateway.http.circuitbreaker.rejected")
                 .description("Requests rejected by circuit breaker")
+                .tag("stage", "http_request")
+                .register(registry);
+
+        this.cbRequeueExhausted = Counter.builder("gateway.http.circuitbreaker.requeue.exhausted")
+                .description("CB-blocked messages sent to DLQ after exceeding cb-max-requeues")
                 .tag("stage", "http_request")
                 .register(registry);
 

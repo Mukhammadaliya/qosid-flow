@@ -144,6 +144,7 @@ gateway:
     interval-ms: ${RETRY_INTERVAL_MS:3000}
     retryable-statuses: ${RETRY_STATUSES:408,429,500,502,503,504}
     max-message-age-ms: ${RETRY_MAX_MESSAGE_AGE:300000}
+    cb-max-requeues: ${RETRY_CB_MAX_REQUEUES:50}
 
   # --- Dynamic Concurrency ---
   concurrency:
