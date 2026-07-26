@@ -42,7 +42,7 @@ ResponseConsumer
      |
      v
 Client javobni oladi:
-     GET /qosid/api/v1/requests/{id}/status  → inline result yoki resultUrl
+     GET /qosid/api/v1/requests/{id}/status  → httpStatus + inline result yoki resultUrl
      GET /qosid/api/v1/requests/{id}/result  → to'liq response body (RocksDB dan)
 ```
 
@@ -145,10 +145,16 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 **Ack semantics:** `AckMode.MANUAL` for every factory (`KafkaConfig.buildFactory`); `asyncAcks`
 is deliberately **off**. `ack` is called from the reactive callback once the HTTP response lands,
 so acks arrive **out of offset order**, which `MANUAL` alone does not handle — a fast higher
-offset can mask a still-running lower one, which is then never redelivered. `asyncAcks` would fix
-that but is mutually exclusive with `nack()`, which both request consumers rely on, so it stays
-off until those paths are converted to a bounded re-queue (SAFETY-RULES rule 32 has the full
-reasoning and the order of work). Nothing is ever acked away silently: on lock
+offset can mask a still-running lower one, which is then never redelivered. `asyncAcks` is
+Spring's remedy but is mutually exclusive with `nack()`, which both request consumers rely on,
+so the ordering is enforced on our side instead: every ack in both request consumers goes through
+**`OrderedAckTracker`** (`kafka/ack/`), which registers the record on the listener thread (the
+last point where offset order still holds) and hands the `Acknowledgment` to Spring only once no
+earlier record on that partition is still in flight. A stuck record therefore stalls commits for
+its partition instead of committing past live work — at-least-once, absorbed by the idempotency
+gate on restart. `onPartitionsRevoked` drops the state for revoked partitions. Response consumers
+need none of this: they ack synchronously on the listener thread. SAFETY-RULES rules 32 and 39
+carry the full reasoning. Nothing is ever acked away silently: on lock
 contention the message is `nack(10s)`-ed back to Kafka (rule 33), on a Redis gate failure
 `nack(5s)` (rule 25), and both an expired message (`gateway.retry.max-message-age-ms`, measured
 from the `createdAt` stamped at ingress) and a message past the CB re-queue cap
@@ -226,6 +232,14 @@ attack the gate exists to stop is untouched (log in on :8092, stop the gateway, 
 `gateway.api.base-url`, start it again). Because settings are edited while the gateway is
 **stopped**, ops also exposes its own `change-password`; otherwise a fresh install could be
 locked out with no reachable way to leave the default password. See SAFETY-RULES rule 35.
+
+`POST /ops/api/login` and `GET /ops/api/me` carry the **same `passwordChangeRequired` hint** as
+their gateway counterparts, and the SPA falls back to it whenever the gateway did not answer. That
+fallback is the normal case, not an edge case: settings are edited with the gateway stopped, which
+is exactly when a fresh install is still on `admin`/`admin` — before this the console had no way to
+know it should show the change form, so every ops write simply came back `403`. The change form
+itself posts to whichever backend is reachable (gateway up → gateway, gateway down → ops); both
+write the same shared H2 account.
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
