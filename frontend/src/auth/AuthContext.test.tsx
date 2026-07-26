@@ -153,6 +153,65 @@ describe('AuthProvider', () => {
     expect(auth!.opsUp).toBe(true);
   });
 
+  /**
+   * The forced-password-change hint used to come from the gateway alone. In the normal
+   * stop-to-edit state the gateway is DOWN — which is exactly when an operator on a fresh
+   * install still has admin/admin — so the console never learned it had to show the change
+   * form and every ops write came back 403 with no explanation.
+   */
+  describe('passwordChangeRequired source', () => {
+    function capture() {
+      let auth: ReturnType<typeof useAuth> | undefined;
+      function Capture() {
+        auth = useAuth();
+        return null;
+      }
+      render(<AuthProvider><Capture /></AuthProvider>);
+      return () => auth!;
+    }
+
+    it('takes the ops hint when the gateway is unreachable', async () => {
+      vi.spyOn(api, 'get').mockRejectedValue(axiosDown);
+      (opsMe as Mock).mockResolvedValue({ data: { user: 'admin', passwordChangeRequired: 'true' } });
+
+      const auth = capture();
+      await waitFor(() => expect(auth().loading).toBe(false));
+
+      expect(auth().gatewayUp).toBe(false);
+      expect(auth().passwordChangeRequired).toBe(true);
+    });
+
+    it('lets the gateway answer win over ops when both replied', async () => {
+      vi.spyOn(api, 'get').mockImplementation((url: string) =>
+        url.endsWith('/health')
+          ? Promise.resolve({ data: {} } as any)
+          : Promise.resolve({ data: { username: 'admin', passwordChangeRequired: 'false' } } as any));
+      (opsMe as Mock).mockResolvedValue({ data: { user: 'admin', passwordChangeRequired: 'true' } });
+
+      const auth = capture();
+      await waitFor(() => expect(auth().loading).toBe(false));
+
+      // The gateway is the authority for its own routes; a stale ops answer must not
+      // strand the operator on the change form.
+      expect(auth().passwordChangeRequired).toBe(false);
+    });
+
+    it('takes the ops hint from the login response when only ops accepted the login', async () => {
+      vi.spyOn(api, 'post').mockRejectedValue(axiosDown);
+      vi.spyOn(api, 'get').mockRejectedValue(axiosDown);
+      (opsLogin as Mock).mockResolvedValue({ data: { passwordChangeRequired: 'true' } });
+      (opsMe as Mock).mockResolvedValue({ data: { user: 'admin', passwordChangeRequired: 'true' } });
+
+      const auth = capture();
+      await waitFor(() => expect(auth().loading).toBe(false));
+      await act(async () => {
+        await auth().login('admin', 'admin');
+      });
+
+      expect(auth().passwordChangeRequired).toBe(true);
+    });
+  });
+
   it('bad credentials: any 401 -> login throws badcreds', async () => {
     vi.spyOn(api, 'get').mockRejectedValue(axiosDown);
     vi.spyOn(api, 'post').mockRejectedValue(axios401);

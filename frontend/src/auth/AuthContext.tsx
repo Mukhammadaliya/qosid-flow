@@ -13,9 +13,11 @@ interface AuthState {
   /** True only when the gateway /me probe reached the gateway and got 401'd (session expired) —
    * as opposed to the gateway being unreachable. gatewayUp is false in both cases. */
   gatewayAuthExpired: boolean;
-  /** Gateway hint (from /login and /me): the admin password is still the seeded default, so the
-   * gateway 403s every admin route but login/me/logout/change-password/health. Enforcement is
-   * server-side (DefaultPasswordGateFilter) — this only drives the forced change form. */
+  /** Hint from whichever backend answered (/login and /me on both): the admin password is still
+   * the seeded default, so that backend 403s every route but login/me/logout/change-password/
+   * health. The gateway's answer wins; ops is the fallback, and the only source while the gateway
+   * is stopped. Enforcement is server-side (DefaultPasswordGateFilter / OpsDefaultPasswordGate
+   * Filter) — this only drives the forced change form. */
   passwordChangeRequired: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -69,8 +71,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setOpsUp(ops.status === 'fulfilled');
       // /me reports the flag too, so a page reload (session but no login response) still forces
       // the change form. Sent as a string because the body is a Map<String, String>.
+      // The gateway answer wins when there is one; otherwise fall back to ops — in the normal
+      // stop-to-edit state the gateway is DOWN, and without this the console would never learn
+      // it must show the form and every ops write would just 403.
       setPasswordChangeRequired(gw.status === 'fulfilled'
-              && String(gw.value.data.passwordChangeRequired) === 'true');
+              ? String(gw.value.data.passwordChangeRequired) === 'true'
+              : ops.status === 'fulfilled'
+                && String(ops.value.data.passwordChangeRequired) === 'true');
       setUser(gwUser ?? opsUser);
     } finally {
       refreshing.current = false;
@@ -85,6 +92,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ]);
     if (gw.status === 'fulfilled') {
       setPasswordChangeRequired(String(gw.value.data.passwordChangeRequired) === 'true');
+    } else if (ops.status === 'fulfilled') {
+      // Gateway stopped (the stop-to-edit norm): ops carries the same hint.
+      setPasswordChangeRequired(String(ops.value.data.passwordChangeRequired) === 'true');
     }
     const ok = gw.status === 'fulfilled' || ops.status === 'fulfilled';
     if (!ok) {
