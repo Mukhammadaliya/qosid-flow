@@ -161,16 +161,18 @@ public class KafkaConfig {
         factory.setConsumerFactory(consumerFactory());
         factory.setConcurrency(concurrency);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
-        // DO NOT set asyncAcks(true) here. It looks like the right fix for the
-        // out-of-order commits our async ack path produces, but Spring Kafka's
-        // ConsumerAcknowledgment rejects nack() outright once out-of-order commits are
-        // enabled ("nack() is not supported with out-of-order commits"). Both request
-        // consumers nack — on a Redis-gate failure (SAFETY-RULES 25) and on lock
-        // contention (rule 33) — so enabling it turns those two graceful back-pressure
-        // paths into a thrown exception, which the error handler only logs: the message
-        // is then lost, i.e. the exact opposite of what asyncAcks was meant to prevent.
-        // Fixing out-of-order commits requires first replacing both nack sites with a
-        // bounded re-queue; see KafkaAsyncAcksTest for the guard.
+        // DO NOT set asyncAcks(true) here, and note that it is no longer needed.
+        // Spring Kafka's ConsumerAcknowledgment rejects nack() outright once out-of-order
+        // commits are enabled ("nack() is not supported with out-of-order commits" —
+        // still asserted in 3.2.10). Both request consumers nack: on a Redis-gate failure
+        // (SAFETY-RULES 25) and on lock contention (rule 33). Enabling asyncAcks would turn
+        // those two graceful back-pressure paths into a thrown exception that the error
+        // handler only logs — losing the message, i.e. the exact opposite of the intent.
+        // The out-of-order commit hole itself is closed on our side instead: both request
+        // consumers route every ack through OrderedAckTracker, which hands an offset to
+        // Spring only once no earlier record on that partition is still in flight
+        // (SAFETY-RULES 39). Guards: KafkaAsyncAcksTest, OrderedAckTrackerTest,
+        // OrderedAckConsumerTest.
         factory.getContainerProperties().setIdleBetweenPolls(100);
         factory.setCommonErrorHandler(kafkaErrorHandler());
         log.info("{} consumer factory created with concurrency: {}", label, concurrency);

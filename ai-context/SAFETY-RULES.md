@@ -186,11 +186,10 @@ graceful back-pressure paths into a thrown `IllegalStateException`, which escape
 an error handler that only logs — so the message is lost on exactly the paths that exist to prevent
 loss. It makes the problem worse, not better.
 
-**Order of work if you want to fix out-of-order commits:** first replace both `nack` sites with a
-bounded re-queue (the `incrementCbRequeue` pattern from rule 23 is the model — note a Redis outage
-must not degrade into "DLQ everything", which is why `nack` is still the better answer for the
-rule-25 path today), and only then enable `asyncAcks`. `KafkaAsyncAcksTest` guards the current
-state and explains why. Read with rule 4: `MANUAL` never changes either way.
+**The defect it was meant to fix is now fixed without it** — see rule 39. `asyncAcks` stays off
+permanently, and `KafkaAsyncAcksTest` guards that. (Re-verified against `spring-kafka-3.2.10` after
+the Spring Boot 3.3.13 bump: the assertion is still there.) Read with rule 4: `MANUAL` never
+changes either way.
 
 ### 33. Never ack a request message on Redis lock contention
 
@@ -303,6 +302,40 @@ understated value would walk straight through) and a chunked request carries no 
 so the streaming counter is what actually enforces the cap. Guard:
 `ProxyControllerBodyLimitTest`.
 
+### 39. Never acknowledge a request record outside `OrderedAckTracker`
+
+Both request consumers hand the record to an executor and acknowledge from the completion
+callback, so acks arrive in **completion** order. `AckMode.MANUAL` commits the **highest**
+acknowledged offset per partition, so acking offset 105 while 100–104 are still running commits
+past them — and a crash or rebalance in that window loses those records with no redelivery, no
+DLQ, no metric. This is the defect rule 32 describes; `OrderedAckTracker` is what closes it,
+because Spring's own remedy (`asyncAcks`) is unusable while the consumers `nack`.
+
+The tracker hands an `Acknowledgment` to Spring only when **no earlier registered record on that
+partition is still in flight**. Consequences to preserve:
+
+- **`register(...)` happens on the listener thread, before the hand-off** — that is the only place
+  where offset order is still guaranteed. Registering inside the async task would race.
+- **Every completion path calls `complete(...)`** — success, failure, expiry, `exceptionally`,
+  pool rejection, submit failure. A path that returns without completing stops commits on that
+  partition (processing continues; a restart then redelivers from the stuck offset, which the
+  idempotency gate absorbs — at-least-once, the safe direction).
+- **The duplicate-skip path must go through `acknowledgeInOrder(...)`, not `ack.acknowledge()`.**
+  "Nothing ran, so acking is free" is exactly the reintroduction to watch for: it is free of
+  *work*, not free of *ordering*.
+- **The two `nack` sites keep calling `ack.nack(...)` directly and are never registered.** `nack`
+  must run on the listener thread (Spring requirement) and its record is not in flight. Records
+  below a nacked offset that are still in flight are simply committed later, out of the
+  container's current position — Kafka allows that, and the worst case is redelivery.
+- **Each consumer owns its own tracker instance** (rule 5) — a partition stuck on one flow must
+  not hold back the other flow's commits.
+- **`onPartitionsRevoked` must keep calling `revoke(...)`** — a revoked partition's offsets belong
+  to another consumer, and stale entries would leak.
+
+Guards: `OrderedAckTrackerTest` (invariant, including a concurrency stress case),
+`OrderedAckConsumerTest` (both consumers, plus revocation). Response consumers are unaffected:
+they ack synchronously on the listener thread, already in order.
+
 ---
 
 ## Protected Zones
@@ -311,7 +344,8 @@ These files contain production-critical logic. Before modifying any of them, run
 
 | File | Critical Logic | Risk if Broken |
 |------|---------------|----------------|
-| `OracleRequestConsumer.java`, `ApiRequestConsumer.java` | Idempotency check + distributed lock + manual ack + async HTTP delegation | Duplicate processing, message loss, thread pool exhaustion |
+| `OracleRequestConsumer.java`, `ApiRequestConsumer.java` | Idempotency check + distributed lock + manual ack routed through `OrderedAckTracker` (rule 39) + async HTTP delegation | Duplicate processing, message loss, thread pool exhaustion |
+| `kafka/ack/OrderedAckTracker.java` | Contiguous-prefix acknowledgement — the only thing keeping committed offsets behind in-flight work while `asyncAcks` stays off (rules 32, 39) | Silent message loss on crash/rebalance: offsets committed past records that never finished |
 | `OracleResponseConsumer.java` | Retry logic + Oracle save + manual ack + RocksDB | Response data loss, Oracle inconsistency |
 | `ApiResponseConsumer.java` | RocksDB + callback trigger + manual ack | Response data loss, lost callbacks |
 | `HttpRequestService.java` | Circuit Breaker + OAuth2 token injection + per-endpoint timeouts + callbackUrl/source propagation + defensive `decompressIfNeeded` + upstream error body capture | Cascading failures, auth failures, timeout mismatches, lost callbacks, garbled `/result` bodies, dropped 5xx error payloads |
