@@ -19,6 +19,15 @@ public class StatusResponse {
     /** {@code PROCESSING}, {@code COMPLETED}, or {@code FAILED}. */
     private String status;
 
+    /**
+     * HTTP status the upstream API answered with, straight from the stored response metadata.
+     * Boxed and omitted while unknown (still in flight, or no body was ever stored) — a literal
+     * {@code 0} would read as a real answer. Present on {@code FAILED} too: failed upstream
+     * bodies are stored as well, which is what makes "502 vs 200" visible without fetching the
+     * whole body from {@code /result}.
+     */
+    private Integer httpStatus;
+
     /** Inline result body — present only when below the configured threshold and JSON/text. */
     private Object result;
 
