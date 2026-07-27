@@ -14,6 +14,7 @@ import uz.greenwhite.gateway.config.KafkaProperties;
 import uz.greenwhite.gateway.config.RetryProperties;
 import uz.greenwhite.gateway.http.HttpRequestService;
 import uz.greenwhite.gateway.kafka.consumer.api.ApiRequestConsumer;
+import uz.greenwhite.gateway.kafka.consumer.oracle.OracleRequestConsumer;
 import uz.greenwhite.gateway.kafka.producer.RequestProducer;
 import uz.greenwhite.gateway.metrics.GatewayMetrics;
 import uz.greenwhite.gateway.model.kafka.DlqMessage;
@@ -118,7 +119,8 @@ class CbBackpressureTest {
         return new ConsumerRecord<>(TOPIC, 0, 0L, KEY, msg);
     }
 
-    private ApiRequestConsumer consumer(RetryProperties props) {
+    /** Fresh, unlocked, CB-blocked, circuit reported open — the shape both flows are tested on. */
+    private void stubCbBlockedPath() {
         when(state.isCompleted(KEY)).thenReturn(false);
         when(state.tryLock(KEY)).thenReturn(true);
         when(state.getState(anyString())).thenReturn(Optional.empty());
@@ -128,10 +130,28 @@ class CbBackpressureTest {
         when(http.isCircuitOpen("cb-smartup.online")).thenAnswer(inv -> circuitOpen.get());
         when(producer.sendOracleRequest(any())).thenReturn(CompletableFuture.completedFuture(null));
         when(producer.sendApiRequest(any())).thenReturn(CompletableFuture.completedFuture(null));
+    }
+
+    private ApiRequestConsumer consumer(RetryProperties props) {
+        stubCbBlockedPath();
         return new ApiRequestConsumer(http, state, producer, props, inlineExecutor(),
                 metrics(), mock(KafkaProperties.class, RETURNS_DEEP_STUBS),
                 mock(OAuth2ProviderService.class), timer);
     }
+
+    /**
+     * The Oracle flow's consumer. Deliberately a separate consumer with its OWN
+     * CbRequeueScheduler instance (SAFETY-RULES 5) — the two flows are never merged, so the
+     * cases below are duplicated rather than parameterised over a shared abstraction.
+     */
+    private OracleRequestConsumer oracleConsumer(RetryProperties props) {
+        stubCbBlockedPath();
+        return new OracleRequestConsumer(http, state, producer, props, inlineExecutor(),
+                metrics(), mock(KafkaProperties.class, RETURNS_DEEP_STUBS),
+                mock(OAuth2ProviderService.class), timer);
+    }
+
+    // ==================== API ====================
 
     @Test
     void cbBlockedResponseIsParkedAndTheRecordStaysUncommitted() {
@@ -217,6 +237,92 @@ class CbBackpressureTest {
         consumer(retryProps(0)).consumeRequest(record(LocalDateTime.now()), ack);
 
         verify(producer).sendToApiDlq(any());
+        verify(ack).acknowledge();
+    }
+
+    // ==================== ORACLE ====================
+    // The same five properties, pinned separately for the Oracle flow: its consumer and its
+    // CbRequeueScheduler are its own (SAFETY-RULES 5), so a shared/parameterised test would
+    // let one flow's regression hide behind the other's passing assertions.
+
+    @Test
+    void oracleCbBlockedResponseIsParkedAndTheRecordStaysUncommitted() {
+        Acknowledgment ack = mock(Acknowledgment.class);
+
+        oracleConsumer(retryProps(100)).consumeRequest(record(LocalDateTime.now()), ack);
+
+        verify(ack, never()).acknowledge();
+        verify(producer, never()).sendOracleRequest(any());
+        verify(state).releaseLock(KEY);   // the lock must not be held for the whole wait
+    }
+
+    @Test
+    void oracleParkedMessageIsRequeuedAndCompletedOnceTheCircuitCloses() {
+        Acknowledgment ack = mock(Acknowledgment.class);
+        oracleConsumer(retryProps(100)).consumeRequest(record(LocalDateTime.now()), ack);
+
+        circuitOpen.set(false);
+
+        verify(producer, timeout(2000)).sendOracleRequest(any());
+        verify(ack, timeout(2000)).acknowledge();
+    }
+
+    /**
+     * Exercises the OUTER expiry gate at the top of processRequest (see the API twin). The
+     * in-branch (CB) expiry check is pinned separately by
+     * {@link #oracleMessageThatExpiresWhileWaitingOnTheCircuitGoesToDlqNotBackToPark()}.
+     */
+    @Test
+    void oracleExpiredMessageGoesToDlqInsteadOfBeingParkedForever() {
+        Acknowledgment ack = mock(Acknowledgment.class);
+
+        oracleConsumer(retryProps(100)).consumeRequest(record(LocalDateTime.now().minusMinutes(6)), ack);
+
+        verify(producer).sendToOracleDlq(any());
+        verify(producer, never()).sendOracleRequest(any());
+        verify(ack).acknowledge();
+    }
+
+    /**
+     * Exercises the IN-BRANCH expiry check inside the Oracle CIRCUIT_BREAKER branch — the
+     * give-up-by-TIME property this change exists to introduce (the 2026-07-27 incident was a
+     * give-up-by-COUNT). Same deterministic technique as the API twin: the mocked sendRequest
+     * back-dates {@code createdAt} at emission time, so the outer gate reads a fresh message and
+     * the CB-branch check in the callback reads an expired one — no real sleeping, no clock seam.
+     * Deleting the in-branch isMessageExpired block makes this test fail: the message would be
+     * parked (no DLQ, no ack) instead of giving up.
+     */
+    @Test
+    void oracleMessageThatExpiresWhileWaitingOnTheCircuitGoesToDlqNotBackToPark() {
+        Acknowledgment ack = mock(Acknowledgment.class);
+        OracleRequestConsumer consumer = oracleConsumer(retryProps(100));
+        when(http.sendRequest(any())).thenAnswer(inv -> {
+            RequestMessage sent = inv.getArgument(0);
+            return Mono.fromSupplier(() -> {
+                // Wall-clock time elapsing while the request waited on the circuit.
+                sent.setCreatedAt(LocalDateTime.now().minusMinutes(6));
+                return cbBlocked();
+            });
+        });
+
+        consumer.consumeRequest(record(LocalDateTime.now()), ack);
+
+        ArgumentCaptor<DlqMessage> dlq = ArgumentCaptor.forClass(DlqMessage.class);
+        verify(producer).sendToOracleDlq(dlq.capture());
+        // The in-branch reason, not the outer gate's "Message expired after ...".
+        assertThat(dlq.getValue().getFailureReason()).startsWith("Circuit breaker still open after");
+        verify(producer, never()).sendOracleRequest(any());
+        verify(ack).acknowledge();
+        verify(state).releaseLock(KEY);
+    }
+
+    @Test
+    void oraclePendingBoundFullFallsBackToDlq() {
+        Acknowledgment ack = mock(Acknowledgment.class);
+
+        oracleConsumer(retryProps(0)).consumeRequest(record(LocalDateTime.now()), ack);
+
+        verify(producer).sendToOracleDlq(any());
         verify(ack).acknowledge();
     }
 }

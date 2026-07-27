@@ -17,6 +17,7 @@ import uz.greenwhite.gateway.oauth2.OAuth2ProviderService;
 import uz.greenwhite.gateway.state.RequestStateService;
 
 import java.time.Duration;
+import java.util.concurrent.ScheduledExecutorService;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -32,6 +33,7 @@ class OracleRequestConsumerTest {
     @Mock(answer = org.mockito.Answers.RETURNS_DEEP_STUBS) GatewayMetrics metrics;
     @Mock KafkaProperties kafkaProperties;
     @Mock OAuth2ProviderService oAuth2ProviderService;
+    @Mock ScheduledExecutorService cbRequeueTimer;
     @Mock Acknowledgment ack;
 
     @Test
@@ -41,7 +43,8 @@ class OracleRequestConsumerTest {
 
         OracleRequestConsumer consumer = new OracleRequestConsumer(
                 httpRequestService, requestStateService, requestProducer,
-                retryProperties, httpExecutor, metrics, kafkaProperties, oAuth2ProviderService);
+                retryProperties, httpExecutor, metrics, kafkaProperties, oAuth2ProviderService,
+                cbRequeueTimer);
 
         RequestMessage message = RequestMessage.builder().tenantId(1L).requestId(2L).build();
         consumer.consumeRequest(new ConsumerRecord<>("t", 0, 0L, "1:2", message), ack);

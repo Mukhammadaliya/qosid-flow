@@ -132,7 +132,8 @@ class OrderedAckConsumerTest {
         OracleRequestConsumer consumer = new OracleRequestConsumer(
                 mock(HttpRequestService.class), state(), mock(RequestProducer.class),
                 mock(RetryProperties.class), executor.asMock(), metrics(),
-                mock(KafkaProperties.class), mock(OAuth2ProviderService.class));
+                mock(KafkaProperties.class), mock(OAuth2ProviderService.class),
+                mock(ScheduledExecutorService.class));
 
         Acknowledgment inFlightAck = mock(Acknowledgment.class);
         Acknowledgment duplicateAck = mock(Acknowledgment.class);

@@ -44,7 +44,7 @@ class LockContentionNackTest {
         Counter counter = mock(Counter.class);
         when(metrics.getConsumerReceived()).thenReturn(counter);
         when(metrics.getConsumerLockFailed()).thenReturn(counter);
-        // The API consumer's CbRequeueScheduler registers gauges at construction time.
+        // Both consumers' CbRequeueScheduler registers gauges at construction time.
         when(metrics.getRegistry()).thenReturn(new SimpleMeterRegistry());
         return metrics;
     }
@@ -88,7 +88,8 @@ class LockContentionNackTest {
         new OracleRequestConsumer(
                 mock(HttpRequestService.class), state, producer, mock(RetryProperties.class),
                 mock(ThreadPoolTaskExecutor.class), metricsWithCounters(),
-                mock(KafkaProperties.class), mock(OAuth2ProviderService.class))
+                mock(KafkaProperties.class), mock(OAuth2ProviderService.class),
+                mock(ScheduledExecutorService.class))
                 .consumeRequest(record(), ack);
 
         verify(ack).nack(any(Duration.class));
