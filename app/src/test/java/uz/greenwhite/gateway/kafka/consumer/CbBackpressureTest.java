@@ -6,6 +6,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import reactor.core.publisher.Mono;
@@ -15,6 +16,7 @@ import uz.greenwhite.gateway.http.HttpRequestService;
 import uz.greenwhite.gateway.kafka.consumer.api.ApiRequestConsumer;
 import uz.greenwhite.gateway.kafka.producer.RequestProducer;
 import uz.greenwhite.gateway.metrics.GatewayMetrics;
+import uz.greenwhite.gateway.model.kafka.DlqMessage;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import uz.greenwhite.gateway.model.kafka.ResponseMessage;
 import uz.greenwhite.gateway.oauth2.OAuth2ProviderService;
@@ -27,6 +29,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
@@ -152,6 +155,12 @@ class CbBackpressureTest {
         verify(ack, timeout(2000)).acknowledge();
     }
 
+    /**
+     * Exercises the OUTER expiry gate at the top of processRequest: the record is already
+     * 6 minutes old when consumed, so it is DLQ'd before sendRequest is ever invoked. The
+     * in-branch (CB) expiry check is pinned separately by
+     * {@link #messageThatExpiresWhileWaitingOnTheCircuitGoesToDlqNotBackToPark()}.
+     */
     @Test
     void expiredMessageGoesToDlqInsteadOfBeingParkedForever() {
         Acknowledgment ack = mock(Acknowledgment.class);
@@ -161,6 +170,44 @@ class CbBackpressureTest {
         verify(producer).sendToApiDlq(any());
         verify(producer, never()).sendApiRequest(any());
         verify(ack).acknowledge();
+    }
+
+    /**
+     * Exercises the IN-BRANCH expiry check inside the CIRCUIT_BREAKER branch — the give-up-by-
+     * TIME property this whole change exists to introduce (the 2026-07-27 incident was a
+     * give-up-by-COUNT). The message is fresh when the outer gate at the top of processRequest
+     * runs, and expired by the time the CB-blocked response reaches the callback — the real
+     * production shape, where age accrues while a request waits out circuit windows across
+     * park→requeue→re-block cycles. Deleting the in-branch isMessageExpired block makes this
+     * test fail: the message would be parked (no DLQ, no ack) instead of giving up.
+     *
+     * <p>Time passing is simulated deterministically: the mocked sendRequest back-dates
+     * {@code createdAt} at emission time (RequestMessage is mutable), so no real sleeping and
+     * no clock seam is needed. The outer gate reads the fresh value, the callback the expired
+     * one.
+     */
+    @Test
+    void messageThatExpiresWhileWaitingOnTheCircuitGoesToDlqNotBackToPark() {
+        Acknowledgment ack = mock(Acknowledgment.class);
+        ApiRequestConsumer consumer = consumer(retryProps(100));
+        when(http.sendRequest(any())).thenAnswer(inv -> {
+            RequestMessage sent = inv.getArgument(0);
+            return Mono.fromSupplier(() -> {
+                // Wall-clock time elapsing while the request waited on the circuit.
+                sent.setCreatedAt(LocalDateTime.now().minusMinutes(6));
+                return cbBlocked();
+            });
+        });
+
+        consumer.consumeRequest(record(LocalDateTime.now()), ack);
+
+        ArgumentCaptor<DlqMessage> dlq = ArgumentCaptor.forClass(DlqMessage.class);
+        verify(producer).sendToApiDlq(dlq.capture());
+        // The in-branch reason, not the outer gate's "Message expired after ...".
+        assertThat(dlq.getValue().getFailureReason()).startsWith("Circuit breaker still open after");
+        verify(producer, never()).sendApiRequest(any());
+        verify(ack).acknowledge();
+        verify(state).releaseLock(KEY);
     }
 
     @Test
