@@ -69,8 +69,17 @@ public class StatusController {
                 .requestId(id)
                 .status(state.getStatus().name());
 
+        // Read once and share: the upstream status is reported whenever a response was stored,
+        // including on FAILED (failed upstream bodies are stored too) and when the body is too
+        // large to inline — those are exactly the cases where a poller would otherwise have to
+        // fetch the whole body from /result just to learn the status code.
+        ResponseMetadata meta = responseStorageService.getResponseMetadata(id);
+        if (meta != null) {
+            builder.httpStatus(meta.getHttpStatus());
+        }
+
         if (state.getStatus() == RequestStatus.COMPLETED && state.isHasResult()) {
-            attachResult(id, builder);
+            attachResult(id, meta, builder);
         } else if (state.getStatus() == RequestStatus.FAILED) {
             builder.errorMessage(state.getLastError());
             if (state.getErrorSource() != null) {
@@ -84,8 +93,7 @@ public class StatusController {
     /**
      * Either inline the body (small JSON/text) or hand back a {@code resultUrl}.
      */
-    private void attachResult(String id, StatusResponse.StatusResponseBuilder builder) {
-        ResponseMetadata meta = responseStorageService.getResponseMetadata(id);
+    private void attachResult(String id, ResponseMetadata meta, StatusResponse.StatusResponseBuilder builder) {
         if (meta == null) {
             return;
         }

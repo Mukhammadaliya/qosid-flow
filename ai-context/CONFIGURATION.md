@@ -181,6 +181,17 @@ The four **behavioral** keys below are now **DB-managed** (settings DB, like `ga
 | `gateway.proxy.prefix` | String | `/qosid/api/v1/queue` | — | URI prefix stripped when forwarding the proxied request. |
 | `gateway.proxy.context-path` | String | `/qosid` | — | Application context path (informational). |
 | `gateway.proxy.trusted-proxies` | List<String> | `127.0.0.1` | `TRUSTED_PROXIES` | Peers whose X-Forwarded-For/X-Real-IP are trusted. |
+| `gateway.proxy.max-body-size` | long (bytes) | `20971520` (20 MiB) | `PROXY_MAX_BODY_SIZE` | Max size of a **non-multipart** request body accepted by `ProxyController`. Above it: `413 Payload Too Large` (`PayloadTooLargeException`), never enqueued. `<= 0` disables the check (escape hatch). **Active now.** |
+
+### `gateway.proxy.max-body-size` — why 20 MiB, and what it does NOT cover
+
+Before this limit, `ProxyController` read the raw body with an unbounded `request.getInputStream().readAllBytes()`: one request could pin arbitrarily many bytes on a Tomcat worker thread (`server.tomcat.threads.max` is 2000), i.e. a trivial memory-exhaustion vector on an endpoint that is unauthenticated by default (`NoOpAuthorizationProvider`).
+
+**Why 20 MiB is provably non-breaking.** The Kafka layer is already capped at `20971520` bytes on every leg (producer `max.request.size`, consumer `fetch.max.bytes` / `max.partition.fetch.bytes`). The body travels as a JSON string field of `RequestMessage`, so the serialized record is never *smaller* than the body — a body over 20 MiB already fails at the producer today (`RecordTooLargeException` → 500, after the bytes were buffered). Setting the gate to the same number therefore cannot reject a request that currently succeeds; it only moves an inevitable failure earlier, to before the buffering. Raising `PROXY_MAX_BODY_SIZE` above 20 MiB accomplishes nothing unless the Kafka `max.request.size` / `fetch.max.bytes` values are raised in lockstep.
+
+**Two checks, not one.** `Content-Length` is client-supplied, so an honest oversize declaration is refused up front, and a streaming byte counter aborts an understated or absent (chunked) length as soon as the cap is crossed.
+
+**Deliberately out of scope — the `BiruniUpload` multipart branch.** Real S3 uploads go through `ServletFileUploadEntity` → `request.getParts()`, which is bounded by `spring.servlet.multipart.max-file-size` (50MB) / `max-request-size` (52MB). Those limits are untouched, so production uploads see no behaviour change. (Pre-existing, unrelated tension left as-is: on **S3 failure** the fallback path puts file bytes into `RequestMessage.fileParts`, so a >20 MiB multipart fallback still fails at the Kafka producer — that is the same ceiling as before this change.)
 
 ## gateway.response.* — Response Inlining
 
@@ -309,6 +320,40 @@ Default credentials on first boot (empty `admin_account` table): username `admin
 |----------|------|---------|---------|-------------|
 | `gateway.security.content-types` | List\<String\> | JSON/text/image/audio/video MIME list (see `application.yml`) | — | Whitelist enforced by `ContentTypeValidator`. Requests / uploads with other types are rejected with 400. |
 | `gateway.security.callback-allowed-hosts` | List<String> | `[]` (empty) | `CALLBACK_ALLOWED_HOSTS` | X-Callback-Url host allowlist; empty = any public host. Private/loopback always blocked. |
+| `gateway.security.cookie-secure` | boolean | `false` | `COOKIE_SECURE` | Adds `Secure` to the gateway's `XSRF-TOKEN` cookie (`AdminSecurityConfig`). **DEFERRED UNTIL TLS** — see the section below. |
+
+## Session & CSRF Cookie Hardening
+
+Four cookies across the two JVMs. All are same-origin (nginx serves `frontend/dist` and proxies `/qosid/` → :8090, `/ops/api/` → :8092).
+
+| Cookie | JVM | HttpOnly | SameSite | Secure |
+|--------|-----|----------|----------|--------|
+| `JSESSIONID` | gateway | ✅ `true` | `Lax` | `COOKIE_SECURE` (default off) |
+| `XSRF-TOKEN` | gateway | ❌ **false, on purpose** | `Lax` | `COOKIE_SECURE` (default off) |
+| `OPS_SESSION` | ops | ✅ `true` | `Lax` | `COOKIE_SECURE` (default off) |
+| `OPS-XSRF-TOKEN` | ops | ❌ **false, on purpose** | `Lax` | `COOKIE_SECURE` (default off) |
+
+| Property | Type | Default | Env Var | Description |
+|----------|------|---------|---------|-------------|
+| `server.servlet.session.cookie.http-only` | boolean | `true` | — | Gateway `JSESSIONID`. Also Tomcat's own default; set explicitly so it is auditable here and immune to a container default change. |
+| `server.servlet.session.cookie.same-site` | String | `lax` | — | Gateway `JSESSIONID`. |
+| `server.servlet.session.cookie.secure` | boolean | `false` | `COOKIE_SECURE` | Gateway `JSESSIONID`. **DEFERRED UNTIL TLS.** |
+| `gateway.security.cookie-secure` | boolean | `false` | `COOKIE_SECURE` | Gateway `XSRF-TOKEN`. **DEFERRED UNTIL TLS.** |
+| `ops.security.cookie-secure` | boolean | `false` | `COOKIE_SECURE` | Ops `OPS-XSRF-TOKEN`. **DEFERRED UNTIL TLS.** |
+
+(The ops session cookie's `http-only` / `same-site` / `secure` live under the same `server.servlet.session.cookie.*` keys in `ops/src/main/resources/application.yml`.)
+
+**Why the two XSRF cookies must stay JS-readable.** The SPA reads them with `getCookie('XSRF-TOKEN')` (`frontend/src/api/client.ts`) and `getCookie('OPS-XSRF-TOKEN')` (`frontend/src/api/ops.ts`) and echoes the raw value in the `X-XSRF-TOKEN` / `X-OPS-XSRF-TOKEN` header — this is the documented Spring Security SPA pattern that `SpaCsrfTokenRequestHandler` exists to support. Setting `HttpOnly` on either would make every state-changing admin/ops call answer `403`. Both repositories are therefore built with `CookieCsrfTokenRepository.withHttpOnlyFalse()` and that must not change. `HttpOnly` on the two *session* cookies is unconditional and costs nothing: no JS reads them.
+
+**Why `SameSite=Lax` and not `Strict`.** Same-origin XHR sends cookies under any `SameSite` value, so the SPA is unaffected either way; `Lax` additionally survives a top-level navigation into the console from an external link (a bookmark, a Telegram alert link), which `Strict` would break. `Lax` already stops the cookie riding along on a cross-site POST, which is the CSRF case that matters.
+
+**`Secure` — DEFERRED, action required once TLS lands.** Production currently has **no TLS and no nginx**: the console is reached over plain HTTP through an SSH tunnel. A browser silently discards a `Secure` cookie on a plain-HTTP response, so hard-coding it would break login immediately with no useful error. The default is therefore `false`, and one env var covers all four cookies on both JVMs:
+
+```bash
+COOKIE_SECURE=true    # set this the same day nginx/TLS fronts the console
+```
+
+`false` does **not** disable HTTPS auto-detection: Tomcat ORs `server.servlet.session.cookie.secure` with `request.isSecure()`, and the CSRF repositories only call `setSecure(true)` when the flag is on (leaving Spring's `request.isSecure()` fallback in place otherwise). So a genuinely HTTPS request still gets `Secure` today; the flag exists for the TLS-terminating-proxy case where the app-side request is plain HTTP. `AdminCookieSecureFlagTest` proves flipping it works, so it does not have to be discovered in production.
 
 ## Server & Management
 
@@ -322,8 +367,18 @@ Default credentials on first boot (empty `admin_account` table): username `admin
 | `server.tomcat.max-connections` | int | `10000` | `TOMCAT_MAX_CONNECTIONS` | Max concurrent connections. |
 | `server.tomcat.connection-timeout` | Duration | `20s` | `TOMCAT_CONNECTION_TIMEOUT` | Idle connection timeout. |
 | `server.tomcat.threads.max` | int | `2000` | `TOMCAT_MAX_THREADS` | Max worker threads. |
-| `spring.servlet.multipart.max-file-size` | String | `50MB` | — | Max individual file upload size. |
-| `spring.servlet.multipart.max-request-size` | String | `52MB` | — | Max total multipart request size. |
+| `spring.servlet.multipart.max-file-size` | String | `50MB` | — | Max individual file upload size (`BiruniUpload` branch only). |
+| `spring.servlet.multipart.max-request-size` | String | `52MB` | — | Max total multipart request size (`BiruniUpload` branch only). |
+| `server.tomcat.max-http-form-post-size` | String | `2MB` | — | Max `application/x-www-form-urlencoded` body Tomcat will parse. Unrelated to `gateway.proxy.max-body-size`, which bounds the raw body `ProxyController` reads. |
+| `management.endpoints.web.exposure.include` | List | `health,info,prometheus` | — | Exposed actuator endpoints on the management port (8091). **`shutdown` is deliberately absent in every profile** — the management port has no authentication, so exposing it would be an unauthenticated remote kill switch. The `dev`-profile document that used to add it was removed; `ActuatorShutdownDisabledTest` fails the build if it comes back. See the note below. |
+
+### Removed: `dev`-profile actuator `shutdown` endpoint
+
+`application.yml` used to carry an `on-profile: dev` document that set `management.endpoints.web.exposure.include: health,info,prometheus,shutdown` plus `management.endpoint.shutdown.enabled: true`, so a local Windows helper (`ops-local-stop.cmd`) could stop the JVM gracefully — Windows cannot send SIGTERM to a console-less JVM.
+
+Removed because: (1) the management port (8091) is unauthenticated, so `POST /actuator/shutdown` is an unauthenticated remote kill switch, and one mis-set `SPRING_PROFILES_ACTIVE=dev` on prod turns a single request into an outage; (2) **nothing depends on it** — `ops-local-stop.cmd` is not in the repository, the ops sidecar stops the gateway with `OPS_GATEWAY_STOP_COMMAND=systemctl stop gateway-service`, and no test or script calls `/actuator/shutdown` (verified by grep across `*.java`, `*.ts`, `*.cmd`, `*.sh`, `*.yml`, `*.md`); (3) prod already stops cleanly via `systemctl stop` → SIGTERM → `server.shutdown: graceful`.
+
+To stop a local dev run: Ctrl+C in the console, or point the ops sidecar's `stop-command` at a script that kills the JVM by port. `TestController`'s `@Profile("dev")` is annotation-driven and never depended on this yaml document, so `-Dspring-boot.run.profiles=dev` still enables the dev test endpoints.
 
 ## ops.* — Ops Console Sidecar (`qosid-ops`, separate JVM)
 
@@ -337,6 +392,8 @@ Config for the `ops/` module (`ops/src/main/resources/application.yml`) — **no
 | `ops.gateway.stop-command` | String | `` (blank) | `OPS_GATEWAY_STOP_COMMAND` | Command run to stop the gateway (e.g. `systemctl stop gateway-service`). Same exits-only constraint as `start-command`. |
 | `ops.admin.force-password-change` | boolean | `true` | — | The ops-side twin of `gateway.admin.force-password-change`. Ops authenticates against the same shared H2 account, so without this the whole attack stays open (log in on :8092, stop the gateway, rewrite `gateway.api.base-url`, start it). Allowlist: `login`, `logout`, `me`, `change-password`, `status` — `status` is allowlisted because the SPA polls it constantly and it is read-only. Blocked: `start`, `stop`, `settings`, `settings/{key}`, `settings/audit`, `logs/stream`, `handoff`. Ops has its own `POST /ops/api/change-password` because settings are edited while the gateway is **stopped** — without it a fresh install could not leave the default password anywhere. Unlike the gateway the result is **not** cached: the ops JVM outlives gateway restarts, so a gateway `ADMIN_RESET` could re-seed the default under a latched ops process and hold the gate open. Test-classpath override only; **never `false` in production**. |
 | `ops.log-file` | String | `./logs/gateway.log` | `OPS_LOG_FILE` | Gateway log file tailed by `LogTailService` / streamed over SSE. Absent/unreadable file degrades to an empty stream, never an error. |
+| `ops.security.cookie-secure` | boolean | `false` | `COOKIE_SECURE` | Adds `Secure` to the `OPS-XSRF-TOKEN` cookie. Ops twin of `gateway.security.cookie-secure` — same env var, so one switch hardens all four cookies on both JVMs. **DEFERRED UNTIL TLS** (prod reaches :8092 over plain HTTP through an SSH tunnel). See "Session & CSRF Cookie Hardening". |
+| `server.servlet.session.cookie.{http-only,same-site,secure}` (ops) | boolean/String/boolean | `true` / `lax` / `false` (`COOKIE_SECURE`) | — / — / `COOKIE_SECURE` | `OPS_SESSION` hardening, same rationale as the gateway's `JSESSIONID`. `secure` is **DEFERRED UNTIL TLS**. |
 | `ops.settings-db-path` | String | `./data/settings` | `OPS_SETTINGS_DB_PATH` | H2 path of the **gateway's** settings DB — must equal the gateway's `gateway.settings.db-path` so ops auth verifies against the same `admin_account`. `OpsDbConfig` opens it as `jdbc:h2:<path>;MODE=LEGACY;AUTO_SERVER=TRUE` (`AUTO_SERVER` omitted for `mem:`). |
 | `ops.settings-encryption-key` | String | `` (blank) | `SETTINGS_ENCRYPTION_KEY` | AES-GCM master key for the stop-to-edit settings API's secret writes (`PUT /ops/api/settings/{key}` on a secret key). **Must equal the gateway's `SETTINGS_ENCRYPTION_KEY`** — same DB, same cipher format (`SettingsCipherContractTest` freezes it). Blank → secret PUTs answer `400 {"error":"encryption-unavailable"}`; non-secret settings still editable. |
 | `server.servlet.session.cookie.name` | String | `OPS_SESSION` | — | Ops session cookie name, set in `ops/src/main/resources/application.yml`. Renamed off Spring's `JSESSIONID` default so the ops session never collides with the gateway admin chain's own `JSESSIONID` once both sit behind one nginx origin — not overridable via env var, change it in the ops `application.yml` directly. |
@@ -344,7 +401,7 @@ Config for the `ops/` module (`ops/src/main/resources/application.yml`) — **no
 
 **AUTO_SERVER note:** both sides open the settings DB with `;AUTO_SERVER=TRUE` — gateway (`SettingsDbConfig` **and** `SettingsEnvironmentPostProcessor`, which opens the DB early at boot) and ops (`OpsDbConfig`). H2 mixed mode lets two JVMs share one DB file: the first opener becomes the server, the other connects over TCP automatically. If either side lacked the flag, the second JVM would fail to open the locked file (the gateway's PostProcessor would then silently fall back to yaml defaults). The gateway side is a HikariCP pool (`minimumIdle=1`, `maxLifetime=0`) so at least one physical connection stays open for the process lifetime — this pins the H2 server role to the gateway JVM and eliminates the server-role handoff races that made the SPA's parallel login POSTs transiently fail (gateway 500 / ops spurious 401). Ops keeps short-lived connections (it must not own the DB while the gateway restarts) and instead retries a failed auth read once (`AdminAuthDao`). All three call sites build the URL through `SettingsDbUrl.autoServerSuffix(path)` (settings-core), which also sets `h2.bindAddress=127.0.0.1`: the H2 server-role JVM writes its own address into `.lock.db` for the peer to dial, and on a **multi-NIC host** it otherwise picks a LAN IP (e.g. `192.168.x.x`) the loopback-only peer can't reach — the sidecar then times out (~12s) on every DB read and ops login silently fails (auth lookup returns empty → 401, and the slow reads blow past the rate-limiter's 60s window so lockout never triggers). Binding loopback fixes it and keeps the settings DB off external interfaces. An operator-set `h2.bindAddress` is never overridden.
 
-**Deploy note:** the systemd unit runs as user `qosid`, which needs permission to run `systemctl start/stop gateway-service` — add a polkit rule or a sudoers `NOPASSWD` entry scoped to **exactly those two commands**. If using the sudoers route, the configured commands must be prefixed with `sudo` (e.g. `OPS_GATEWAY_START_COMMAND=sudo /usr/bin/systemctl start gateway-service`), since the unit invokes `systemctl` directly. The unit expects the JAR at `/opt/services/qosid-flow/ops/target/qosid-ops.jar` (the ops pom sets `finalName=qosid-ops`). Since the Maven reactor (D), a root `mvn clean package` builds all three modules — settings-core, app (`app/target/qosid-flow-2.0.0.jar`), and ops — and CI attaches both the app and ops JARs to the GitHub Release. On first deploy the gateway must boot once before ops login works (the gateway creates the `admin_account` table).
+**Deploy note:** the systemd unit runs as user `qosid`, which needs permission to run `systemctl start/stop gateway-service` — add a polkit rule or a sudoers `NOPASSWD` entry scoped to **exactly those two commands**. If using the sudoers route, the configured commands must be prefixed with `sudo` (e.g. `OPS_GATEWAY_START_COMMAND=sudo /usr/bin/systemctl start gateway-service`), since the unit invokes `systemctl` directly. The unit expects the JAR at `/opt/services/qosid-flow/ops/target/qosid-ops.jar` (the ops pom sets `finalName=qosid-ops`). Since the Maven reactor (D), a root `mvn clean package` builds all three modules — settings-core, app (`app/target/qosid-flow-2.1.0.jar`), and ops — and CI attaches both the app and ops JARs to the GitHub Release. On first deploy the gateway must boot once before ops login works (the gateway creates the `admin_account` table).
 
 **Nginx deploy note (C-faza, v1.13.0):** ops is API-only and has no page of its own to serve — in production a single nginx origin serves the SPA statically from `frontend/dist` and reverse-proxies `/qosid/` → gateway (:8090) and `/ops/api/` → this module (:8092), with buffering/caching disabled and a long read timeout on the `/ops/api/` location so the SSE log stream (`/ops/api/logs/stream`) isn't buffered or cut off. Reference config: `deploy/nginx-qosid.conf`. Apply the same SSE-safe proxy settings to any other reverse proxy fronting ops.
 
@@ -358,8 +415,8 @@ Config for the `ops/` module (`ops/src/main/resources/application.yml`) — **no
 Recommended before exposing `/ops/api` through nginx: change the default admin password first, and put an nginx rate-limit and/or IP-allowlist on `/ops/api/login`. Since v1.14.0 the ops JVM also enforces the same application-level login rate-limit as the gateway (`LoginRateLimiter`: 5 failures / 60s per username, existing accounts only → `429 {"error":"rate-limited"}`), so the nginx layer is defense-in-depth, not the only guard.
 
 **v1.13.0 → v1.14.0 cutover checklist (Maven reactor + stop-to-edit):**
-1. `git pull` + root build (`mvn clean package -DskipTests`) — the reactor now builds `settings-core/target/qosid-settings-core-*.jar`, `app/target/qosid-flow-2.0.0.jar`, and `ops/target/qosid-ops.jar` in one pass.
-2. **`gateway-service` unit:** update `ExecStart` — the app JAR moved from `target/qosid-flow-2.0.0.jar` to `app/target/qosid-flow-2.0.0.jar`.
+1. `git pull` + root build (`mvn clean package -DskipTests`) — the reactor now builds `settings-core/target/qosid-settings-core-*.jar`, `app/target/qosid-flow-2.1.0.jar`, and `ops/target/qosid-ops.jar` in one pass.
+2. **`gateway-service` unit:** update `ExecStart` — the app JAR moved from `target/qosid-flow-2.1.0.jar` to `app/target/qosid-flow-2.1.0.jar`.
 3. **`qosid-ops` unit:** update `ExecStart` to `ops/target/qosid-ops.jar` (see `ops/qosid-ops.service`) and add `SETTINGS_ENCRYPTION_KEY` (same value as the gateway unit's) to the ops environment — without it secret settings can't be edited via stop-to-edit.
 4. `systemctl daemon-reload`, then restart both units; redeploy `frontend/dist` (nginx layout unchanged from v1.13).
 5. Behavior change to communicate: settings are now edited ONLY while the gateway is stopped (Ops page → stop → edit → start); all gateway-side settings PUTs answer `409 stop-required`; after an ops-driven start the SPA re-authenticates automatically (login-token handoff).
@@ -386,3 +443,19 @@ Optional but recommended in production:
 |---------|---------|
 | `CALLBACK_ALLOWED_HOSTS` | Restrict X-Callback-Url to an explicit host allowlist; empty = any public host accepted (SSRF guard still blocks private/loopback/CGNAT ranges regardless). |
 | `TRUSTED_PROXIES` | Peers whose X-Forwarded-For/X-Real-IP are trusted for client-IP extraction. Defaults to `127.0.0.1` — **must be set to the real nginx peer address in prod**, otherwise the trusted-proxy check silently never matches the actual reverse-proxy hop and forwarded-for headers are ignored. |
+| `PROXY_MAX_BODY_SIZE` | Raw (non-multipart) request-body ceiling in bytes. Default `20971520` (20 MiB) already matches the Kafka message ceiling; only raise it together with the Kafka `max.request.size` / `fetch.max.bytes` values. |
+
+## Deferred Activation — Switches That Wait on Infrastructure
+
+Two hardening measures are shipped **off** because turning them on today would break production. Both are one-line changes once the prerequisite exists.
+
+| Switch | Default | Blocked by | Turn on when | Verified by |
+|--------|---------|-----------|--------------|-------------|
+| `COOKIE_SECURE` (`server.servlet.session.cookie.secure` + `gateway.security.cookie-secure` + `ops.security.cookie-secure`) | `false` | Prod has **no TLS and no nginx** — the console is reached over plain HTTP through an SSH tunnel, and a browser silently discards a `Secure` cookie on a plain-HTTP response → login breaks with no useful error. | nginx/TLS fronts the console. Set `COOKIE_SECURE=true` in **both** systemd units (`gateway-service` and `qosid-ops`) — the cookies are per-JVM. | `AdminCookieSecureFlagTest` (proves `true` adds `Secure` to both gateway cookies) |
+| `PROXY_MAX_BODY_SIZE` above 20 MiB | `20971520` | The Kafka legs are capped at the same 20 MiB (`max.request.size`, `fetch.max.bytes`, `max.partition.fetch.bytes`), so a larger gate would let a body through that the producer then rejects. | Larger bodies are genuinely needed **and** the three Kafka limits are raised in lockstep (mind Redpanda disk headroom — the 2026-05-18 outage was a full 57 GB volume). | `ProxyControllerBodyLimitTest.defaultLimitMatchesTheKafkaMessageCeiling` |
+
+## Local/Prod Infrastructure Ports (`docker-compose.yml`)
+
+Every published port is bound to `127.0.0.1`. This matters more than it looks: a bare `"6379:6379"` binds `0.0.0.0` **and bypasses the host firewall** — Docker writes its own `DOCKER-USER`/nat rules, so a `ufw deny` on the port does not apply. On the prod host that left unauthenticated Redis (6379), Redpanda (19092 + admin 19644 + pandaproxy 18082 + schema-registry 18081), Grafana (3000, `admin`/`admin123`), redis-commander (8085), redpanda-console (8082), alertmanager (9093) and redis-exporter (9121) reachable from the network. Prometheus (9090) and Loki (3100) were already loopback-bound.
+
+Container-to-container traffic is unaffected — services reach each other by compose DNS name on the internal network (`redpanda:9092`, `redis:6379`), which never goes through a published port. The gateway/ops JVMs run on the host and connect over loopback (`KAFKA_BOOTSTRAP_SERVERS=localhost:19092`, `REDIS_HOST=localhost`), so they are unaffected too. For remote access to a UI, use an SSH tunnel or an authenticated nginx reverse-proxy.

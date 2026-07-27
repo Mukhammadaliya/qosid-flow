@@ -186,11 +186,10 @@ graceful back-pressure paths into a thrown `IllegalStateException`, which escape
 an error handler that only logs — so the message is lost on exactly the paths that exist to prevent
 loss. It makes the problem worse, not better.
 
-**Order of work if you want to fix out-of-order commits:** first replace both `nack` sites with a
-bounded re-queue (the `incrementCbRequeue` pattern from rule 23 is the model — note a Redis outage
-must not degrade into "DLQ everything", which is why `nack` is still the better answer for the
-rule-25 path today), and only then enable `asyncAcks`. `KafkaAsyncAcksTest` guards the current
-state and explains why. Read with rule 4: `MANUAL` never changes either way.
+**The defect it was meant to fix is now fixed without it** — see rule 39. `asyncAcks` stays off
+permanently, and `KafkaAsyncAcksTest` guards that. (Re-verified against `spring-kafka-3.2.10` after
+the Spring Boot 3.3.13 bump: the assertion is still there.) Read with rule 4: `MANUAL` never
+changes either way.
 
 ### 33. Never ack a request message on Redis lock contention
 
@@ -245,6 +244,98 @@ rewrite `gateway.api.base-url`, start it). Because settings are edited while the
 **stopped**, the ops side must also keep its own `change-password` route reachable — otherwise
 an operator on a fresh install can neither edit settings nor fix the password anywhere.
 
+### 36. Never make the XSRF cookies `HttpOnly`, and never hard-code `Secure` on the console cookies
+
+Both CSRF repositories are built with `CookieCsrfTokenRepository.withHttpOnlyFalse()` on purpose.
+The SPA reads `XSRF-TOKEN` (`frontend/src/api/client.ts`) and `OPS-XSRF-TOKEN`
+(`frontend/src/api/ops.ts`) from `document.cookie` and echoes the raw value in
+`X-XSRF-TOKEN` / `X-OPS-XSRF-TOKEN` — the pattern `SpaCsrfTokenRequestHandler` exists to
+support. "Hardening" either cookie to `HttpOnly` makes the SPA unable to read it, so every
+state-changing admin/ops call answers `403`. `HttpOnly` on the two **session** cookies
+(`JSESSIONID`, `OPS_SESSION`) is unconditional and correct — no JS reads those.
+
+`Secure` is the mirror-image trap. Production currently has **no TLS and no nginx**: the
+console is reached over plain HTTP through an SSH tunnel, and a browser silently *discards* a
+`Secure` cookie on a plain-HTTP response — no error, login just never sticks. It therefore
+stays behind `COOKIE_SECURE` (default `false`, wired to `server.servlet.session.cookie.secure`
+in both modules plus `gateway.security.cookie-secure` / `ops.security.cookie-secure`). Do not
+"fix" the default to `true`; flip the env var in **both** systemd units the day TLS lands.
+Note that `false` does not disable HTTPS detection: Tomcat ORs it with `request.isSecure()`,
+and the CSRF repositories only call `setSecure(true)` when the flag is on — so never replace
+that conditional with an unconditional `setSecure(cookieSecure)`, which would strip `Secure`
+from genuine HTTPS responses. `SameSite=Lax` (not `Strict`) is also deliberate: same-origin
+XHR is unaffected by either, but `Strict` drops the cookie on a top-level navigation into the
+console. Guards: `AdminCookieHardeningTest`, `AdminCookieSecureFlagTest`, `OpsCookieHardeningTest`.
+
+### 37. Never expose the actuator `shutdown` endpoint, in any profile
+
+The management port (8091) has no authentication, so `POST /actuator/shutdown` is an
+unauthenticated remote kill switch — and a single mis-set `SPRING_PROFILES_ACTIVE=dev` would
+carry a "dev-only" exposure straight into production. The `on-profile: dev` document in
+`application.yml` that used to add it (`include: …,shutdown` + `endpoint.shutdown.enabled: true`)
+was removed; nothing depended on it (the `ops-local-stop.cmd` its comment named is not in the
+repo, the ops sidecar stops the gateway with `systemctl stop gateway-service`, and no test or
+script calls the endpoint). Prod already stops cleanly via SIGTERM + `server.shutdown: graceful`;
+local dev stops with Ctrl+C. `ActuatorShutdownDisabledTest` reads the shipped yaml and fails the
+build if `shutdown` reappears in any profile document — do not weaken it to a
+context-boot test, which cannot see a profile document that is not active.
+
+### 38. Never lower `gateway.proxy.max-body-size` below what the pipeline already carries, and never extend it to the multipart branch
+
+`ProxyController.readBodyBounded` bounds only the **non-multipart** body (previously an
+unbounded `readAllBytes()` — a memory-exhaustion vector on an endpoint that is unauthenticated
+by default). Two properties of the default are load-bearing:
+
+- **20 MiB is not arbitrary** — it is the Kafka message ceiling already configured on every leg
+  (`max.request.size`, `fetch.max.bytes`, `max.partition.fetch.bytes` = `20971520`). The body
+  rides as a JSON string field of `RequestMessage`, so the record is never smaller than the
+  body: anything larger already fails at the producer today. Matching the numbers is what makes
+  the gate provably unable to reject a request that currently succeeds. Lowering it (e.g. to a
+  "sensible" 1 MB) starts 413-ing live traffic; raising it without raising the three Kafka
+  limits in lockstep just moves the failure back to the producer.
+- **The `BiruniUpload` multipart branch must stay excluded** — real S3 uploads are bounded by
+  `spring.servlet.multipart.max-file-size` (50MB) / `max-request-size` (52MB). Applying the
+  20 MiB proxy limit there would break production file uploads.
+
+Keep both checks in `readBodyBounded`: `Content-Length` alone is client-supplied (an
+understated value would walk straight through) and a chunked request carries no length at all,
+so the streaming counter is what actually enforces the cap. Guard:
+`ProxyControllerBodyLimitTest`.
+
+### 39. Never acknowledge a request record outside `OrderedAckTracker`
+
+Both request consumers hand the record to an executor and acknowledge from the completion
+callback, so acks arrive in **completion** order. `AckMode.MANUAL` commits the **highest**
+acknowledged offset per partition, so acking offset 105 while 100–104 are still running commits
+past them — and a crash or rebalance in that window loses those records with no redelivery, no
+DLQ, no metric. This is the defect rule 32 describes; `OrderedAckTracker` is what closes it,
+because Spring's own remedy (`asyncAcks`) is unusable while the consumers `nack`.
+
+The tracker hands an `Acknowledgment` to Spring only when **no earlier registered record on that
+partition is still in flight**. Consequences to preserve:
+
+- **`register(...)` happens on the listener thread, before the hand-off** — that is the only place
+  where offset order is still guaranteed. Registering inside the async task would race.
+- **Every completion path calls `complete(...)`** — success, failure, expiry, `exceptionally`,
+  pool rejection, submit failure. A path that returns without completing stops commits on that
+  partition (processing continues; a restart then redelivers from the stuck offset, which the
+  idempotency gate absorbs — at-least-once, the safe direction).
+- **The duplicate-skip path must go through `acknowledgeInOrder(...)`, not `ack.acknowledge()`.**
+  "Nothing ran, so acking is free" is exactly the reintroduction to watch for: it is free of
+  *work*, not free of *ordering*.
+- **The two `nack` sites keep calling `ack.nack(...)` directly and are never registered.** `nack`
+  must run on the listener thread (Spring requirement) and its record is not in flight. Records
+  below a nacked offset that are still in flight are simply committed later, out of the
+  container's current position — Kafka allows that, and the worst case is redelivery.
+- **Each consumer owns its own tracker instance** (rule 5) — a partition stuck on one flow must
+  not hold back the other flow's commits.
+- **`onPartitionsRevoked` must keep calling `revoke(...)`** — a revoked partition's offsets belong
+  to another consumer, and stale entries would leak.
+
+Guards: `OrderedAckTrackerTest` (invariant, including a concurrency stress case),
+`OrderedAckConsumerTest` (both consumers, plus revocation). Response consumers are unaffected:
+they ack synchronously on the listener thread, already in order.
+
 ---
 
 ## Protected Zones
@@ -253,7 +344,8 @@ These files contain production-critical logic. Before modifying any of them, run
 
 | File | Critical Logic | Risk if Broken |
 |------|---------------|----------------|
-| `OracleRequestConsumer.java`, `ApiRequestConsumer.java` | Idempotency check + distributed lock + manual ack + async HTTP delegation | Duplicate processing, message loss, thread pool exhaustion |
+| `OracleRequestConsumer.java`, `ApiRequestConsumer.java` | Idempotency check + distributed lock + manual ack routed through `OrderedAckTracker` (rule 39) + async HTTP delegation | Duplicate processing, message loss, thread pool exhaustion |
+| `kafka/ack/OrderedAckTracker.java` | Contiguous-prefix acknowledgement — the only thing keeping committed offsets behind in-flight work while `asyncAcks` stays off (rules 32, 39) | Silent message loss on crash/rebalance: offsets committed past records that never finished |
 | `OracleResponseConsumer.java` | Retry logic + Oracle save + manual ack + RocksDB | Response data loss, Oracle inconsistency |
 | `ApiResponseConsumer.java` | RocksDB + callback trigger + manual ack | Response data loss, lost callbacks |
 | `HttpRequestService.java` | Circuit Breaker + OAuth2 token injection + per-endpoint timeouts + callbackUrl/source propagation + defensive `decompressIfNeeded` + upstream error body capture | Cascading failures, auth failures, timeout mismatches, lost callbacks, garbled `/result` bodies, dropped 5xx error payloads |
@@ -263,12 +355,13 @@ These files contain production-critical logic. Before modifying any of them, run
 | `CallbackSender.java` | `@Retryable` (3 attempts, 1s backoff) + `@Recover` swallow | Lost callbacks, consumer stalls on bad URL |
 | `RocksDBConfig.java` | Singleton DB instance + `@PreDestroy` close | On-disk corruption across restarts |
 | `ResponseStorageService.java` | Scheduled retention cleanup + body/metadata dual-write | Disk exhaustion, orphaned metadata |
-| `ProxyController.java` | Auth gate + URL prefix strip (`/qosid/api/v1/queue`) + BiruniUpload parsing + S3 retry/fallback + hop-by-hop + Accept-Encoding filter + `files` header + `source="API"` tagging | Bypass of auth, cross-source mix-up, unvalidated uploads, S3 fallback failure, Cloudflare gzip decode artifacts |
+| `ProxyController.java` | Auth gate + URL prefix strip (`/qosid/api/v1/queue`) + BiruniUpload parsing + S3 retry/fallback + hop-by-hop + Accept-Encoding filter + `files` header + `source="API"` tagging + bounded raw-body read (`readBodyBounded`) | Bypass of auth, cross-source mix-up, unvalidated uploads, S3 fallback failure, Cloudflare gzip decode artifacts, unbounded body buffering (see rule 38) |
 | `FileService.java` | S3 upload with 3x retry + content-type validation + fallback flag | Unvalidated uploads, missing retry on S3 failure |
 | `ContentTypeValidator.java` | MIME whitelist enforcement | Open file store, security exposure |
 | `HttpClientConfig.java` | Netty `HttpClient` setup — pool, timeouts, **no `.compress(true)`** (see Rule 17) | Re-enabling Netty compression reintroduces Cloudflare gzip decode artifacts |
 | `GlobalExceptionHandler.java` | `@RestControllerAdvice` mapping of auth / validation / upload / not-found / generic exceptions to uniform `ErrorResponse` | Unmapped routes leak 500, validation errors become opaque stack traces to clients |
-| `AdminSecurityConfig.java` | Two isolated `SecurityFilterChain` beans (admin session-gated, pipeline permitAll) with explicit `@Order` + `securityMatcher` | Merging chains or dropping `securityMatcher` locks the pipeline/actuator behind admin auth (see Rule 29) |
+| `AdminSecurityConfig.java` | Two isolated `SecurityFilterChain` beans (admin session-gated, pipeline permitAll) with explicit `@Order` + `securityMatcher`; CSRF cookie built `withHttpOnlyFalse()` + `SameSite=Lax` + conditional `setSecure` | Merging chains or dropping `securityMatcher` locks the pipeline/actuator behind admin auth (see Rule 29); HttpOnly-ing the XSRF cookie or hard-coding `Secure` breaks the SPA / login (see Rule 36) |
+| `OpsSecurityConfig.java` | Renamed ops cookies (`OPS_SESSION` / `OPS-XSRF-TOKEN`) + same `withHttpOnlyFalse()` / `SameSite=Lax` / conditional `setSecure` contract + ops default-password gate | Cookie-name collision with the gateway on one origin corrupts both sessions; HttpOnly/`Secure` mistakes break ops login (see Rules 35, 36) |
 | `TenantMappingService.java` | Biruni-boundary `toInternal`/`toExternal` field-name translation (dynamic, per-call from `SettingsService`) | Bypassing it at ingress leaves `tenantId` null (all requests → DLQ); bypassing at egress or hardcoding the field name breaks any deployment with reconfigured field names (see Rule 30) |
 | `SourceTokenService.java` | Isolated `source:oauth2:token` cache key + TTL capped at token's `expires_in` | Sharing the per-request `oauth2:token:*` namespace lets a provider eviction stall all Biruni pulls, or serves an expired token on the source channel (see Rule 31) |
 | `DynamicConcurrencyManager.java` | Lag-driven `setConcurrency`; container stop/start on scale-up is OFF by default (`gateway.concurrency.allow-restart-on-scale-up`) | A restart triggers a consumer-group rebalance and every in-flight ack landing after `stop()` is a no-op — those offsets stay uncommitted and get redelivered, i.e. message loss exactly when load is highest |
@@ -298,6 +391,6 @@ These files can be modified without the above checklist:
 | `application.yml` | Adding new config properties is safe (existing ones have defaults) |
 | New `*Properties.java` classes | Adding config classes doesn't affect existing logic |
 | `ai-context/` and other docs | Documentation files |
-| `docker-compose.yml` | Local dev infrastructure only |
+| `docker-compose.yml` | Infrastructure only — no gateway runtime logic. **Not "local dev only":** production runs this same file for Redpanda/Redis/Prometheus/Grafana/Loki (only the JVMs are outside Docker), so every published port is bound to `127.0.0.1`. A bare `"6379:6379"` binds `0.0.0.0` **and bypasses the host firewall** (Docker writes its own nat/`DOCKER-USER` rules, so `ufw deny` does not apply) — that is how unauthenticated Redis/Redpanda/Grafana ended up network-reachable. Keep the `127.0.0.1:` prefix on every port; container-to-container traffic uses compose DNS names on the internal network and is unaffected. |
 | `logback-spring.xml` | Logging config changes |
 | `pom.xml` | Adding dependencies (but verify compatibility) |

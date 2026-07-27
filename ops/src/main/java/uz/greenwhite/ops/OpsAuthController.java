@@ -58,7 +58,19 @@ public class OpsAuthController {
         if (existing != null) existing.invalidate();
         request.getSession(true);
         contextRepository.saveContext(ctx, request, response); // persist to session
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(sessionBody());
+    }
+
+    /**
+     * Body shared by {@code /login} and {@code /me}. {@code passwordChangeRequired} is the UI hint
+     * for {@link OpsDefaultPasswordGateFilter}: in the normal stop-to-edit state the gateway is
+     * down, so its {@code /login}//{@code /me} — which carry the same hint — never answer, and the
+     * console would otherwise have no way to know it must show the change-password form. String
+     * value to match the gateway's contract byte for byte. Enforcement is the filter's; this is
+     * only a hint.
+     */
+    private Map<String, String> sessionBody() {
+        return Map.of("passwordChangeRequired", String.valueOf(authDao.isDefaultPassword()));
     }
 
     @PostMapping("/logout")
@@ -121,6 +133,10 @@ public class OpsAuthController {
     @GetMapping("/me")
     public ResponseEntity<Map<String, Object>> me() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
-        return ResponseEntity.ok(Map.of("user", auth != null ? auth.getName() : ""));
+        return ResponseEntity.ok(Map.of(
+                "user", auth != null ? auth.getName() : "",
+                // Same hint as /login, so a page reload (session but no login response) still
+                // routes the operator to the change-password form.
+                "passwordChangeRequired", String.valueOf(authDao.isDefaultPassword())));
     }
 }

@@ -42,7 +42,7 @@ ResponseConsumer
      |
      v
 Client javobni oladi:
-     GET /qosid/api/v1/requests/{id}/status  → inline result yoki resultUrl
+     GET /qosid/api/v1/requests/{id}/status  → httpStatus + inline result yoki resultUrl
      GET /qosid/api/v1/requests/{id}/result  → to'liq response body (RocksDB dan)
 ```
 
@@ -95,7 +95,7 @@ pre-upgrade Redis rows do not start 404-ing. See SAFETY-RULES rule 34.
 The pipeline has **two entry points** that both feed `gateway.request.new`:
 
 - **E1 Oracle pull** — original polling loop, tags `RequestMessage.source="ORACLE"`.
-- **E0 REST proxy** — `ProxyController` at `/qosid/api/v1/queue/**`, tags `source="API"`. Runs `AuthorizationProvider.authorize(...)` first. For `BiruniUpload` requests: parses multipart, uploads files to S3 (3x retry via `FileService.tryUploadFiles()`), replaces both plain (`"\u0000<index>"`) and JSON-string-wrapped (`\"\\u0000<i>\"`) placeholders with SHAs. **S3 success:** sends JSON POST with `files` metadata header (Biruni `run()` path, `store_kind='S'`). **S3 failure:** falls back to multipart forwarding with `BiruniUpload` header (Biruni `runFileUploadParam()` path, files saved to DB). `HOP_BY_HOP_HEADERS` filter strips hop-by-hop headers **and** `accept-encoding` so upstream returns plain bodies (prevents Cloudflare HTTP/1.1 gzip decode artifacts). Enqueues via `RequestProducer.sendApiRequest()`.
+- **E0 REST proxy** — `ProxyController` at `/qosid/api/v1/queue/**`, tags `source="API"`. Runs `AuthorizationProvider.authorize(...)` first. For `BiruniUpload` requests: parses multipart, uploads files to S3 (3x retry via `FileService.tryUploadFiles()`), replaces both plain (`"\u0000<index>"`) and JSON-string-wrapped (`\"\\u0000<i>\"`) placeholders with SHAs. **S3 success:** sends JSON POST with `files` metadata header (Biruni `run()` path, `store_kind='S'`). **S3 failure:** falls back to multipart forwarding with `BiruniUpload` header (Biruni `runFileUploadParam()` path, files saved to DB). `HOP_BY_HOP_HEADERS` filter strips hop-by-hop headers **and** `accept-encoding` so upstream returns plain bodies (prevents Cloudflare HTTP/1.1 gzip decode artifacts). **Non-multipart bodies are read through a bounded `readBodyBounded(...)`** — `gateway.proxy.max-body-size` (`PROXY_MAX_BODY_SIZE`, default 20 MiB = the Kafka message ceiling), checking the client `Content-Length` up front *and* counting bytes while streaming so an understated/chunked length cannot slip past; over the cap → `PayloadTooLargeException` → HTTP 413, never enqueued. The `BiruniUpload` multipart branch is deliberately **not** covered — it keeps the larger `spring.servlet.multipart.*` limits (50MB/52MB) so real S3 uploads are unchanged. Enqueues via `RequestProducer.sendApiRequest()`.
 
 **Response routing by consumer:** `OracleResponseConsumer` saves to Biruni + RocksDB. `ApiResponseConsumer` saves to RocksDB + fires callback. No source-based `if/else` — routing is done at the topic level.
 
@@ -145,10 +145,16 @@ Oracle and API flows use **independent** consumers, topics, and thread pools:
 **Ack semantics:** `AckMode.MANUAL` for every factory (`KafkaConfig.buildFactory`); `asyncAcks`
 is deliberately **off**. `ack` is called from the reactive callback once the HTTP response lands,
 so acks arrive **out of offset order**, which `MANUAL` alone does not handle — a fast higher
-offset can mask a still-running lower one, which is then never redelivered. `asyncAcks` would fix
-that but is mutually exclusive with `nack()`, which both request consumers rely on, so it stays
-off until those paths are converted to a bounded re-queue (SAFETY-RULES rule 32 has the full
-reasoning and the order of work). Nothing is ever acked away silently: on lock
+offset can mask a still-running lower one, which is then never redelivered. `asyncAcks` is
+Spring's remedy but is mutually exclusive with `nack()`, which both request consumers rely on,
+so the ordering is enforced on our side instead: every ack in both request consumers goes through
+**`OrderedAckTracker`** (`kafka/ack/`), which registers the record on the listener thread (the
+last point where offset order still holds) and hands the `Acknowledgment` to Spring only once no
+earlier record on that partition is still in flight. A stuck record therefore stalls commits for
+its partition instead of committing past live work — at-least-once, absorbed by the idempotency
+gate on restart. `onPartitionsRevoked` drops the state for revoked partitions. Response consumers
+need none of this: they ack synchronously on the listener thread. SAFETY-RULES rules 32 and 39
+carry the full reasoning. Nothing is ever acked away silently: on lock
 contention the message is `nack(10s)`-ed back to Kafka (rule 33), on a Redis gate failure
 `nack(5s)` (rule 25), and both an expired message (`gateway.retry.max-message-age-ms`, measured
 from the `createdAt` stamped at ingress) and a message past the CB re-queue cap
@@ -226,6 +232,14 @@ attack the gate exists to stop is untouched (log in on :8092, stop the gateway, 
 `gateway.api.base-url`, start it again). Because settings are edited while the gateway is
 **stopped**, ops also exposes its own `change-password`; otherwise a fresh install could be
 locked out with no reachable way to leave the default password. See SAFETY-RULES rule 35.
+
+`POST /ops/api/login` and `GET /ops/api/me` carry the **same `passwordChangeRequired` hint** as
+their gateway counterparts, and the SPA falls back to it whenever the gateway did not answer. That
+fallback is the normal case, not an edge case: settings are edited with the gateway stopped, which
+is exactly when a fresh install is still on `admin`/`admin` — before this the console had no way to
+know it should show the change form, so every ops write simply came back `403`. The change form
+itself posts to whichever backend is reachable (gateway up → gateway, gateway down → ops); both
+write the same shared H2 account.
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
@@ -423,7 +437,9 @@ ResponseSaveRequest (Oracle save payload)
 
 - **Two isolated `SecurityFilterChain` beans** in `AdminSecurityConfig`: `adminSecurityChain` (`@Order(1)`, `securityMatcher("/qosid/admin/api/**")`, session-required except `/login` and `/health`, CSRF **on** via `CookieCsrfTokenRepository` with a SPA-compatible `SpaCsrfTokenRequestHandler` + `CsrfCookieFilter` so real HTTP clients — curl/Postman/an SPA — can echo the raw `XSRF-TOKEN` cookie value in the `X-XSRF-TOKEN` header) and `apiSecurityChain` (`@Order(2)`, `securityMatcher("/**")`, `permitAll`, CSRF off, `STATELESS`).
 - **Why two chains:** the pipeline (`/qosid/api/**`) must stay open regardless of admin auth state. A single merged chain (or a missing `securityMatcher`) would put everything behind session auth — pipeline requests would 401/redirect. See SAFETY-RULES.md rule 29. (Actuator runs on the separate management port (8091) governed by its own auto-configuration, not by `AdminSecurityConfig` — out of scope for these chains by construction.)
-- **Guard tests:** `SecurityIsolationTest` asserts the pipeline GET/POST paths stay reachable and the admin paths stay gated (it does not assert anything about actuator, which lives on a different port). `AdminCsrfFlowTest` asserts, over a real servlet (no MockMvc `.with(csrf())` shortcut), that a real HTTP client can capture the `XSRF-TOKEN` cookie and successfully echo it in `X-XSRF-TOKEN` to log in. Keep both green.
+- **Cookie hardening (all four console cookies).** `JSESSIONID` + `OPS_SESSION` are `HttpOnly`; `XSRF-TOKEN` + `OPS-XSRF-TOKEN` are deliberately **not** (the SPA reads them from `document.cookie` and echoes them in the CSRF header — HttpOnly there 403s every write). All four are `SameSite=Lax` (`Strict` would drop the cookie on a top-level navigation into the console; same-origin XHR is unaffected by either). `Secure` is opt-in behind one env var, `COOKIE_SECURE` (`server.servlet.session.cookie.secure` in both modules' yaml + `gateway.security.cookie-secure` + `ops.security.cookie-secure`), **default `false` because prod currently has no TLS/nginx** — the console is reached over plain HTTP through an SSH tunnel and a browser silently discards a `Secure` cookie on a plain-HTTP response, so forcing it would break login outright. `false` still leaves Spring's/Tomcat's `request.isSecure()` fallback in place, so genuine HTTPS requests are already marked Secure. Details + the switch-on procedure: `ai-context/CONFIGURATION.md` → "Session & CSRF Cookie Hardening" and "Deferred Activation".
+- **Guard tests:** `SecurityIsolationTest` asserts the pipeline GET/POST paths stay reachable and the admin paths stay gated (it does not assert anything about actuator, which lives on a different port). `AdminCsrfFlowTest` asserts, over a real servlet (no MockMvc `.with(csrf())` shortcut), that a real HTTP client can capture the `XSRF-TOKEN` cookie and successfully echo it in `X-XSRF-TOKEN` to log in. `AdminCookieHardeningTest` / `AdminCookieSecureFlagTest` / `OpsCookieHardeningTest` pin the cookie attributes above (including that the XSRF cookies stay JS-readable, and that `COOKIE_SECURE=true` really works). Keep all green.
+- **Actuator `shutdown` is exposed in no profile.** The management port (8091) has no authentication, so `POST /actuator/shutdown` would be an unauthenticated remote kill switch; the `dev`-profile document that used to enable it was removed and `ActuatorShutdownDisabledTest` fails the build if it returns. Local dev stops with Ctrl+C; prod stops with `systemctl stop` → SIGTERM → `server.shutdown: graceful`.
 
 ## Ops console (sidecar) — `qosid-ops`
 

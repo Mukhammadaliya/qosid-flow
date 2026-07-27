@@ -3,14 +3,17 @@ package uz.greenwhite.gateway.kafka.consumer.oracle;
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.listener.ConsumerSeekAware;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import uz.greenwhite.gateway.config.KafkaProperties;
 import uz.greenwhite.gateway.config.RetryProperties;
 import uz.greenwhite.gateway.http.HttpRequestService;
+import uz.greenwhite.gateway.kafka.ack.OrderedAckTracker;
 import uz.greenwhite.gateway.kafka.producer.RequestProducer;
 import uz.greenwhite.gateway.metrics.GatewayMetrics;
 import uz.greenwhite.gateway.oauth2.OAuth2ProviderService;
@@ -23,12 +26,21 @@ import uz.greenwhite.gateway.state.RequestStateService;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 
 @Slf4j
 @Service
-public class OracleRequestConsumer {
+public class OracleRequestConsumer implements ConsumerSeekAware {
+
+    /**
+     * Acks are issued from completion callbacks, so they arrive out of offset order; this
+     * keeps the committed offset from running ahead of work still in flight (SAFETY-RULES 39).
+     * Its own instance — ack state is never shared with the API flow (SAFETY-RULES 5), so a
+     * partition stuck on one flow cannot hold back the other's commits.
+     */
+    private final OrderedAckTracker ackTracker = new OrderedAckTracker();
 
     private final HttpRequestService httpRequestService;
     private final RequestStateService requestStateService;
@@ -67,6 +79,8 @@ public class OracleRequestConsumer {
     public void consumeRequest(ConsumerRecord<String, RequestMessage> record, Acknowledgment ack) {
         String key = record.key();
         RequestMessage message = record.value();
+        TopicPartition partition = new TopicPartition(record.topic(), record.partition());
+        long offset = record.offset();
 
         log.info("[ORACLE] Received request: {} [partition={}, offset={}]",
                 key, record.partition(), record.offset());
@@ -79,7 +93,9 @@ public class OracleRequestConsumer {
             if (requestStateService.isCompleted(key)) {
                 log.warn("[ORACLE] Request already completed, skipping: {}", key);
                 metrics.getConsumerSkippedDuplicate().increment();
-                ack.acknowledge();
+                // Through the tracker, not ack.acknowledge(): a duplicate is instant, but an
+                // earlier record on this partition may still be in flight.
+                ackTracker.acknowledgeInOrder(partition, offset, ack);
                 return;
             }
 
@@ -102,12 +118,16 @@ public class OracleRequestConsumer {
             return;
         }
 
+        // Registered before the hand-off, while still on the listener thread and therefore
+        // still in offset order. Every ack from here on goes through the tracker.
+        ackTracker.register(partition, offset, ack);
+
         try {
-            CompletableFuture.runAsync(() -> processRequest(key, message, ack), httpExecutor)
+            CompletableFuture.runAsync(() -> processRequest(key, message, partition, offset), httpExecutor)
                     .exceptionally(throwable -> {
                         log.error("[ORACLE] Unexpected error for {}: {}", key, throwable.getMessage(), throwable);
                         requestStateService.releaseLock(key);
-                        ack.acknowledge();
+                        ackTracker.complete(partition, offset);
                         return null;
                     });
 
@@ -116,22 +136,31 @@ public class OracleRequestConsumer {
             metrics.getPoolRejection().increment();
             requestStateService.releaseLock(key);
             requestProducer.sendOracleRequest(message);
-            ack.acknowledge();
+            ackTracker.complete(partition, offset);
 
         } catch (Exception e) {
             log.error("[ORACLE] Error submitting request {}: {}", key, e.getMessage(), e);
             requestStateService.releaseLock(key);
-            ack.acknowledge();
+            ackTracker.complete(partition, offset);
         }
     }
 
-    private void processRequest(String key, RequestMessage message, Acknowledgment ack) {
+    /**
+     * A revoked partition's offsets belong to another consumer now: committing them from here
+     * would be wrong, and keeping the entries would leak (SAFETY-RULES 39).
+     */
+    @Override
+    public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+        ackTracker.revoke(partitions);
+    }
+
+    private void processRequest(String key, RequestMessage message, TopicPartition partition, long offset) {
         if (isMessageExpired(message)) {
             long ageMs = Duration.between(message.getCreatedAt(), LocalDateTime.now()).toMillis();
             log.warn("[ORACLE] Message expired: {} (age={}ms)", key, ageMs);
             handlePermanentFailure(key, message, 0, "Message expired after " + ageMs + "ms", ErrorSource.SYSTEM);
             requestStateService.releaseLock(key);
-            ack.acknowledge();
+            ackTracker.complete(partition, offset);
             return;
         }
 
@@ -161,7 +190,7 @@ public class OracleRequestConsumer {
                                 log.error("[ORACLE] Error handling response for {}: {}", key, e.getMessage(), e);
                             } finally {
                                 requestStateService.releaseLock(key);
-                                ack.acknowledge();
+                                ackTracker.complete(partition, offset);
                             }
                         },
                         error -> {
@@ -179,7 +208,7 @@ public class OracleRequestConsumer {
                                 log.error("[ORACLE] Error handling failure for {}: {}", key, e.getMessage(), e);
                             } finally {
                                 requestStateService.releaseLock(key);
-                                ack.acknowledge();
+                                ackTracker.complete(partition, offset);
                             }
                         }
                 );

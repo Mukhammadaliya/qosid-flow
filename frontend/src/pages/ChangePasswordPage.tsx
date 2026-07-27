@@ -3,6 +3,7 @@ import { Card, Form, Input, Button, Alert, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { changePassword } from '../api/adminAuth';
+import { opsChangePassword } from '../api/ops';
 import { useAuth } from '../auth/AuthContext';
 
 interface FormValues {
@@ -13,12 +14,17 @@ interface FormValues {
 
 /**
  * Admin password change. Also the forced landing page while the seeded admin/admin password
- * is still in use: the gateway then answers every other admin route with
+ * is still in use: the backend then answers every other admin route with
  * 403 password-change-required, so nothing else in the SPA would work anyway.
+ *
+ * <p>Submits to whichever backend is actually reachable. Both change the SAME shared H2 account,
+ * but in the normal stop-to-edit state the gateway is stopped, and posting to it there would fail
+ * with a network error while the operator is locked out of ops — so a down gateway routes the
+ * change through the ops sidecar instead.
  */
 export function ChangePasswordPage() {
   const { t } = useTranslation();
-  const { passwordChangeRequired, logout } = useAuth();
+  const { passwordChangeRequired, gatewayUp, logout } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -27,7 +33,9 @@ export function ChangePasswordPage() {
     setBusy(true);
     setError(null);
     try {
-      await changePassword(v.oldPassword, v.newPassword);
+      await (gatewayUp
+        ? changePassword(v.oldPassword, v.newPassword)
+        : opsChangePassword(v.oldPassword, v.newPassword));
       message.success(t('auth.passwordChanged'));
       // The backend invalidates the session on success — send the user back to login
       // instead of leaving the SPA holding a dead session.

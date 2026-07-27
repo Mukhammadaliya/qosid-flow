@@ -74,6 +74,17 @@ Belgilar: `[x]` — o'tdi, `[!]` — xato topildi (izoh yozing), `[ ]` — hali 
 - [ ] **I2. Gateway login rate-limit** — 5 xato → 429.
 - [ ] **I3. CSRF himoyasi** — cookie'siz curl bilan `PUT /ops/api/settings/...` → 403.
 
+## J. v2.1.0 — audit tuzatishlari (2026-07-26/27)
+
+- [ ] **J1. So'rov tanasi chegarasi (413)** — `PROXY_MAX_BODY_SIZE`ni vaqtincha kichik qiling (masalan `1024`), restart → 2 KB JSON bilan `POST /qosid/api/v1/queue/...` → **413**, Kafka'ga **hech narsa qo'yilmaydi** (`redpanda-console`da yangi xabar yo'q). Chegaradan kichik tana avvalgidek 202. **Muhim:** `BiruniUpload` multipart yuklamasi bu chegaradan TA'SIRLANMAYDI — 1 MB fayl bilan upload'ni ham sinang, u o'tishi kerak (u 50MB multipart limitida). Sinovdan keyin env'ni qaytaring.
+- [ ] **J2. Actuator shutdown yo'q** — `curl -XPOST localhost:8091/actuator/shutdown` → **404** (200 EMAS). `SPRING_PROFILES_ACTIVE=dev` bilan ham 404 bo'lishi kerak — endpoint hech bir profilda ochilmaydi.
+- [ ] **J3. Cookie atributlari** — login qilib `Set-Cookie` sarlavhalarini ko'ring: `JSESSIONID` va `OPS_SESSION` → `HttpOnly` + `SameSite=Lax`; `XSRF-TOKEN` va `OPS-XSRF-TOKEN` → `SameSite=Lax` lekin **HttpOnly EMAS** (SPA ularni JS bilan o'qiydi — HttpOnly bo'lsa har bir yozuv 403 bo'ladi). TLS yo'qligi uchun `Secure` **bo'lmasligi** kerak. Ixtiyoriy: `COOKIE_SECURE=true` bilan restart → to'rttasida ham `Secure` paydo bo'ladi (keyin qaytaring — HTTP orqali login buziladi).
+- [ ] **J4. Compose portlari loopback'da** — serverning o'zida `curl localhost:6379` ishlaydi; **tashqi mashinadan** `nc -vz 77.42.21.222 6379`, `...:19092`, `...:3000` → **ulanmasin**. Bu Docker'ning host firewall'ini chetlab o'tishini yopadi.
+- [ ] **J5. `/status` javobida `httpStatus`** — REST orqali kichik javob → `{status:COMPLETED, httpStatus:200, result:{...}}`; katta javob → `resultUrl` **va** `httpStatus`; muvaffaqiyatsiz upstream → `{status:FAILED, httpStatus:502, errorMessage:...}`. Hali ishlanayotgan so'rovda maydon **umuman bo'lmasligi** kerak (`0` emas).
+- [ ] **J6. Ops parol hint'i (gateway O'CHIQ holda)** — bu stop-to-edit'ning normal holati. Gateway'ni ops'dan to'xtating → SPA'ga kiring: gateway javob bermasa ham konsol majburiy parol formasini ko'rsatishi kerak (agar parol hali default bo'lsa), va forma `POST /ops/api/change-password`ga ketishi kerak (Network tab'da tekshiring). Ilgari SPA buni bilmasdi va har bir ops yozuvi tushuntirishsiz 403 bo'lardi.
+- [ ] **J7. Tartibli ack — jonli tekshiruv (ENG MUHIMI)** — yuk ostida (Oracle pull faol, navbatda xabarlar bor) `systemctl restart gateway-service` → restartdan keyin: `journalctl`da `ERROR` yo'q, Kafka **lag 0 ga qaytadi**, `Bmb_Requests`da o'sha oynadagi so'rovlar **hammasi `D`** (yo'qolgan `null` holat yo'q). Dublikat qayta ishlash log'da ko'rinishi NORMAL (idempotentlik darvozasi ushlaydi) — yo'qolish esa yo'q. Tekshirish so'rovi: restart oynasidagi `request_id` diapazonida `state is null` qolgan yozuv bo'lmasligi.
+- [ ] **J8. SPA bundle bo'linishi** — brauzer Network tab: Sozlamalar sahifasida `StatisticsPage-*.js` **yuklanmaydi**; Statistika sahifasiga o'tganda o'sha chunk alohida so'rov bilan keladi. Boshlang'ich yuk ~2.8 MB dan ~1.3 MB ga tushgan bo'lishi kerak.
+
 ---
 
-**Yakun mezoni:** A–G to'liq yashil (H/I ixtiyoriy) → `debug` push + v1.15.0 release PR.
+**Yakun mezoni:** A–G to'liq yashil (H/I/J ixtiyoriy, lekin **J7 prod deploydan keyin majburiy**) → `debug` push + release PR.

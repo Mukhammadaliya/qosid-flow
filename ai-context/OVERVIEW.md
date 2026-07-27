@@ -5,9 +5,9 @@
 | Field | Value |
 |-------|-------|
 | **Name** | Qosid Flow (qosid-flow) |
-| **Version** | 2.0.0 |
+| **Version** | 2.1.0 |
 | **Language** | Java 21 |
-| **Framework** | Spring Boot 3.3.0 |
+| **Framework** | Spring Boot 3.3.13 |
 | **Base Package** | `uz.greenwhite.gateway` |
 | **Group ID** | `uz.greenwhite` |
 | **Artifact ID** | `qosid-flow` |
@@ -29,7 +29,7 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 
 | Technology | Purpose | Version |
 |-----------|---------|---------|
-| Spring Boot | Application framework | 3.3.0 |
+| Spring Boot | Application framework | 3.3.13 |
 | Spring Cloud | Cloud patterns (Circuit Breaker) | 2023.0.2 |
 | Spring Kafka | Kafka producer/consumer | (Spring Boot managed) |
 | Spring Data Redis | State management, caching, distributed locks | (Spring Boot managed) |
@@ -46,6 +46,14 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 | Redis | State, locks, OAuth2 token cache | 7.2 |
 | Grafana | Monitoring dashboards | 10.4.1 |
 | AlertManager | Alert routing | 0.28.0 |
+
+> **Spring Boot 3.3.x is end-of-life.** `3.3.13` (2025-06-19) is the last release of that line —
+> it carries 13 patch releases of fixes over the `3.3.0` this project shipped with, but no
+> future CVE fix will land there. The supported line is `3.5.x`. Moving to it is a scoped
+> project, not a version bump: Spring Cloud must go to the `2025.0.x` train (it provides the
+> Circuit Breaker — a protected zone), Spring Kafka to `3.3.x` (this service depends on precise
+> `MANUAL` ack / `nack` / out-of-order-commit semantics — SAFETY rules 25, 32, 33), and Spring
+> Security to `6.5`. Do it deliberately, with the full suite plus a Kafka ack-behaviour check.
 
 ## Added Components (Feature-Parity Upgrade)
 

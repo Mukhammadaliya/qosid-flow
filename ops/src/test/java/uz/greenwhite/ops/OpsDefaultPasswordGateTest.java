@@ -103,6 +103,48 @@ class OpsDefaultPasswordGateTest {
     }
 
     /**
+     * The SPA has to learn about the gate from ops, not only from the gateway.
+     *
+     * <p>In the normal stop-to-edit state the gateway is DOWN, so its {@code /login} and
+     * {@code /me} — the only responses that used to carry {@code passwordChangeRequired} — never
+     * answer. Without the hint here the console cannot know it must show the change-password form,
+     * and every ops write just 403s with no explanation. The value is a string because the body is
+     * a {@code Map<String, String>}, matching the gateway's contract exactly.
+     */
+    @Test
+    void loginAndMeReportPasswordChangeRequiredWhileTheDefaultIsInPlace() throws Exception {
+        mvc.perform(post("/ops/api/login").contentType("application/json")
+                        .content("{\"username\":\"admin\",\"password\":\"admin\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.passwordChangeRequired").value("true"));
+
+        OpsSession s = login("admin");
+        mvc.perform(get("/ops/api/me").session(s.session()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.user").value("admin"))
+                .andExpect(jsonPath("$.passwordChangeRequired").value("true"));
+    }
+
+    /** ...and stops reporting it once the password is no longer the default. */
+    @Test
+    void theHintClearsAfterThePasswordIsChanged() throws Exception {
+        OpsSession s = login("admin");
+        mvc.perform(authed(post("/ops/api/change-password"), s).contentType("application/json")
+                        .content("{\"oldPassword\":\"admin\",\"newPassword\":\"" + NEW_PASSWORD + "\"}"))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(post("/ops/api/login").contentType("application/json")
+                        .content("{\"username\":\"admin\",\"password\":\"" + NEW_PASSWORD + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.passwordChangeRequired").value("false"));
+
+        OpsSession s2 = login(NEW_PASSWORD);
+        mvc.perform(get("/ops/api/me").session(s2.session()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.passwordChangeRequired").value("false"));
+    }
+
+    /**
      * Unauthenticated callers must still get 401 (the gate runs AFTER AuthorizationFilter), so
      * nothing about the password state leaks to an anonymous prober.
      */

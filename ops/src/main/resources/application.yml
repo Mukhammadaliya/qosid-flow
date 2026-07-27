@@ -4,8 +4,22 @@ server:
     session:
       cookie:
         name: OPS_SESSION   # bitta domen ostida gateway JSESSIONID bilan to'qnashmaslik uchun
+        # Gateway JSESSIONID bilan bir xil qattiqlashtirish — ops konsoli gateway'ni to'xtata
+        # oladi va sozlamalarni yozadi, ya'ni sessiya o'g'irlanishi kamida shunday jiddiy.
+        http-only: true
+        same-site: lax
+        # DEFERRED UNTIL TLS: prod :8092'ga SSH tunnel orqali oddiy HTTP bilan kiriladi —
+        # Secure'ni majburlash brauzerni cookie'ni tashlab yuborishga majbur qiladi va ops
+        # login darhol buziladi. Tomcat buni request.isSecure() bilan OR qiladi, shuning uchun
+        # `false` haqiqiy HTTPS'da avto-aniqlashni saqlaydi. nginx/TLS qo'yilgach COOKIE_SECURE=true.
+        secure: ${COOKIE_SECURE:false}
 
 ops:
+  security:
+    # gateway.security.cookie-secure'ning ops egizagi — OPS-XSRF-TOKEN cookie'siga Secure
+    # qo'shadi (OpsSecurityConfig). Bitta COOKIE_SECURE env-var ikki JVM'ning to'rt cookie'sini
+    # boshqaradi. HttpOnly bu cookie'da ATAYLAB false — SPA uni JS bilan o'qiydi.
+    cookie-secure: ${COOKIE_SECURE:false}
   gateway:
     health-url: ${OPS_GATEWAY_HEALTH_URL:http://localhost:8090/qosid/admin/api/health}
     start-command: ${OPS_GATEWAY_START_COMMAND:}

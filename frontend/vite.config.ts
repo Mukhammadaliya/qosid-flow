@@ -7,7 +7,22 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   base: '/',
-  build: { outDir: 'dist', emptyOutDir: true },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Split the two vendor blocks that never change between releases, so a rebuild of the
+        // app code does not force operators to re-download React and antd. Everything else
+        // splits by route (see the lazy() imports in App.tsx) — notably @ant-design/plots,
+        // which lands in the Statistics chunk instead of the entry bundle.
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          antd: ['antd', '@ant-design/icons'],
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/qosid': 'http://localhost:8090',
