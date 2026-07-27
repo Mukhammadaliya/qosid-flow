@@ -270,6 +270,10 @@ class CbBackpressureTest {
         verify(exhausted, timeout(2000)).increment();
         verify(ack, timeout(2000)).acknowledge();
         verify(producer, never()).sendApiRequest(any());
+        // Twice: once by the park path's finally (a parked message must not hold the lock),
+        // once by the give-up callback itself (which must not lean on that finally). Deleting
+        // the give-up's releaseLock leaves exactly one call and fails this verify.
+        verify(state, timeout(2000).times(2)).releaseLock(KEY);
     }
 
     @Test
@@ -381,6 +385,10 @@ class CbBackpressureTest {
         verify(exhausted, timeout(2000)).increment();
         verify(ack, timeout(2000)).acknowledge();
         verify(producer, never()).sendOracleRequest(any());
+        // Twice: once by the park path's finally (a parked message must not hold the lock),
+        // once by the give-up callback itself (which must not lean on that finally). Deleting
+        // the give-up's releaseLock leaves exactly one call and fails this verify.
+        verify(state, timeout(2000).times(2)).releaseLock(KEY);
     }
 
     @Test
