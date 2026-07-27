@@ -3,7 +3,7 @@ package uz.greenwhite.ops;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -30,7 +30,7 @@ import static org.mockito.Mockito.when;
 class OpsCookieHardeningTest {
 
     @Autowired TestRestTemplate rest;
-    @MockBean AdminAuthDao authDao;
+    @MockitoBean AdminAuthDao authDao;
 
     /** Login renders both cookies: OPS_SESSION by the container, OPS-XSRF-TOKEN by CsrfCookieFilter. */
     private List<String> loginCookies() {

@@ -180,15 +180,18 @@ still-running lower offset as "committed", and on restart that message is never 
 
 **But it cannot be enabled as things stand.** Spring Kafka's `ConsumerAcknowledgment.nack(Duration)`
 opens with `Assert.state(..., "nack() is not supported with out-of-order commits")` — verified in
-the bytecode of `spring-kafka-3.2.0`. Both request consumers `nack`: on a Redis-gate failure
+the bytecode of `spring-kafka-3.2.0` and again in `3.3.16`. Both request consumers `nack`: on a Redis-gate failure
 (rule 25) and on lock contention (rule 33). Turning `asyncAcks` on therefore converts those two
 graceful back-pressure paths into a thrown `IllegalStateException`, which escapes the listener into
 an error handler that only logs — so the message is lost on exactly the paths that exist to prevent
 loss. It makes the problem worse, not better.
 
 **The defect it was meant to fix is now fixed without it** — see rule 39. `asyncAcks` stays off
-permanently, and `KafkaAsyncAcksTest` guards that. (Re-verified against `spring-kafka-3.2.10` after
-the Spring Boot 3.3.13 bump: the assertion is still there.) Read with rule 4: `MANUAL` never
+permanently, and `KafkaAsyncAcksTest` guards that. (Re-verified against `spring-kafka-3.3.16` after
+the Spring Boot 3.5.16 bump — `javap` on
+`KafkaMessageListenerContainer$ListenerConsumer$ConsumerAcknowledgment` still shows the assertion,
+and the `Acknowledgment` interface is unchanged. Re-run that check on every Kafka bump; it is the
+premise the whole rule rests on.) Read with rule 4: `MANUAL` never
 changes either way.
 
 ### 33. Never ack a request message on Redis lock contention

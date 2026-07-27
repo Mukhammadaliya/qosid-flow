@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -36,7 +36,7 @@ class OpsSettingsApiTest {
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate opsJdbc;
-    @MockBean GatewayStatusService status;
+    @MockitoBean GatewayStatusService status;
 
     private final SettingsCipher testCipher = new SettingsCipher("test-aes-key");
 
@@ -357,7 +357,7 @@ class OpsSettingsNoCipherTest {
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate opsJdbc;
-    @MockBean GatewayStatusService status;
+    @MockitoBean GatewayStatusService status;
 
     @Test
     void putSecretWithoutKey400() throws Exception {
