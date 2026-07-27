@@ -178,8 +178,17 @@ which circuit refused it and hands the message to its flow's `CbRequeueScheduler
 4. drains every parked message through the same requeue path on `@PreDestroy`, turning a
    would-be redelivery into a clean handover.
 
-Give-up is by **time** (`max-message-age-ms`, checked inside the CB branch too), never by round-trip
-count — `cb-max-requeues` survives only as a runaway guard. The park is bounded in messages
+Waking the park depends on `automatic-transition-from-open-to-half-open-enabled: true` — the poll is
+a passive state read and cannot move the circuit itself (SAFETY-RULES 23).
+
+Give-up is by **time**, never by round-trip count (`cb-max-requeues` survives only as a runaway
+guard) — but note *which* time check fires. The scheduler holds a message with no deadline check of
+its own, so in a real outage the expiry is caught on the **next delivery** by the gate at the top of
+`processRequest`: `Message expired after <ageMs>ms` (`SYSTEM`, `httpStatus=0`), moving only
+`gateway.dlq.sent`. The `isMessageExpired` call inside the CB branch covers the narrower
+within-one-delivery crossing and is the only one that reads `Circuit breaker still open after …` and
+increments `...requeue.exhausted`. Consequence for operators: `...requeue.exhausted` is *not* the
+outage signal. The park is bounded in messages
 (`cb-max-pending`) and bytes (`cb-max-pending-bytes`, the bound that usually binds, since one REST
 body can be 20 MiB); past either bound the message goes to the DLQ rather than growing the heap.
 Each flow owns its own scheduler instance, gauges and budget (rule 5); they share only the
@@ -429,7 +438,7 @@ ResponseSaveRequest (Oracle save payload)
 - **OPEN Duration:** 30s before transitioning to HALF_OPEN
 - **HALF_OPEN:** 3 permitted test calls
 - **OAuth2 errors excluded:** Token failures do not count toward CB failure rate
-- **Readable without calling:** `HttpRequestService.circuitBreakerName(request)` exposes the per-host naming rule (so a consumer never re-derives it and drifts) and `isCircuitOpen(name)` reports state via `CircuitBreakerRegistry.find` — read-only, acquires no permission, records no outcome, and never *creates* a breaker as a side effect of a read. `HALF_OPEN` deliberately reads as **not** open: a waiting message should become one of the permitted probe calls rather than sleep through the recovery window. This is what E3's park-and-recheck loop polls.
+- **Readable without calling:** `HttpRequestService.circuitBreakerName(request)` exposes the per-host naming rule (so a consumer never re-derives it and drifts) and `isCircuitOpen(name)` reports state via `CircuitBreakerRegistry.find` — read-only, acquires no permission, records no outcome, and never *creates* a breaker as a side effect of a read. `HALF_OPEN` deliberately reads as **not** open: a waiting message should become one of the permitted probe calls rather than sleep through the recovery window. This is what E3's park-and-recheck loop polls — and because the read is passive, the loop relies on `automatic-transition-from-open-to-half-open-enabled: true` (or unrelated traffic to the same host) to ever see the state change.
 - **Config class:** `resilience4j.circuitbreaker.configs.default.*` in `application.yml`
 
 ### Idempotency (Redis)
@@ -464,7 +473,7 @@ ResponseSaveRequest (Oracle save payload)
 - **Rejection Policy:** `RejectWithLogging` — when queue full, throws `RejectedExecutionException`. Consumer catches it and re-queues the message to Kafka without incrementing attempt count. Consumer thread stays free.
 - **Non-blocking:** Both request consumers use `.subscribe()` instead of `.block()` — threads are freed immediately after dispatching HTTP request.
 - **Message Expiry:** Messages older than `gateway.retry.max-message-age-ms` (default 5 min) are failed immediately to prevent infinite re-queue loops.
-- **CB-aware back-pressure (v2.3.0):** OAuth2 errors are NOT retried — they cause immediate DLQ. Circuit Breaker blocks (`errorSource=CIRCUIT_BREAKER`) are transient back-pressure, not a permanent failure, so the message is **parked** by `CbRequeueScheduler` until its circuit accepts traffic again and only then re-queued — no attempt-count increment, and no Kafka round trip while it waits (see E3 above). Give-up is by **time** (`max-message-age-ms`), which is what surfaces a genuinely down upstream in the DLQ after the deadline; `gateway.retry.cb-max-requeues` (now 1000, Redis counter `request:cb-requeue:<compositeId>`) is only a runaway guard for a broken delay path. It used to be an immediate re-queue bounded by that count at 50, which spent the whole budget in ~1 s of a 30 s open window and DLQ'd 212 live production requests on 2026-07-27. Redis down ⇒ `Integer.MAX_VALUE` ⇒ immediate DLQ (fail-closed), never an unbounded loop. Memory is bounded per flow by `cb-max-pending` / `cb-max-pending-bytes`; both DLQ exits are visible as `gateway.http.circuitbreaker.requeue.exhausted` (timed out / guard tripped) and `...requeue.rejected` (bound full), with `...requeue.delayed` plus the `...requeue.pending{flow}` / `...requeue.pending.bytes{flow}` gauges showing the wait itself.
+- **CB-aware back-pressure (v2.3.0):** OAuth2 errors are NOT retried — they cause immediate DLQ. Circuit Breaker blocks (`errorSource=CIRCUIT_BREAKER`) are transient back-pressure, not a permanent failure, so the message is **parked** by `CbRequeueScheduler` until its circuit accepts traffic again and only then re-queued — no attempt-count increment, and no Kafka round trip while it waits (see E3 above). Give-up is by **time** (`max-message-age-ms`), which is what surfaces a genuinely down upstream in the DLQ after the deadline; `gateway.retry.cb-max-requeues` (now 1000, Redis counter `request:cb-requeue:<compositeId>`) is only a runaway guard for a broken delay path. It used to be an immediate re-queue bounded by that count at 50, which spent the whole budget in ~1 s of a 30 s open window and DLQ'd 212 live production requests on 2026-07-27. Redis down ⇒ `Integer.MAX_VALUE` ⇒ immediate DLQ (fail-closed), never an unbounded loop. Memory is bounded per flow by `cb-max-pending` / `cb-max-pending-bytes`. Signals: `...requeue.delayed` plus the `...requeue.pending{flow}` / `...requeue.pending.bytes{flow}` gauges show the wait itself; `...requeue.rejected` marks a bound-full DLQ. The **ordinary** aged-out give-up happens on the next delivery via `processRequest`'s expiry gate and shows up as `gateway.dlq.sent` + `Message expired after …` — `...requeue.exhausted` covers only the two corner cases (within-delivery expiry, runaway guard), so it reads ~0 during a real outage. Full exit table: SAFETY-RULES 23.
 - **OAuth2-aware 401 retry (v1.1.0):** When an upstream API returns 401 to a request whose `oauth2_provider` is set, the consumer evicts the cached token (`OAuth2ProviderService.evictToken`) and re-queues the request without incrementing the attempt counter. A per-request flag (`request:token-evicted:<compositeId>`, same TTL as request state) prevents repeating the eviction more than once per request — on the second 401 the request falls through to the standard permanent-failure path. Recovers from smartup's periodic "stuck token" glitch in one Kafka round-trip instead of waiting 3h for token TTL expiry.
 
 ### Admin Control-Plane Security (B1)

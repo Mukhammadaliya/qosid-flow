@@ -94,26 +94,63 @@ Sinovdan keyin `.env`ni qaytarishni unutmang. Kutish oynasini kuzatish uchun foy
 `curl -s localhost:8091/actuator/prometheus | grep circuitbreaker_requeue`,
 `docker exec redpanda rpk group describe gateway-service-group` (lag; `KAFKA_GROUP_ID`).
 
-- [ ] **K1. Park, don't spin** — CB'ni sun'iy ochish uchun `gateway.api.base-url`ni mavjud
-      bo'lmagan portga o'zgartiring (ops orqali, gateway o'chiq holda), start qiling, 10+ so'rov
-      keling. Kutilgan: jurnalda `parked until cb-... accepts traffic`, DLQ **bo'sh**,
-      `gateway_http_circuitbreaker_requeue_pending` gauge > 0, Kafka lag **o'sadi** (bu normal).
-      Base-url'ni qaytaring → parked xabarlar o'tadi, lag 0 ga qaytadi, DLQ hali bo'sh.
-- [ ] **K2. Vaqt bo'yicha taslim** — `RETRY_MAX_MESSAGE_AGE=60000` qilib, CB'ni 2 daqiqa ochiq
-      qoldiring. Kutilgan: ~60s dan keyin DLQ, sabab `Circuit breaker still open after NNNNNms`
-      (requeues EMAS), har xabar uchun BITTA DLQ yozuvi.
+**K0. Sun'iy uzilish tayyorlash (K1-K4 uchun bir marta).** `gateway.api.base-url`ni hech kim
+tinglamaydigan LOKAL portga qo'ying — `http://127.0.0.1:19099` (ops orqali, gateway o'chiq holda),
+so'ng start. Tiklash uchun keyinroq shu portda 200 qaytaruvchi mitti listener ko'tariladi
+(quyidagi bitta qator, paste buzilmasligi uchun base64 bilan):
+
+```bash
+echo 'ZnJvbSBodHRwLnNlcnZlciBpbXBvcnQgQmFzZUhUVFBSZXF1ZXN0SGFuZGxlciwgSFRUUFNlcnZlcgpjbGFzcyBIKEJhc2VIVFRQUmVxdWVzdEhhbmRsZXIpOgogICAgZGVmIHIoc2VsZik6CiAgICAgICAgc2VsZi5yZmlsZS5yZWFkKGludChzZWxmLmhlYWRlcnMuZ2V0KCdDb250ZW50LUxlbmd0aCcpIG9yIDApKQogICAgICAgIGIgPSBiJ3sib2siOnRydWV9JwogICAgICAgIHNlbGYuc2VuZF9yZXNwb25zZSgyMDApCiAgICAgICAgc2VsZi5zZW5kX2hlYWRlcignQ29udGVudC1UeXBlJywgJ2FwcGxpY2F0aW9uL2pzb24nKQogICAgICAgIHNlbGYuc2VuZF9oZWFkZXIoJ0NvbnRlbnQtTGVuZ3RoJywgc3RyKGxlbihiKSkpCiAgICAgICAgc2VsZi5lbmRfaGVhZGVycygpCiAgICAgICAgc2VsZi53ZmlsZS53cml0ZShiKQogICAgZG9fR0VUID0gZG9fUE9TVCA9IGRvX1BVVCA9IGRvX0RFTEVURSA9IGRvX1BBVENIID0gcgpIVFRQU2VydmVyKCgnMTI3LjAuMC4xJywgMTkwOTkpLCBIKS5zZXJ2ZV9mb3JldmVyKCkK' \
+  | base64 -di > /tmp/echo200.py
+# tiklash payti: nohup python3 /tmp/echo200.py >/tmp/echo200.log 2>&1 &
+```
+
+**Nega base-url'ni QAYTARISH ishlamaydi:** `ProxyController` har bir so'rovga `baseUrl`ni ingress
+paytida MUHRLAB Kafka'ga qo'yadi. Sozlamani qaytarsangiz faqat YANGI so'rovlar to'g'ri manzilga
+ketadi; navbatda/parkda turgan xabarlar hamon o'sha o'lik portga boradi. CB nomi esa host-only
+(`cb-127.0.0.1`, port hisobga olinmaydi), ya'ni yangi muvaffaqiyatli trafik sxemani YOPADI va parked
+xabarlar chiqariladi — lekin o'lik portga, natijada retry → DLQ. Shuning uchun tiklash = **shu portda
+listener ko'tarish**.
+
+- [ ] **K1. Park, don't spin** — K0'dagi holatda 10+ so'rov yuboring. Kutilgan CB ochiq oynada:
+      jurnalda `CB-blocked, parked until cb-127.0.0.1 accepts traffic`,
+      `gateway_http_circuitbreaker_requeue_pending{flow="API"}` > 0, Kafka lag **o'sadi** (bu normal,
+      parked offset ataylab commit qilinmaydi), `..._requeue_exhausted_total` va
+      `..._requeue_rejected_total` **0 da qoladi**, va DLQ'da sababi `Circuit breaker ...` bilan
+      boshlanadigan yozuv **YO'Q**.
+      *Diqqat (bu xato emas):* sxema ochilishidan OLDIN yuborilgan yoki HALF_OPEN probe sifatida
+      o'tgan chaqiruvlar haqiqatan xato oladi (`Connection refused`), `attemptCount` oshadi va
+      `max-attempts` (3) tugagach oddiy yo'l bilan DLQ'ga tushadi. Bu kutilgan; muhimi — CB
+      bloklashining O'ZI DLQ yozuvi yaratmasligi.
+      Tiklash: `nohup python3 /tmp/echo200.py >/tmp/echo200.log 2>&1 &` → ~30s ichida
+      (`automatic-transition-from-open-to-half-open-enabled: true` sxemani HALF_OPEN'ga o'tkazadi)
+      parked xabarlar chiqariladi va listener'ga yetadi → `requeue_pending` **0 ga tushadi**, lag 0
+      ga qaytadi, yangi `Circuit breaker ...` DLQ yozuvi paydo bo'lmaydi.
+- [ ] **K2. Vaqt bo'yicha taslim** — `max-message-age-ms`ni 60000 qilib, listener'ni ko'tarmasdan
+      CB'ni 2 daqiqa ochiq qoldiring. Kutilgan: ~60-90s dan keyin har bir parked xabar uchun BITTA
+      DLQ yozuvi, sababi **`Message expired after NNNNNms`** (`Circuit breaker still open after ...`
+      EMAS — u faqat bitta yetkazib berish ichida muddat o'tsa chiqadigan burchak holat), `httpStatus
+      = 0`, `errorSource = SYSTEM`; `gateway_dlq_sent_total` o'sadi, `..._requeue_exhausted_total`
+      esa **~0 da qoladi**. Sabab: parkda turgan xabarning muddati TEKSHIRILMAYDI — u faqat sxema
+      yo'l bergandan keyingi yetkazib berishda, `processRequest` boshidagi darvoza bilan aniqlanadi.
       *Diqqat:* bu kalit — `gateway.retry.max-message-age-ms` — `RETRY_CB_*` lardan farqli, settings
-      DB'da migratsiya qilingan, ya'ni **env-var endi ta'sir qilmaydi**. Uni gateway o'chiq holda ops
-      orqali o'zgartiring: `PUT /ops/api/settings/gateway.retry.max-message-age-ms` (yoki SPA →
-      Sozlamalar), keyin start. Sinovdan keyin 300000 ga qaytaring.
-- [ ] **K3. Pending chegarasi** — `RETRY_CB_MAX_PENDING=5`, CB ochiq, 20 so'rov. Kutilgan:
-      5 tasi park, qolgani `Circuit breaker open and requeue buffer full` sababi bilan DLQ.
+      DB'da migratsiya qilingan, ya'ni **env-var (`RETRY_MAX_MESSAGE_AGE`) endi ta'sir qilmaydi**.
+      Uni gateway o'chiq holda ops orqali o'zgartiring:
+      `PUT /ops/api/settings/gateway.retry.max-message-age-ms` (yoki SPA → Sozlamalar), keyin start.
+      Sinovdan keyin 300000 ga qaytaring.
+- [ ] **K3. Pending chegarasi** — `.env`da `RETRY_CB_MAX_PENDING=5`, restart, K0 holati, 20 so'rov.
+      Kutilgan: bir vaqtda ko'pi bilan 5 ta park (`requeue_pending{flow="API"} <= 5`), CB bloklangan
+      qolganlari `Circuit breaker open and requeue buffer full` sababi bilan DLQ va
+      `..._requeue_rejected_total` o'sadi. (Bu qadam sozlama o'zgartirishiga bog'liq emas — chegara
+      startda o'qiladi, navbatdagi xabarlar qayta manzillanmaydi.)
 - [ ] **K4. Restart parked xabarni yo'qotmaydi** — CB ochiq, 10 xabar park bo'lgan holda
-      `systemctl restart gateway-service`. Kutilgan: shutdown'da `draining N parked CB requeues`,
-      restartdan keyin o'sha 10 id Redis'da COMPLETED bo'ladi (yoki qayta yetkaziladi) —
-      **birortasi yo'qolmaydi**. Tekshirish:
-      `docker exec redis redis-cli GET "request:state:<tenantId>:<requestId>"` (holat JSON qatori;
-      `null` qolgan id — yo'qolish belgisi).
+      `systemctl restart gateway-service`. Kutilgan: shutdown jurnalida
+      `draining N parked CB requeues` (N > 0), restartdan keyin **o'sha 10 id ning har biri qaytadan
+      ko'rinadi** (`Received request: <id>`) va holati bor — o'lik port hamon o'lik bo'lsa ular
+      yana park bo'ladi yoki oddiy retry/expiry yo'liga tushadi; listener ko'tarilgan bo'lsa
+      COMPLETED bo'ladi. **Birortasi ham izsiz yo'qolmasligi** kerak. Tekshirish:
+      `docker exec redis redis-cli GET "request:state:<tenantId>:<requestId>"` — bo'sh (`nil`)
+      qaytgan id yo'qolish belgisi.
 
 ---
 

@@ -96,6 +96,8 @@ qosid-flow/                              # Maven reactor (qosid-parent): setting
     health/          # Custom health indicators
     http/            # HTTP client with Circuit Breaker + OAuth2
     kafka/           # Kafka consumers and producers
+      ack/           #   Ordered acknowledgement (OrderedAckTracker, SAFETY-RULES 39)
+      retry/         #   Parked CB-blocked requeues (CbRequeueScheduler, SAFETY-RULES 23/40)
     metrics/         # Centralized metrics (GatewayMetrics.java)
     model/           # Domain models, Kafka messages, enums
     notification/    # Telegram DLQ alerts

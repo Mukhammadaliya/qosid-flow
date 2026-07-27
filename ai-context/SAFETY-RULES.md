@@ -113,10 +113,22 @@ which parks it in memory and re-checks `HttpRequestService.isCircuitOpen(cbName)
 `wait-duration-in-open-state`). Only when the circuit stops refusing calls is the message
 produced back to its request topic. Two consequences a future change must not undo:
 
-- **Give-up is by TIME.** The `isMessageExpired` check (`max-message-age-ms`, default 5 min,
-  evaluated inside the CB branch as well as in `processRequest`) is the only intended exit for a
-  genuinely stuck message: one DLQ record per message, reason
-  `Circuit breaker still open after <ageMs>ms`.
+- **Give-up is by TIME — and in practice by the outer gate, not the one inside this branch.** Age
+  accrues *between* deliveries, because the scheduler holds a message without any deadline check of
+  its own. So the expiry that actually fires during a real outage is the gate at the **top of
+  `processRequest`**, on the delivery that follows a hand-back: `Message expired after <ageMs>ms`,
+  `errorSource=SYSTEM`, `httpStatus=0`, and it moves **only** `gateway.dlq.sent` — *not*
+  `...requeue.exhausted`. The `isMessageExpired` call inside the CB branch catches the narrower
+  case where the age crosses within one delivery (a slow OAuth2 fetch or a long HTTP attempt ahead
+  of the CB rejection); that one reads `Circuit breaker still open after <ageMs>ms`. Both are
+  intended and neither may be removed — the outer gate is what ends the wait, the in-branch one
+  keeps an already-late message from being parked one more time — but an operator debugging an
+  outage should expect the first.
+- **Nothing checks the deadline while a message is parked** (known gap, stated so nobody relies on
+  the opposite). A parked message learns it has expired only when the circuit lets it back, so it
+  can outlive `max-message-age-ms` by up to the current re-check interval (≤30 s at the defaults) —
+  and by arbitrarily long if the circuit never flips, see the automatic-transition invariant below.
+  `max-message-age-ms` is a give-up deadline, not a bound on park duration.
 - **A count of round trips is not a proxy for elapsed time**, because the round-trip rate depends
   on load, not on the circuit. That confusion caused a production incident: on **2026-07-27
   14:27** a deploy restart left a pull backlog, the gateway pulled 1000 requests in 15 s,
@@ -129,20 +141,28 @@ produced back to its request topic. Two consequences a future change must not un
   the gateway for 34 h — but bounding *waiting* was the fix, not bounding *attempts*.
 
 `gateway.retry.cb-max-requeues` (now 1000) is therefore a **runaway guard, not a retry policy**:
-it still counts parks in Redis via `RequestStateService.incrementCbRequeue`
+it still counts park *attempts* in Redis via `RequestStateService.incrementCbRequeue`
 (`request:cb-requeue:<compositeId>`, request-state TTL, `Integer.MAX_VALUE` fail-closed per
 rule 8), but with a 2 s floor on the wait a message cannot legitimately need more than
 `max-message-age-ms / cb-requeue-delay-ms` (~150) of them, so tripping it means the delay path
 itself is broken. Do not tune it as if it were a retry budget, and do not lower it back toward
 the round-trip regime.
 
-There are exactly three DLQ exits from this branch, and each has its own signal:
+Four DLQ exits end a park, and each has its own signal. The first is the one a real outage
+produces; the other three are corner cases:
 
-| Exit | `failureReason` | Metric |
-|------|-----------------|--------|
-| Message aged out (intended) | `Circuit breaker still open after <ageMs>ms` | `...requeue.exhausted` |
-| Runaway guard tripped (should never fire) | `Circuit breaker requeue guard tripped after <n> requeues` | `...requeue.exhausted` |
-| Park bound full (memory pressure) | `Circuit breaker open and requeue buffer full` | `...requeue.rejected` |
+| Exit | Where | `failureReason` | Metric |
+|------|-------|-----------------|--------|
+| **Aged out between deliveries — the normal one** | `processRequest` top gate | `Message expired after <ageMs>ms` (`SYSTEM`, `httpStatus=0`) | `gateway.dlq.sent` and **no CB-specific counter** |
+| Aged out within one delivery | CB branch | `Circuit breaker still open after <ageMs>ms` | `...requeue.exhausted` (+ `dlq.sent`) |
+| Runaway guard tripped (should never fire) | CB branch | `Circuit breaker requeue guard tripped after <n> requeues` | `...requeue.exhausted` (+ `dlq.sent`) |
+| Park bound full (memory pressure) | CB branch | `Circuit breaker open and requeue buffer full` | `...requeue.rejected` (+ `dlq.sent`) |
+
+Separately, an outage also produces DLQ records that never went near this branch: a call attempted
+before the circuit opened, or permitted as a HALF_OPEN probe, fails for real, increments
+`attemptCount` and after `max-attempts` takes the ordinary permanent-failure path with the
+transport error as its reason. Those are correct and expected. What must never appear is a DLQ
+record *caused by the CB block itself* — that was the 2026-07-27 failure.
 
 A fourth path exists only as belt-and-braces: if `circuitBreakerName` or `schedule` throws, the
 branch logs and DLQs rather than letting the exception reach the callback's generic `catch`,
@@ -160,9 +180,22 @@ Also load-bearing, and easy to break while refactoring:
   no state leaks between Oracle and API. They are, honestly, coupled in scheduling *latency*: a
   hand-back calls `KafkaTemplate.send`, which can block up to `max.block.ms` if the broker is
   unreachable, and two such hand-backs occupy both threads. That delays the other flow's
-  re-checks; it does not lose or mis-route anything. Widen the pool before adding a third flow.
+  re-checks; it does not lose or mis-route anything. Widen the pool before adding a third flow —
+  and read rule 40's "known coupling" note, because those same two threads currently run every
+  `@Scheduled` job in the application as well.
 - **`HALF_OPEN` deliberately reads as "not open"** in `isCircuitOpen`, so a waiting message
   becomes one of resilience4j's probe calls instead of sleeping through the recovery window.
+- **The park depends on `automatic-transition-from-open-to-half-open-enabled: true`**
+  (`resilience4j.circuitbreaker.configs.default` in `application.yml`). `isCircuitOpen` is a
+  passive read: it acquires no permission, so it never drives the OPEN→HALF_OPEN transition
+  itself. With the flag on, resilience4j flips the state on its own once
+  `wait-duration-in-open-state` elapses and the parked messages wake. Turn it off and a parked
+  backlog with **no other traffic to that host** never wakes at all — `getState()` stays OPEN
+  until some call attempts a permission, no call ever attempts one because every candidate is
+  parked, and (per the deadline gap above) the messages never age out either. They would sit until
+  the process restarts and drains them, or until new arrivals hit the pending bound and DLQ. Never
+  disable that flag, and do not assume a passive state read can be substituted for a call
+  attempt.
 - **Consumer lag grows while a circuit is open, and that is correct.** The parked record's offset
   stays uncommitted on purpose (rule 39); lag is the honest signal for "we are waiting on an
   upstream", and a crash redelivers rather than loses.
@@ -184,7 +217,7 @@ stale-entry replacement),
 
 ### 24. Never call `OAuth2ProviderService.evictToken` without also setting `RequestStateService.markTokenEvicted`
 
-The 401-retry-with-fresh-token path in `OracleRequestConsumer.handleFailedResponse` and `ApiRequestConsumer.handleFailedResponse` evicts the cached OAuth2 token and re-queues the message **without incrementing `attemptCount`** — same back-pressure-style pattern as CB-blocked re-queue (Rule 23). The `markTokenEvicted` flag is the loop guard: on the second 401 for the same `compositeId`, `isTokenEvicted` returns true, the eviction branch is skipped, and the request falls through to the standard retry/permanent-failure path. Removing the flag write turns this into an infinite evict→re-mint→401→evict loop that hammers the OAuth endpoint forever (and the `processRequest` `max-message-age-ms` safety net is the only thing that would eventually stop it, ~5 min later, after the OAuth endpoint has been pounded). The flag's TTL matches request state TTL (default 72h) so it dies with the request lifecycle. `isTokenEvicted` returns `true` on Redis failure (fail-closed) — a Redis outage degrades to existing pre-v1.1.0 behavior (immediate DLQ on 401), never to a runaway loop.
+The 401-retry-with-fresh-token path in `OracleRequestConsumer.handleFailedResponse` and `ApiRequestConsumer.handleFailedResponse` evicts the cached OAuth2 token and re-queues the message **without incrementing `attemptCount`** — the same "this is not the request's fault" treatment as the CB-blocked path (Rule 23), but note the mechanics diverged in v2.3.0: the 401 leg still re-queues **immediately** (a fresh token is available at once, so there is nothing to wait for), while the CB leg parks and waits for its circuit. Do not "unify" them by routing 401s through `CbRequeueScheduler` — there is no circuit state to poll for a token problem. The `markTokenEvicted` flag is the loop guard: on the second 401 for the same `compositeId`, `isTokenEvicted` returns true, the eviction branch is skipped, and the request falls through to the standard retry/permanent-failure path. Removing the flag write turns this into an infinite evict→re-mint→401→evict loop that hammers the OAuth endpoint forever (and the `processRequest` `max-message-age-ms` safety net is the only thing that would eventually stop it, ~5 min later, after the OAuth endpoint has been pounded). The flag's TTL matches request state TTL (default 72h) so it dies with the request lifecycle. `isTokenEvicted` returns `true` on Redis failure (fail-closed) — a Redis outage degrades to existing pre-v1.1.0 behavior (immediate DLQ on 401), never to a runaway loop.
 
 ### 25. Never ack a request message when the Redis idempotency gate itself fails
 
