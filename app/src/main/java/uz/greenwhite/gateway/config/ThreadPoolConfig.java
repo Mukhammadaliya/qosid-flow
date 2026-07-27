@@ -6,8 +6,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 
 @Slf4j
@@ -47,6 +49,24 @@ public class ThreadPoolConfig {
         log.info("ThreadPool [oauth2-refresh-] created: core={}, max={}, queue=50",
                 executor.getCorePoolSize(), executor.getMaxPoolSize());
         return executor;
+    }
+
+    /**
+     * Shared timer for parked CB requeues. Two threads is plenty: the tasks only re-check a
+     * circuit state and hand off to the Kafka producer.
+     *
+     * <p>Destruction order matters: the consumers that depend on this bean are destroyed
+     * first (their {@code @PreDestroy} drains every parked requeue), and Kafka listener
+     * containers — being {@code SmartLifecycle} — are stopped before any bean destruction
+     * begins, so nothing can call {@code schedule(...)} on an already-shut-down executor.
+     */
+    @Bean(destroyMethod = "shutdown")
+    public ScheduledExecutorService cbRequeueTimer() {
+        return Executors.newScheduledThreadPool(2, r -> {
+            Thread t = new Thread(r, "cb-requeue-timer");
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     private ThreadPoolTaskExecutor buildExecutor(int min, int max, String prefix) {

@@ -1,6 +1,7 @@
 package uz.greenwhite.gateway.kafka.consumer.api;
 
 import io.micrometer.core.instrument.Timer;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
@@ -15,6 +16,7 @@ import uz.greenwhite.gateway.config.RetryProperties;
 import uz.greenwhite.gateway.http.HttpRequestService;
 import uz.greenwhite.gateway.kafka.ack.OrderedAckTracker;
 import uz.greenwhite.gateway.kafka.producer.RequestProducer;
+import uz.greenwhite.gateway.kafka.retry.CbRequeueScheduler;
 import uz.greenwhite.gateway.metrics.GatewayMetrics;
 import uz.greenwhite.gateway.oauth2.OAuth2ProviderService;
 import uz.greenwhite.gateway.model.enums.ErrorSource;
@@ -29,6 +31,7 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
 
 @Slf4j
 @Service
@@ -51,6 +54,14 @@ public class ApiRequestConsumer implements ConsumerSeekAware {
     private final KafkaProperties kafkaProperties;
     private final OAuth2ProviderService oAuth2ProviderService;
 
+    /**
+     * Parks CB-blocked messages until the circuit accepts traffic again, instead of
+     * re-queuing them at Kafka round-trip speed (SAFETY-RULES 23). Its own instance —
+     * pending state is never shared with the Oracle flow (SAFETY-RULES 5); only the
+     * underlying timer threads are shared.
+     */
+    private final CbRequeueScheduler cbRequeueScheduler;
+
     public ApiRequestConsumer(
             HttpRequestService httpRequestService,
             RequestStateService requestStateService,
@@ -59,7 +70,8 @@ public class ApiRequestConsumer implements ConsumerSeekAware {
             @Qualifier("apiHttpExecutor") ThreadPoolTaskExecutor httpExecutor,
             GatewayMetrics metrics,
             KafkaProperties kafkaProperties,
-            OAuth2ProviderService oAuth2ProviderService) {
+            OAuth2ProviderService oAuth2ProviderService,
+            @Qualifier("cbRequeueTimer") ScheduledExecutorService cbRequeueTimer) {
         this.httpRequestService = httpRequestService;
         this.requestStateService = requestStateService;
         this.requestProducer = requestProducer;
@@ -68,6 +80,20 @@ public class ApiRequestConsumer implements ConsumerSeekAware {
         this.metrics = metrics;
         this.kafkaProperties = kafkaProperties;
         this.oAuth2ProviderService = oAuth2ProviderService;
+        this.cbRequeueScheduler = new CbRequeueScheduler(
+                "API", cbRequeueTimer, retryProperties, metrics, httpRequestService::isCircuitOpen);
+    }
+
+    /**
+     * A parked message holds an uncommitted offset; draining on shutdown turns a would-be
+     * redelivery into a clean handover. Runs before the {@code cbRequeueTimer} bean's own
+     * shutdown (this bean depends on it) and after the Kafka listener containers have been
+     * stopped ({@code SmartLifecycle} stop precedes bean destruction), so no new parkings
+     * can race with the drain.
+     */
+    @PreDestroy
+    public void shutdown() {
+        cbRequeueScheduler.shutdown();
     }
 
     @KafkaListener(
@@ -176,6 +202,7 @@ public class ApiRequestConsumer implements ConsumerSeekAware {
                         retryProperties.getIntervalMs() * retryProperties.getMaxAttempts() + 60_000))
                 .subscribe(
                         response -> {
+                            boolean parked = false;
                             try {
                                 httpSample.stop(metrics.getHttpRequestTimer());
                                 if (response != null && response.isSuccess()) {
@@ -184,13 +211,21 @@ public class ApiRequestConsumer implements ConsumerSeekAware {
                                 } else {
                                     int httpStatus = response != null ? response.getHttpStatus() : 0;
                                     metrics.recordHttpResult(httpStatus);
-                                    handleFailedResponse(key, message, response);
+                                    parked = handleFailedResponse(key, message, response, partition, offset);
                                 }
                             } catch (Exception e) {
                                 log.error("[API] Error handling response for {}: {}", key, e.getMessage(), e);
                             } finally {
+                                // The lock is released even when parked: a parked message is not
+                                // being processed, and the 300 s lock TTL must not be held for
+                                // the whole wait.
                                 requestStateService.releaseLock(key);
-                                ackTracker.complete(partition, offset);
+                                // A parked message's record is completed by CbRequeueScheduler once
+                                // the requeue is produced — completing it here would commit the
+                                // offset while the work is still outstanding (SAFETY-RULES 39).
+                                if (!parked) {
+                                    ackTracker.complete(partition, offset);
+                                }
                             }
                         },
                         error -> {
@@ -238,33 +273,79 @@ public class ApiRequestConsumer implements ConsumerSeekAware {
         }
     }
 
-    private void handleFailedResponse(String key, RequestMessage message, ResponseMessage response) {
+    /**
+     * @return {@code true} when the message was parked by {@link CbRequeueScheduler} — the
+     *         caller must then NOT complete the Kafka record; the scheduler's runnable owns it
+     */
+    private boolean handleFailedResponse(String key, RequestMessage message, ResponseMessage response,
+            TopicPartition partition, long offset) {
         int httpStatus = response != null ? response.getHttpStatus() : 0;
         String errorMessage = response != null ? response.getErrorMessage() : "Unknown error";
         String errorSourceStr = response != null ? response.getErrorSource() : null;
 
         if ("CIRCUIT_BREAKER".equals(errorSourceStr)) {
             // SAFETY-RULES 23: CB-blocked is transient back-pressure — attemptCount stays
-            // untouched and CIRCUIT_BREAKER is never added to isNonRetryableSource. The
-            // re-queues are counted separately so a long CB outage cannot spin at Kafka
-            // round-trip speed forever; past the cap the message becomes a normal
-            // permanent failure (one DLQ record), which is what the message-expiry net
-            // was always meant to do.
+            // untouched and CIRCUIT_BREAKER is never added to isNonRetryableSource.
+            //
+            // Give-up is by TIME, not by round-trip count: the message is parked until the
+            // circuit accepts traffic again, and isMessageExpired (max-message-age-ms, 5 min)
+            // is what eventually turns a genuinely stuck message into one DLQ record. The
+            // count cap below is only a runaway guard for a broken delay path.
+            if (isMessageExpired(message)) {
+                long ageMs = Duration.between(message.getCreatedAt(), LocalDateTime.now()).toMillis();
+                metrics.getCbRequeueExhausted().increment();
+                log.error("[API] CB still open and message expired (age={}ms), sending to DLQ: {}",
+                        ageMs, key);
+                handlePermanentFailure(key, message, httpStatus,
+                        "Circuit breaker still open after " + ageMs + "ms", ErrorSource.SYSTEM);
+                return false;
+            }
+
             int requeues = requestStateService.incrementCbRequeue(key);
             if (requeues > retryProperties.getCbMaxRequeues()) {
                 metrics.getCbRequeueExhausted().increment();
-                log.error("[API] CB requeue cap exceeded ({} > {}), sending to DLQ: {}",
+                log.error("[API] CB requeue runaway guard tripped ({} > {}), sending to DLQ: {}",
                         requeues, retryProperties.getCbMaxRequeues(), key);
                 handlePermanentFailure(key, message, httpStatus,
-                        "Circuit breaker still open after " + requeues + " requeues",
+                        "Circuit breaker requeue guard tripped after " + requeues + " requeues",
                         ErrorSource.SYSTEM);
-                return;
+                return false;
             }
+
             metrics.getHttpRetry().increment();
-            log.warn("[API] CB-blocked, requeueing without attempt increment ({}/{}): {}",
-                    requeues, retryProperties.getCbMaxRequeues(), key);
-            requestProducer.sendApiRequest(message);
-            return;
+            boolean parked;
+            String cbName = null;
+            try {
+                cbName = httpRequestService.circuitBreakerName(message);
+                long bodyBytes = message.getBody() == null ? 0 : message.getBody().length();
+                parked = cbRequeueScheduler.schedule(key, cbName, bodyBytes, () -> {
+                    requestProducer.sendApiRequest(message);
+                    ackTracker.complete(partition, offset);
+                });
+            } catch (Exception e) {
+                // Belt-and-braces, both branches should be unreachable: circuitBreakerName
+                // throws NPE only for a null baseUrl (impossible on this path — the CB
+                // response is built AFTER the send path resolved a circuit from that very
+                // baseUrl), and schedule() throws RejectedExecutionException only if the
+                // timer is already shut down (impossible while consuming — listener
+                // containers stop before bean destruction begins). Letting either escape
+                // to the callback's generic catch would complete the record with the
+                // message neither requeued nor DLQ'd — a silent drop, the one outcome
+                // that is never acceptable. DLQ instead.
+                log.error("[API] Could not park CB-blocked message {} — falling back to DLQ: {}",
+                        key, e.getMessage(), e);
+                parked = false;
+            }
+            if (parked) {
+                // Deliberately NOT completing the record here: the scheduler's runnable owns it.
+                log.warn("[API] CB-blocked, parked until {} accepts traffic ({}/{}): {}",
+                        cbName, requeues, retryProperties.getCbMaxRequeues(), key);
+                return true;
+            }
+            log.error("[API] CB pending bound full, sending to DLQ: {}", key);
+            handlePermanentFailure(key, message, httpStatus,
+                    "Circuit breaker open and requeue buffer full", ErrorSource.SYSTEM);
+            return false;
         }
 
         if (httpStatus == 401 && message.getOauth2Provider() != null
@@ -275,7 +356,7 @@ public class ApiRequestConsumer implements ConsumerSeekAware {
             oAuth2ProviderService.evictToken(message.getOauth2Provider());
             requestStateService.markTokenEvicted(key);
             requestProducer.sendApiRequest(message);
-            return;
+            return false;
         }
 
         int attemptCount = requestStateService.incrementAttempt(key);
@@ -295,6 +376,7 @@ public class ApiRequestConsumer implements ConsumerSeekAware {
             ErrorSource source = ErrorSource.fromString(errorSourceStr);
             handlePermanentFailure(key, message, httpStatus, errorMessage, source);
         }
+        return false;
     }
 
     private void handleFailedProcessing(String key, RequestMessage message, Throwable e) {
