@@ -126,13 +126,18 @@ listener ko'tarish**.
       (`automatic-transition-from-open-to-half-open-enabled: true` sxemani HALF_OPEN'ga o'tkazadi)
       parked xabarlar chiqariladi va listener'ga yetadi → `requeue_pending` **0 ga tushadi**, lag 0
       ga qaytadi, yangi `Circuit breaker ...` DLQ yozuvi paydo bo'lmaydi.
-- [ ] **K2. Vaqt bo'yicha taslim** — `max-message-age-ms`ni 60000 qilib, listener'ni ko'tarmasdan
-      CB'ni 2 daqiqa ochiq qoldiring. Kutilgan: ~60-90s dan keyin har bir parked xabar uchun BITTA
-      DLQ yozuvi, sababi **`Message expired after NNNNNms`** (`Circuit breaker still open after ...`
-      EMAS — u faqat bitta yetkazib berish ichida muddat o'tsa chiqadigan burchak holat), `httpStatus
-      = 0`, `errorSource = SYSTEM`; `gateway_dlq_sent_total` o'sadi, `..._requeue_exhausted_total`
-      esa **~0 da qoladi**. Sabab: parkda turgan xabarning muddati TEKSHIRILMAYDI — u faqat sxema
-      yo'l bergandan keyingi yetkazib berishda, `processRequest` boshidagi darvoza bilan aniqlanadi.
+- [ ] **K2. Vaqt bo'yicha taslim (park ICHIDA)** — `max-message-age-ms`ni 60000 qilib, listener'ni
+      ko'tarmasdan CB'ni 2 daqiqa ochiq qoldiring. Kutilgan: ~60-90s dan keyin (deadline + ko'pi
+      bilan bitta re-check oralig'i, ≤30s) har bir parked xabar uchun BITTA DLQ yozuvi, sababi
+      **`Circuit breaker still open after NNNNNms`**, `httpStatus = 503`, `errorSource = SYSTEM`;
+      jurnalda `parked message aged out while circuit ... was open — giving up`;
+      `..._requeue_exhausted_total` **har bir taslim uchun o'sadi** (endi BU — uzilish signali) va
+      `gateway_dlq_sent_total` u bilan birga o'sadi; `requeue_pending{flow="API"}` 0 ga tushadi,
+      lag 0 ga qaytadi (yozuv give-up'da commit qilinadi). Sabab: scheduler har bir timer
+      uyg'onishida muddatni sxemadan OLDIN tekshiradi — sxema hech qachon yopilmasa ham parked
+      xabar o'z muddati bilan chiqib ketadi. `Message expired after ...` (`httpStatus=0`) yozuvi
+      endi faqat burchak holat: muddati o'tgan xabar Kafka orqali yana bir bor kelsa (masalan,
+      shutdown drain'dan keyin) `processRequest` boshidagi darvoza ushlaydi.
       *Diqqat:* bu kalit — `gateway.retry.max-message-age-ms` — `RETRY_CB_*` lardan farqli, settings
       DB'da migratsiya qilingan, ya'ni **env-var (`RETRY_MAX_MESSAGE_AGE`) endi ta'sir qilmaydi**.
       Uni gateway o'chiq holda ops orqali o'zgartiring:

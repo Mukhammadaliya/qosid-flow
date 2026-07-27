@@ -113,22 +113,24 @@ which parks it in memory and re-checks `HttpRequestService.isCircuitOpen(cbName)
 `wait-duration-in-open-state`). Only when the circuit stops refusing calls is the message
 produced back to its request topic. Two consequences a future change must not undo:
 
-- **Give-up is by TIME — and in practice by the outer gate, not the one inside this branch.** Age
-  accrues *between* deliveries, because the scheduler holds a message without any deadline check of
-  its own. So the expiry that actually fires during a real outage is the gate at the **top of
-  `processRequest`**, on the delivery that follows a hand-back: `Message expired after <ageMs>ms`,
-  `errorSource=SYSTEM`, `httpStatus=0`, and it moves **only** `gateway.dlq.sent` — *not*
-  `...requeue.exhausted`. The `isMessageExpired` call inside the CB branch catches the narrower
-  case where the age crosses within one delivery (a slow OAuth2 fetch or a long HTTP attempt ahead
-  of the CB rejection); that one reads `Circuit breaker still open after <ageMs>ms`. Both are
-  intended and neither may be removed — the outer gate is what ends the wait, the in-branch one
-  keeps an already-late message from being parked one more time — but an operator debugging an
-  outage should expect the first.
-- **Nothing checks the deadline while a message is parked** (known gap, stated so nobody relies on
-  the opposite). A parked message learns it has expired only when the circuit lets it back, so it
-  can outlive `max-message-age-ms` by up to the current re-check interval (≤30 s at the defaults) —
-  and by arbitrarily long if the circuit never flips, see the automatic-transition invariant below.
-  `max-message-age-ms` is a give-up deadline, not a bound on park duration.
+- **Give-up is by TIME — and the scheduler itself enforces the deadline while the message is
+  parked.** Every timer fire first asks the consumer-supplied expiry check (a closure over that
+  consumer's own `isMessageExpired`, so the registry-managed `max-message-age-ms` is read live and
+  never duplicated in the scheduler) and only then the circuit state. An expired parked message
+  therefore leaves as one DLQ record **from the park itself**, via a give-up callback the consumer
+  supplied: `Circuit breaker still open after <ageMs>ms`, `errorSource=SYSTEM`, `httpStatus=503`,
+  incrementing `...requeue.exhausted` (+ `dlq.sent`). That is the exit an operator sees in a real
+  outage. The `isMessageExpired` call at the top of the CB branch catches a message already late
+  on arrival (a slow OAuth2 fetch or long HTTP attempt ahead of the CB rejection), so it is never
+  parked at all — same reason string, same counter. The outer `processRequest` gate (`Message
+  expired after <ageMs>ms`) still exists but is now a corner case for this branch: it fires only
+  when an expired message travels through Kafka once more — a shutdown drain, or an ordinary
+  retry that raced the deadline. None of the three checks may be removed.
+- **A parked message can still overshoot its deadline by up to one re-check interval** (≤30 s at
+  the defaults): the deadline is evaluated on timer fires, not continuously. It can no longer
+  overshoot indefinitely — before Task 5c nothing checked the deadline while parked, and a circuit
+  that never flipped held the message and its uncommitted offset forever. `max-message-age-ms` is
+  a give-up deadline, not an exact bound on park duration.
 - **A count of round trips is not a proxy for elapsed time**, because the round-trip rate depends
   on load, not on the circuit. That confusion caused a production incident: on **2026-07-27
   14:27** a deploy restart left a pull backlog, the gateway pulled 1000 requests in 15 s,
@@ -148,13 +150,14 @@ rule 8), but with a 2 s floor on the wait a message cannot legitimately need mor
 itself is broken. Do not tune it as if it were a retry budget, and do not lower it back toward
 the round-trip regime.
 
-Four DLQ exits end a park, and each has its own signal. The first is the one a real outage
-produces; the other three are corner cases:
+Five DLQ exits end (or refuse) a park, and each has its own signal. The first is the one a real
+outage produces; the other four are corner cases:
 
 | Exit | Where | `failureReason` | Metric |
 |------|-------|-----------------|--------|
-| **Aged out between deliveries — the normal one** | `processRequest` top gate | `Message expired after <ageMs>ms` (`SYSTEM`, `httpStatus=0`) | `gateway.dlq.sent` and **no CB-specific counter** |
-| Aged out within one delivery | CB branch | `Circuit breaker still open after <ageMs>ms` | `...requeue.exhausted` (+ `dlq.sent`) |
+| **Aged out while parked — the normal one** | scheduler timer fire → consumer's give-up callback | `Circuit breaker still open after <ageMs>ms` (`SYSTEM`, `httpStatus=503`) | `...requeue.exhausted` (+ `dlq.sent`) |
+| Already expired on arrival (never parked) | CB branch, pre-park check | `Circuit breaker still open after <ageMs>ms` | `...requeue.exhausted` (+ `dlq.sent`) |
+| Expired message redelivered (shutdown drain, or a retry that raced the deadline) | `processRequest` top gate | `Message expired after <ageMs>ms` (`SYSTEM`, `httpStatus=0`) | `gateway.dlq.sent` and **no CB-specific counter** |
 | Runaway guard tripped (should never fire) | CB branch | `Circuit breaker requeue guard tripped after <n> requeues` | `...requeue.exhausted` (+ `dlq.sent`) |
 | Park bound full (memory pressure) | CB branch | `Circuit breaker open and requeue buffer full` | `...requeue.rejected` (+ `dlq.sent`) |
 
@@ -186,17 +189,18 @@ Also load-bearing, and easy to break while refactoring:
   declares `taskScheduler` explicitly — see rule 40.
 - **`HALF_OPEN` deliberately reads as "not open"** in `isCircuitOpen`, so a waiting message
   becomes one of resilience4j's probe calls instead of sleeping through the recovery window.
-- **The park depends on `automatic-transition-from-open-to-half-open-enabled: true`**
+- **A timely wake-up still depends on `automatic-transition-from-open-to-half-open-enabled: true`**
   (`resilience4j.circuitbreaker.configs.default` in `application.yml`). `isCircuitOpen` is a
   passive read: it acquires no permission, so it never drives the OPEN→HALF_OPEN transition
   itself. With the flag on, resilience4j flips the state on its own once
   `wait-duration-in-open-state` elapses and the parked messages wake. Turn it off and a parked
-  backlog with **no other traffic to that host** never wakes at all — `getState()` stays OPEN
-  until some call attempts a permission, no call ever attempts one because every candidate is
-  parked, and (per the deadline gap above) the messages never age out either. They would sit until
-  the process restarts and drains them, or until new arrivals hit the pending bound and DLQ. Never
-  disable that flag, and do not assume a passive state read can be substituted for a call
-  attempt.
+  backlog with **no other traffic to that host** never wakes as a *requeue* — `getState()` stays
+  OPEN until some call attempts a permission, and no call ever attempts one because every
+  candidate is parked. Since Task 5c the scheduler's own deadline check bounds the damage: those
+  messages age out into the DLQ after `max-message-age-ms` instead of sitting on uncommitted
+  offsets forever. That is a backstop, not a license — with the flag off every parked message
+  during a recoverable blip becomes a DLQ record instead of a delivered request. Never disable
+  the flag, and do not assume a passive state read can be substituted for a call attempt.
 - **Consumer lag grows while a circuit is open, and that is correct.** The parked record's offset
   stays uncommitted on purpose (rule 39); lag is the honest signal for "we are waiting on an
   upstream", and a crash redelivers rather than loses.
@@ -211,8 +215,10 @@ either one**, or this rule's primary backstop (and rule 24's) goes dead again. W
 `createdAt` the park has no deadline at all: the message would wait until the runaway guard or
 the pending bound stops it, i.e. memory becomes the limit instead of time.
 
-Guards: `CbBackpressureTest` (both consumers: park instead of DLQ, expiry inside the CB branch,
-bound-full fallback, per-flow isolation), `CbRequeueSchedulerTest` (waits while open, requeues on close, both bounds, shutdown drain,
+Guards: `CbBackpressureTest` (both consumers: park instead of DLQ, expiry on arrival, give-up
+while parked with the CB reason and `...requeue.exhausted`, bound-full fallback, per-flow
+isolation), `CbRequeueSchedulerTest` (waits while open, requeues on close, gives up on expiry even
+while the circuit stays open, re-checks the deadline on every fire, both bounds, shutdown drain,
 stale-entry replacement),
 `RequestStateRequeueCountTest` (Redis counter + fail-closed).
 
@@ -450,27 +456,44 @@ they ack synchronously on the listener thread, already in order.
 ### 40. Never complete a parked CB record outside `CbRequeueScheduler`
 
 When `handleFailedResponse` parks a CB-blocked message it returns `true`, and the callback's
-`finally` block must skip `ackTracker.complete(...)` for that record. The scheduler's runnable
-produces the requeue and completes the record, **in that order**. Completing it at both places
-commits the offset while the requeue is still outstanding — the silent-loss shape rule 39 exists
-to prevent: no DLQ record, no alert, no metric, and the request simply never happens.
+`finally` block must skip `ackTracker.complete(...)` for that record. From then on the record is
+completed by exactly one of the two callbacks the consumer handed to `schedule(...)`: the
+**requeue** runnable (produce the requeue, then complete) when the circuit lets the message back,
+or the **give-up** runnable (DLQ via the consumer's own `handlePermanentFailure` — so
+`errorSource`, the DLQ record shape and the metrics stay consistent with every other give-up —
+then complete) when the message ages out while parked. Each does its work first and completes
+**after** — completing anywhere else, or in both places, commits the offset while the work is
+still outstanding: the silent-loss shape rule 39 exists to prevent, with no DLQ record, no alert,
+no metric, and the request simply never happens.
 
-Three related invariants inside the scheduler itself:
+Four related invariants inside the scheduler itself:
 
-- **Exactly one hand-back per parked entry.** Both the timer thread and `shutdown()` race through
-  a conditional removal from the pending map; the loser walks away. Running the runnable twice
-  would produce the message twice *and* complete the record twice. Byte accounting is adjusted
-  only by the thread that won the transition, which is what keeps the `pending.bytes` gauge from
-  drifting away from the map.
+- **Exactly one outcome per parked entry.** An entry has three exits — timer requeue, timer
+  give-up, shutdown drain — and every one of them races through a conditional removal from the
+  pending map first; whichever thread wins the transition runs its runnable, and the loser walks
+  away. (The timer's two exits cannot race each other: they are exclusive branches of a single
+  fire.) Running any two would produce or DLQ the message twice *and* complete the record twice.
+  Byte accounting is adjusted only by the thread that won the transition, which is what keeps the
+  `pending.bytes` gauge from drifting away from the map.
+- **The deadline is checked before the circuit, on every fire, through the consumer's own
+  predicate.** Expiry first, so an expired message leaves even if its circuit never flips (and is
+  not produced again even if the circuit just closed — it is already too late to be worth the
+  round trip); the consumer's `isMessageExpired` closure rather than a scheduler-local
+  comparison, so the live-read `max-message-age-ms` can never drift between the two. A predicate
+  failure — expiry or circuit — always fails toward *waiting*: a wrongly-skipped give-up costs
+  one more interval, a wrongly-fired one DLQs a live message irreversibly.
 - **A stale parked entry's `Acknowledgment` must never be used.** A rebalance can redeliver a
   record whose previous incarnation is still parked; `schedule` replaces the entry and the stale
-  runnable is deliberately abandoned (same rule as `OrderedAckTracker#register`).
-- **`shutdown()` drains rather than drops.** A parked message holds an uncommitted offset, so
-  producing it during `@PreDestroy` turns a would-be redelivery into a clean handover. It must run
-  while the `cbRequeueTimer` bean is still alive (the consumers depend on that bean, so they are
-  destroyed first) and after the listener containers have stopped, so nothing can park during the
-  drain. Failures there are logged and swallowed on purpose: the offset is still uncommitted, and
-  throwing would abandon the remaining parked messages.
+  runnables are deliberately abandoned (same rule as `OrderedAckTracker#register`).
+- **`shutdown()` drains rather than drops — and drains through the requeue, never the give-up.**
+  A parked message holds an uncommitted offset, so producing it during `@PreDestroy` turns a
+  would-be redelivery into a clean handover; that is true even for an entry already past its
+  deadline, which the outer `processRequest` gate DLQs on redelivery (a hand-back is reversible,
+  a DLQ decision is not). It must run while the `cbRequeueTimer` bean is still alive (the
+  consumers depend on that bean, so they are destroyed first) and after the listener containers
+  have stopped, so nothing can park during the drain. Failures there are logged and swallowed on
+  purpose: the offset is still uncommitted, and throwing would abandon the remaining parked
+  messages.
 
 **Never let the CB timer double as the application scheduler.** `cbRequeueTimer` is the context's
 only `ScheduledExecutorService` bean, and Spring Boot's auto-configured `taskScheduler` is guarded

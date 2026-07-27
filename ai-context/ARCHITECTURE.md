@@ -164,31 +164,36 @@ from the `createdAt` stamped at ingress) goes to the DLQ via `handlePermanentFai
 which circuit refused it and hands the message to its flow's `CbRequeueScheduler`
 (`kafka/retry/`), which:
 
-1. holds it in memory and re-checks `isCircuitOpen(cbName)` after `cb-requeue-delay-ms` (2 s),
-   doubling up to `cb-requeue-max-delay-ms` (30 s = one open window), with ≤250 ms jitter so a
-   parked burst does not stampede the upstream the moment the circuit closes;
+1. holds it in memory and, on each timer fire, checks the message's **deadline first** (the
+   consumer's own `isMessageExpired`, passed in as a supplier so the live-read
+   `max-message-age-ms` is never duplicated) and only then `isCircuitOpen(cbName)`, re-arming
+   after `cb-requeue-delay-ms` (2 s), doubling up to `cb-requeue-max-delay-ms` (30 s = one open
+   window), with ≤250 ms jitter so a parked burst does not stampede the upstream the moment the
+   circuit closes;
 2. once the circuit stops refusing calls, produces the message back to its request topic **and
-   then** completes the Kafka record — in that order, and only there (rule 40). Until then the
-   offset stays uncommitted, so **consumer lag grows while a circuit is open. That is the expected
+   then** completes the Kafka record — in that order (rule 40). Until then the offset stays
+   uncommitted, so **consumer lag grows while a circuit is open. That is the expected
    signal**, not a symptom: it is the honest reading of "we are waiting on an upstream", and a
    crash in that window redelivers the message (absorbed by the idempotency gate) instead of
    losing it;
-3. releases the Redis lock while parked — a parked message is not being processed and must not
+3. if instead the deadline passes while the message is parked — the **normal give-up of a real
+   outage** — runs the consumer's give-up callback: one DLQ record via `handlePermanentFailure`
+   (`Circuit breaker still open after <ageMs>ms`, `SYSTEM`), `...requeue.exhausted` incremented,
+   and then the record completed. Exactly one of these two callbacks runs per parked entry
+   (rule 40), so an expired message leaves even if its circuit never flips;
+4. releases the Redis lock while parked — a parked message is not being processed and must not
    hold the 300 s lock TTL for the whole wait;
-4. drains every parked message through the same requeue path on `@PreDestroy`, turning a
-   would-be redelivery into a clean handover.
+5. drains every parked message through the requeue path (never the give-up) on `@PreDestroy`,
+   turning a would-be redelivery into a clean handover; an already-expired drained message is
+   DLQ'd on redelivery by the `processRequest` top gate (`Message expired after <ageMs>ms`).
 
-Waking the park depends on `automatic-transition-from-open-to-half-open-enabled: true` — the poll is
-a passive state read and cannot move the circuit itself (SAFETY-RULES 23).
+A *timely* wake-up depends on `automatic-transition-from-open-to-half-open-enabled: true` — the
+poll is a passive state read and cannot move the circuit itself; the deadline check bounds how
+long a never-flipping circuit can hold a message, but only by giving it up (SAFETY-RULES 23).
 
 Give-up is by **time**, never by round-trip count (`cb-max-requeues` survives only as a runaway
-guard) — but note *which* time check fires. The scheduler holds a message with no deadline check of
-its own, so in a real outage the expiry is caught on the **next delivery** by the gate at the top of
-`processRequest`: `Message expired after <ageMs>ms` (`SYSTEM`, `httpStatus=0`), moving only
-`gateway.dlq.sent`. The `isMessageExpired` call inside the CB branch covers the narrower
-within-one-delivery crossing and is the only one that reads `Circuit breaker still open after …` and
-increments `...requeue.exhausted`. Consequence for operators: `...requeue.exhausted` is *not* the
-outage signal. The park is bounded in messages
+guard), and the scheduler itself enforces it: `...requeue.exhausted` and DLQ records reading
+`Circuit breaker still open after …` **are the outage signal**. The park is bounded in messages
 (`cb-max-pending`) and bytes (`cb-max-pending-bytes`, the bound that usually binds, since one REST
 body can be 20 MiB); past either bound the message goes to the DLQ rather than growing the heap.
 Each flow owns its own scheduler instance, gauges and budget (rule 5); they share only the

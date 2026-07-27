@@ -141,28 +141,32 @@ separate budgets) — so a dashboard query must not assume a common tag set:
 | `gateway.http.circuitbreaker.requeue.pending{flow}` | Gauge | Messages currently parked. Should return to 0 shortly after the circuit closes; a plateau means the upstream is still refusing. |
 | `gateway.http.circuitbreaker.requeue.pending.bytes{flow}` | Gauge | Parked body bytes. Watch this one against `cb-max-pending-bytes` — it hits the bound first. |
 | `gateway.http.circuitbreaker.requeue.rejected` | Counter | Parks refused because a bound was full → DLQ (`Circuit breaker open and requeue buffer full`). Non-zero means memory pressure: raise the bounds or shed load. |
-| `gateway.http.circuitbreaker.requeue.exhausted` | Counter | Only the two **corner-case** give-ups inside the CB branch: an age crossing within a single delivery, and the runaway guard. **This counter stays near 0 during an ordinary outage** — do not treat it as the outage signal (see below). Non-zero for the guard reason means the delay path is broken. |
+| `gateway.http.circuitbreaker.requeue.exhausted` | Counter | Messages that gave up by TIME: aged past `max-message-age-ms` while parked on an open circuit (the scheduler's own per-fire deadline check — **the normal exit of a real outage, and the signal to watch**), plus the two corner cases inside the CB branch (already expired on arrival, and the runaway guard). Non-zero for the guard reason means the delay path is broken. |
 
 ### Which signal actually moves when an upstream is down
 
-The give-up that fires in a real outage is **not** the one inside the CB branch. A parked message
-carries no deadline check, so its age is noticed on the **next delivery**, by the gate at the top of
-`processRequest` — which DLQs it as `Message expired after <ageMs>ms` (`errorSource=SYSTEM`,
-`httpStatus=0`) and moves **only `gateway.dlq.sent`**. So during a genuine outage:
+The give-up that fires in a real outage is the scheduler's **own deadline check**: every timer
+fire evaluates the consumer's `isMessageExpired` before the circuit state, so a message that ages
+past `max-message-age-ms` while parked is DLQ'd from the park itself — `Circuit breaker still open
+after <ageMs>ms` (`errorSource=SYSTEM`, `httpStatus=503`) — moving **`...requeue.exhausted`**
+(+ `dlq.sent`). It does not wait for the circuit to let it back first. So during a genuine outage:
 
-- **Watch:** `gateway.dlq.sent` rising, DLQ records reading `Message expired after …`, and
-  `...requeue.pending{flow}` sitting at a plateau instead of draining.
-- **Do not watch:** `...requeue.exhausted` — it will read ~0 through exactly that outage.
-- **Expect, and do not confuse with a bug:** DLQ records with the raw transport error as their
-  reason. Calls attempted before the circuit opened, or permitted as HALF_OPEN probes, fail for
-  real, increment `attemptCount`, and after `max-attempts` take the ordinary permanent-failure path.
-  The property that matters is that no DLQ record is caused by the CB block *itself*.
+- **Watch:** `...requeue.exhausted` rising (one per parked message that hit the deadline), DLQ
+  records reading `Circuit breaker still open after …`, and `...requeue.pending{flow}` sitting at
+  a plateau (messages still inside their age budget) or stair-stepping down as they age out.
+- **Also expect, and do not confuse with a bug:** DLQ records with the raw transport error as
+  their reason. Calls attempted before the circuit opened, or permitted as HALF_OPEN probes, fail
+  for real, increment `attemptCount`, and after `max-attempts` take the ordinary permanent-failure
+  path. `Message expired after …` records (the outer `processRequest` gate, `httpStatus=0`) are
+  the same message class one hop later — an expired message that travelled through Kafka once more
+  via a shutdown drain or an ordinary retry — and should be rare.
 
-Also note: nothing checks the deadline while a message is parked, so a parked message can outlive
-`max-message-age-ms` by up to one re-check interval (≤30 s at the defaults) — and indefinitely if
-its circuit never flips (see `automatic-transition-from-open-to-half-open-enabled` below).
-`max-message-age-ms` is a give-up deadline, not a cap on park duration. SAFETY-RULES rule 23 carries
-the full exit table.
+Also note: the deadline is checked on timer fires, not continuously, so a parked message can still
+outlive `max-message-age-ms` by up to one re-check interval (≤30 s at the defaults) — but no
+longer indefinitely: even a circuit that never flips (see
+`automatic-transition-from-open-to-half-open-enabled` below) cannot hold a parked message past its
+deadline. `max-message-age-ms` is a give-up deadline, not an exact cap on park duration.
+SAFETY-RULES rule 23 carries the full exit table.
 
 ## gateway.concurrency.* — Dynamic Scaling
 
@@ -231,7 +235,7 @@ The four **behavioral** keys below are now **DB-managed** (settings DB, like `ga
 | `permitted-number-of-calls-in-half-open-state` | int | `3` | Test calls in HALF_OPEN |
 | `slow-call-duration-threshold` | Duration | `10s` | Threshold for slow call detection |
 | `slow-call-rate-threshold` | int | `50` | Slow call percentage to trigger OPEN (%) |
-| `automatic-transition-from-open-to-half-open-enabled` | boolean | `true` | **Load-bearing for CB back-pressure — never turn off.** The parked-requeue path polls circuit state with a passive read (`isCircuitOpen`) that acquires no permission and therefore cannot itself move OPEN→HALF_OPEN. With this flag on, resilience4j performs the transition on a timer once `wait-duration-in-open-state` elapses and parked messages wake. With it off, a parked backlog with no *other* traffic to that host never wakes — and since nothing checks the message deadline while parked, it never ages out either; the messages sit until a restart drains them or new arrivals hit the pending bound. See SAFETY-RULES rule 23. |
+| `automatic-transition-from-open-to-half-open-enabled` | boolean | `true` | **Load-bearing for CB back-pressure — never turn off.** The parked-requeue path polls circuit state with a passive read (`isCircuitOpen`) that acquires no permission and therefore cannot itself move OPEN→HALF_OPEN. With this flag on, resilience4j performs the transition on a timer once `wait-duration-in-open-state` elapses and parked messages wake. With it off, a parked backlog with no *other* traffic to that host never wakes as a requeue; the scheduler's own deadline check then ages every parked message out into the DLQ after `max-message-age-ms` — messages that a 30 s blip should have delivered. The deadline is a backstop against the pre-Task-5c forever-park, not a substitute for this flag. See SAFETY-RULES rule 23. |
 
 ## gateway.api.* — API Proxy Target
 
