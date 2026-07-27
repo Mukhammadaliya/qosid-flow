@@ -11,7 +11,7 @@
     </parent>
     <groupId>uz.greenwhite</groupId>
     <artifactId>qosid-settings-core</artifactId>
-    <version>2.1.0</version>
+    <version>2.2.0</version>
     <name>qosid-settings-core</name>
     <properties><java.version>21</java.version></properties>
     <dependencies>
