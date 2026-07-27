@@ -52,6 +52,8 @@ public class GatewayMetrics {
     private final Counter httpRetry;
     private final Counter httpCircuitBreakerOpen;
     private final Counter cbRequeueExhausted;
+    private final Counter cbRequeueDelayed;
+    private final Counter cbRequeueRejected;
     private final Counter poolRejection;
 
     // ==================== E5: Oracle Save ====================
@@ -197,6 +199,16 @@ public class GatewayMetrics {
 
         this.cbRequeueExhausted = Counter.builder("gateway.http.circuitbreaker.requeue.exhausted")
                 .description("CB-blocked messages sent to DLQ after exceeding cb-max-requeues")
+                .tag("stage", "http_request")
+                .register(registry);
+
+        this.cbRequeueDelayed = Counter.builder("gateway.http.circuitbreaker.requeue.delayed")
+                .description("CB-blocked messages parked until the circuit accepts traffic again")
+                .tag("stage", "http_request")
+                .register(registry);
+
+        this.cbRequeueRejected = Counter.builder("gateway.http.circuitbreaker.requeue.rejected")
+                .description("CB-blocked messages sent to DLQ because the pending bound was full")
                 .tag("stage", "http_request")
                 .register(registry);
 
