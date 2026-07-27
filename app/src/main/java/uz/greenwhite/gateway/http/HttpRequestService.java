@@ -87,7 +87,49 @@ public class HttpRequestService {
         }
     }
 
-    
+    // ==================== CIRCUIT STATE QUERIES (read-only) ====================
+
+    /**
+     * The circuit this request's host is protected by — the same name the send path resolves.
+     *
+     * <p>Consumers need to know whether an external API is currently refusing traffic <b>before</b>
+     * they hand a message to the send path, so they can hold it back instead of burning a retry
+     * attempt on a call that is guaranteed to be rejected. That decision is per-host, and the host
+     * is only derivable from the request, so the name has to be exposed rather than recomputed by
+     * the caller: a second implementation of the naming rule would drift and the consumer would
+     * end up reading a circuit that protects nothing.
+     */
+    public String circuitBreakerName(RequestMessage request) {
+        return extractDomainForCB(request.getBaseUrl());
+    }
+
+    /**
+     * True only while the circuit refuses calls outright.
+     *
+     * <p>{@code HALF_OPEN} is deliberately NOT open: resilience4j permits a limited number of probe
+     * calls in that state, and a waiting message should be one of them rather than sleeping through
+     * the recovery window — treating half-open as open would delay recovery for exactly as long as
+     * messages keep arriving.
+     *
+     * <p>An unknown name reads as not open. The circuit is created lazily by the send path, so a
+     * name with no entry means nothing has been sent to that host yet and it cannot be open. This
+     * uses {@link CircuitBreakerRegistry#find(String)} rather than
+     * {@code circuitBreaker(name)} on purpose: the latter would <i>create</i> a breaker as a side
+     * effect of a read, publishing a phantom circuit to metrics and the registry.
+     *
+     * <p>Read-only and side-effect free — it acquires no permission and records no outcome, so
+     * calling it never influences the failure rate that drives the circuit. It reads the same
+     * registry {@link #getCircuitBreaker(String)} resolves from, so the query and the send path
+     * cannot disagree about state.
+     */
+    public boolean isCircuitOpen(String cbName) {
+        return circuitBreakerRegistry.find(cbName)
+                .map(CircuitBreaker::getState)
+                .filter(state -> state == CircuitBreaker.State.OPEN
+                        || state == CircuitBreaker.State.FORCED_OPEN)
+                .isPresent();
+    }
+
     /**
      * Send HTTP request with per-endpoint Circuit Breaker protection and OAuth2 support.
      * Each base URL gets its own circuit breaker instance.
