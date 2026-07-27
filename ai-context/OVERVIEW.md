@@ -5,7 +5,7 @@
 | Field | Value |
 |-------|-------|
 | **Name** | Qosid Flow (qosid-flow) |
-| **Version** | 2.0.0 |
+| **Version** | 2.1.0 |
 | **Language** | Java 21 |
 | **Framework** | Spring Boot 3.3.13 |
 | **Base Package** | `uz.greenwhite.gateway` |

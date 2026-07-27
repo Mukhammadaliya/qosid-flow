@@ -1,12 +1,31 @@
 # Security remediation — secrets in git history
 
-**Status: OPEN.** Nothing in this document has been executed. It records what is exposed,
-what only the owner can do about it, and the trade-off between the two cleanup routes.
+**Status: CLOSED BY OWNER DECISION (2026-07-27). Not executed.** The repository owner
+reviewed the findings below and decided that neither the rotation (§2) nor the history
+cleanup (§3) will be carried out: the repository stays private, so publishing its history is
+not imminent, and the exposed values are judged acceptable to leave in place. This document is
+kept as the record of that decision and of what is still exposed — it is **not** an open task
+list, and it should not be re-raised as a release blocker unless the open-core publication
+plan is revived.
+
+**What that means concretely.** The three secrets in §1 remain reachable to anyone who obtains
+a clone of this repository, and the old Telegram bot token's revocation is still unconfirmed.
+The `gitleaks` CI job therefore stays in report-only mode (`continue-on-error: true`) — the
+instruction in §4 to remove that flag applied only if the history was going to be cleaned, and
+does not apply now. The preventive half of the work **was** done and stands: `.gitignore`
+covers `.env*` and `.claude/settings.local.json`, `.env.example` documents every variable
+without values, and the scan runs on every push.
+
+**If the open-core plan is revived, this becomes a blocker again** — publishing the repository
+publishes its history, and §3's Route B (rotate, keep this repo private, publish a fresh
+squashed repo) is the recommended path at that point.
+
+---
 
 Discovered during the 2026-07-24 pre-award audit. The **working tree is clean** — all three
 secrets were removed from `HEAD` long ago. They remain reachable in **git history**, which is
-what makes this a release blocker rather than a nuisage: the business plan is **open-core**,
-so this repository is expected to be published. Publishing it publishes its history.
+what made this a release blocker for the open-core plan: the business plan was **open-core**,
+so this repository was expected to be published, and publishing it publishes its history.
 
 ---
 
@@ -41,8 +60,14 @@ Both gaps are closed in the same commit as this document (`.gitignore` entries, 
 
 ## 2. Rotation — owner action, cannot be automated
 
-These live in external systems. **Do all three regardless of which cleanup route is chosen in
-§3** — rotation is what actually removes the risk; history cleanup only removes the evidence.
+> **DECLINED 2026-07-27 — this is not a checklist to work through.** The owner decided against
+> rotating these. The boxes below are left unticked deliberately: they record what was
+> recommended and what remains exposed, not outstanding work. Rotation is the step that would
+> actually remove the risk (history cleanup only removes the evidence), so with it declined the
+> exposure in §1 stands as-is.
+
+These live in external systems, and the recommendation was to do all three regardless of which
+cleanup route was chosen in §3.
 
 - [ ] **Telegram bot (#2).** In BotFather: `/revoke` on the old bot. Then confirm:
       `curl https://api.telegram.org/bot<OLD_TOKEN>/getMe` → must return **401**.
