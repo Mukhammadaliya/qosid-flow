@@ -7,7 +7,7 @@
 | **Name** | Qosid Flow (qosid-flow) |
 | **Version** | 2.1.0 |
 | **Language** | Java 21 |
-| **Framework** | Spring Boot 3.3.13 |
+| **Framework** | Spring Boot 3.5.16 |
 | **Base Package** | `uz.greenwhite.gateway` |
 | **Group ID** | `uz.greenwhite` |
 | **Artifact ID** | `qosid-flow` |
@@ -29,8 +29,8 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 
 | Technology | Purpose | Version |
 |-----------|---------|---------|
-| Spring Boot | Application framework | 3.3.13 |
-| Spring Cloud | Cloud patterns (Circuit Breaker) | 2023.0.2 |
+| Spring Boot | Application framework | 3.5.16 |
+| Spring Cloud | Cloud patterns (Circuit Breaker) | 2025.0.3 |
 | Spring Kafka | Kafka producer/consumer | (Spring Boot managed) |
 | Spring Data Redis | State management, caching, distributed locks | (Spring Boot managed) |
 | Spring WebFlux | Reactive HTTP client (WebClient) | (Spring Boot managed) |
@@ -47,13 +47,12 @@ A message processing pipeline that pulls HTTP request definitions from Oracle/Bi
 | Grafana | Monitoring dashboards | 10.4.1 |
 | AlertManager | Alert routing | 0.28.0 |
 
-> **Spring Boot 3.3.x is end-of-life.** `3.3.13` (2025-06-19) is the last release of that line —
-> it carries 13 patch releases of fixes over the `3.3.0` this project shipped with, but no
-> future CVE fix will land there. The supported line is `3.5.x`. Moving to it is a scoped
-> project, not a version bump: Spring Cloud must go to the `2025.0.x` train (it provides the
-> Circuit Breaker — a protected zone), Spring Kafka to `3.3.x` (this service depends on precise
-> `MANUAL` ack / `nack` / out-of-order-commit semantics — SAFETY rules 25, 32, 33), and Spring
-> Security to `6.5`. Do it deliberately, with the full suite plus a Kafka ack-behaviour check.
+> **On the supported line since 2026-07-27.** The service ran on `3.3.x` until then, which went
+> end-of-life in mid-2025 (`3.3.13` was its last release). The move to `3.5.16` + Spring Cloud
+> `2025.0.3` brought `spring-kafka` `3.2.10 → 3.3.16`, `spring-security-web` `6.3.10 → 6.5.11`
+> and Jackson `2.19+`. The ack semantics this service depends on were re-verified against the new
+> Kafka version rather than assumed — see SAFETY-RULES 32. Next line up is Boot `4.x`, a genuine
+> major (Spring Framework 7, Jackson 3); do not treat it as a bump.
 
 ## Added Components (Feature-Parity Upgrade)
 
