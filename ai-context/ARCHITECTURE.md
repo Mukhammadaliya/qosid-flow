@@ -156,9 +156,40 @@ gate on restart. `onPartitionsRevoked` drops the state for revoked partitions. R
 need none of this: they ack synchronously on the listener thread. SAFETY-RULES rules 32 and 39
 carry the full reasoning. Nothing is ever acked away silently: on lock
 contention the message is `nack(10s)`-ed back to Kafka (rule 33), on a Redis gate failure
-`nack(5s)` (rule 25), and both an expired message (`gateway.retry.max-message-age-ms`, measured
-from the `createdAt` stamped at ingress) and a message past the CB re-queue cap
-(`gateway.retry.cb-max-requeues`) go to the DLQ via `handlePermanentFailure` (rule 23).
+`nack(5s)` (rule 25), and an expired message (`gateway.retry.max-message-age-ms`, measured
+from the `createdAt` stamped at ingress) goes to the DLQ via `handlePermanentFailure` (rule 23).
+
+**CB-blocked messages park and re-check; they do not spin (v2.3.0).** When E4 answers
+`errorSource=CIRCUIT_BREAKER`, the consumer asks `HttpRequestService.circuitBreakerName(message)`
+which circuit refused it and hands the message to its flow's `CbRequeueScheduler`
+(`kafka/retry/`), which:
+
+1. holds it in memory and re-checks `isCircuitOpen(cbName)` after `cb-requeue-delay-ms` (2 s),
+   doubling up to `cb-requeue-max-delay-ms` (30 s = one open window), with ≤250 ms jitter so a
+   parked burst does not stampede the upstream the moment the circuit closes;
+2. once the circuit stops refusing calls, produces the message back to its request topic **and
+   then** completes the Kafka record — in that order, and only there (rule 40). Until then the
+   offset stays uncommitted, so **consumer lag grows while a circuit is open. That is the expected
+   signal**, not a symptom: it is the honest reading of "we are waiting on an upstream", and a
+   crash in that window redelivers the message (absorbed by the idempotency gate) instead of
+   losing it;
+3. releases the Redis lock while parked — a parked message is not being processed and must not
+   hold the 300 s lock TTL for the whole wait;
+4. drains every parked message through the same requeue path on `@PreDestroy`, turning a
+   would-be redelivery into a clean handover.
+
+Give-up is by **time** (`max-message-age-ms`, checked inside the CB branch too), never by round-trip
+count — `cb-max-requeues` survives only as a runaway guard. The park is bounded in messages
+(`cb-max-pending`) and bytes (`cb-max-pending-bytes`, the bound that usually binds, since one REST
+body can be 20 MiB); past either bound the message goes to the DLQ rather than growing the heap.
+Each flow owns its own scheduler instance, gauges and budget (rule 5); they share only the
+two-thread `cbRequeueTimer`, so the flows are coupled in scheduling *latency* — a parked hand-back
+calls `KafkaTemplate.send`, which can block up to `max.block.ms` — but never in state. Those two
+threads currently also run every `@Scheduled` method in the app (E1 pull, lag monitor, RocksDB
+retention): declaring a `ScheduledExecutorService` bean makes Boot's own `taskScheduler` back off,
+so `@Scheduled` adopts it. That is an accident of bean typing rather than a design decision — see
+the "known coupling" note in SAFETY-RULES rule 40. Reasoning and the 2026-07-27 incident that
+produced this design: SAFETY-RULES rules 23 and 40.
 
 ### E4: HTTP Request — `HttpRequestService.java`
 
@@ -195,6 +226,8 @@ from the `createdAt` stamped at ingress) and a message past the CB re-queue cap
 | `kafka/producer/` | E2 — Kafka message production | `RequestProducer` |
 | `kafka/consumer/oracle/` | E3 + E5 — Oracle request/response/DLQ | `OracleRequestConsumer`, `OracleResponseConsumer`, `OracleDlqConsumer` |
 | `kafka/consumer/api/` | E3 + E5 — API request/response/DLQ | `ApiRequestConsumer`, `ApiResponseConsumer`, `ApiDlqConsumer` |
+| `kafka/ack/` | E3 — contiguous-prefix acknowledgement (rule 39) | `OrderedAckTracker` |
+| `kafka/retry/` | E3 — CB-blocked messages wait on their circuit instead of re-queuing at Kafka speed (rules 23, 40) | `CbRequeueScheduler` (one instance per flow, shared `cbRequeueTimer` threads) |
 | `http/` | E4 — HTTP client with CB + OAuth2 | `HttpRequestService` |
 | `state/` | Redis state management + distributed locks | `RequestStateService` |
 | `oauth2/` | OAuth2 token caching + distributed locking | `OAuth2ProviderService`, `OAuth2TokenRedisCache`, `OAuth2ProviderFetcher` |
@@ -396,6 +429,7 @@ ResponseSaveRequest (Oracle save payload)
 - **OPEN Duration:** 30s before transitioning to HALF_OPEN
 - **HALF_OPEN:** 3 permitted test calls
 - **OAuth2 errors excluded:** Token failures do not count toward CB failure rate
+- **Readable without calling:** `HttpRequestService.circuitBreakerName(request)` exposes the per-host naming rule (so a consumer never re-derives it and drifts) and `isCircuitOpen(name)` reports state via `CircuitBreakerRegistry.find` — read-only, acquires no permission, records no outcome, and never *creates* a breaker as a side effect of a read. `HALF_OPEN` deliberately reads as **not** open: a waiting message should become one of the permitted probe calls rather than sleep through the recovery window. This is what E3's park-and-recheck loop polls.
 - **Config class:** `resilience4j.circuitbreaker.configs.default.*` in `application.yml`
 
 ### Idempotency (Redis)
@@ -430,7 +464,7 @@ ResponseSaveRequest (Oracle save payload)
 - **Rejection Policy:** `RejectWithLogging` — when queue full, throws `RejectedExecutionException`. Consumer catches it and re-queues the message to Kafka without incrementing attempt count. Consumer thread stays free.
 - **Non-blocking:** Both request consumers use `.subscribe()` instead of `.block()` — threads are freed immediately after dispatching HTTP request.
 - **Message Expiry:** Messages older than `gateway.retry.max-message-age-ms` (default 5 min) are failed immediately to prevent infinite re-queue loops.
-- **CB-aware retry:** OAuth2 errors are NOT retried — they cause immediate DLQ. Circuit Breaker blocks (`errorSource=CIRCUIT_BREAKER`) ARE retried by transparent re-queue (no attempt count increment) — CB-blocked is transient back-pressure, not a permanent failure. The message-expiry safety net (`max-message-age-ms`) ensures genuinely down upstreams still surface in DLQ after the deadline. **Re-queue cap (v1.15.0):** the re-queues are also counted in Redis (`request:cb-requeue:<compositeId>`, `RequestStateService.incrementCbRequeue`) and bounded by `gateway.retry.cb-max-requeues` (default 50) — past the cap the message takes the permanent-failure → DLQ path and increments `gateway.http.circuitbreaker.requeue.exhausted`. Redis down ⇒ `Integer.MAX_VALUE` ⇒ immediate DLQ (fail-closed), never an unbounded loop.
+- **CB-aware back-pressure (v2.3.0):** OAuth2 errors are NOT retried — they cause immediate DLQ. Circuit Breaker blocks (`errorSource=CIRCUIT_BREAKER`) are transient back-pressure, not a permanent failure, so the message is **parked** by `CbRequeueScheduler` until its circuit accepts traffic again and only then re-queued — no attempt-count increment, and no Kafka round trip while it waits (see E3 above). Give-up is by **time** (`max-message-age-ms`), which is what surfaces a genuinely down upstream in the DLQ after the deadline; `gateway.retry.cb-max-requeues` (now 1000, Redis counter `request:cb-requeue:<compositeId>`) is only a runaway guard for a broken delay path. It used to be an immediate re-queue bounded by that count at 50, which spent the whole budget in ~1 s of a 30 s open window and DLQ'd 212 live production requests on 2026-07-27. Redis down ⇒ `Integer.MAX_VALUE` ⇒ immediate DLQ (fail-closed), never an unbounded loop. Memory is bounded per flow by `cb-max-pending` / `cb-max-pending-bytes`; both DLQ exits are visible as `gateway.http.circuitbreaker.requeue.exhausted` (timed out / guard tripped) and `...requeue.rejected` (bound full), with `...requeue.delayed` plus the `...requeue.pending{flow}` / `...requeue.pending.bytes{flow}` gauges showing the wait itself.
 - **OAuth2-aware 401 retry (v1.1.0):** When an upstream API returns 401 to a request whose `oauth2_provider` is set, the consumer evicts the cached token (`OAuth2ProviderService.evictToken`) and re-queues the request without incrementing the attempt counter. A per-request flag (`request:token-evicted:<compositeId>`, same TTL as request state) prevents repeating the eviction more than once per request — on the second 401 the request falls through to the standard permanent-failure path. Recovers from smartup's periodic "stuck token" glitch in one Kafka round-trip instead of waiting 3h for token TTL expiry.
 
 ### Admin Control-Plane Security (B1)

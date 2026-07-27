@@ -63,7 +63,7 @@ Belgilar: `[x]` — o'tdi, `[!]` — xato topildi (izoh yozing), `[ ]` — hali 
 
 - [ ] **H1. Stop paytida kelgan so'rovlar** — gateway'ni STOP qiling → smartup24'da 2-3 request yarating → START → hammasi avtomatik pull qilinib COMPLETED bo'ladi (confirm-modal va'dasi).
 - [ ] **H2. Circuit Breaker** — A4 turidagi (o'chiq server) so'rovlardan ketma-ket 5-10 ta → log'da CB OPEN → shu domenga yangi so'rovlar darhol 503 (kutmasdan) → server "qaytgach" (boshqa ishlaydigan domen bilan) normal.
-  - *v1.15.0 eslatma:* CB-blocked qayta-navbat endi CHEKLANGAN — `gateway.retry.cb-max-requeues` (default 50) Redis'da sanaydi (`request:cb-requeue:<compositeId>`), va `createdAt` ikkala ingress'da muhrlangani uchun `retry.max-message-age-ms` muddat-to'ri ham haqiqatan ishlaydi. Nimaga qarash kerak: `docker exec redpanda rpk topic describe gateway.api.request` — yozuv soni cap atrofida TO'XTAShi kerak (cheksiz o'smasligi, 2026-05-18 Redpanda 57GB avariyasi shundan bo'lgan); cap oshgach DLQ topikida yozuv + `gateway.http.circuitbreaker.requeue.exhausted` metrikasi o'sadi; `docker exec redis redis-cli KEYS "request:cb-requeue:*"` → TTL'li hisoblagich kalitlari.
+  - *v2.3.0 eslatma:* CB-blocked xabar endi Kafka'da AYLANMAYDI — `CbRequeueScheduler` uni xotirada park qilib, sxema ochiqligini 2s→4s→…→30s bilan qayta tekshiradi va faqat CB trafikni qabul qilganda qayta navbatga qo'yadi. Taslim bo'lish VAQT bo'yicha (`retry.max-message-age-ms`, `createdAt` ikkala ingress'da muhrlangani uchun ishlaydi); `cb-max-requeues` (endi 1000) faqat runaway guard. Nimaga qarash kerak: `docker exec redpanda rpk topic describe gateway.api.request` — CB ochiq turganda yozuv soni deyarli O'SMAYDI (ilgari ~20ms da bir aylanardi, 2026-05-18 Redpanda 57GB avariyasi va 2026-07-27 da 212 ta jonli so'rovning DLQ'ga ketishi shundan); **Kafka lag esa o'sadi — bu normal**, parked offset ataylab commit qilinmaydi. Batafsil ssenariylar: K bo'limi.
 - [ ] **H3. RedPanda restart** — `docker restart redpanda` → gateway qayta ulanadi, so'rovlar yo'qolmaydi.
 - [ ] **H4. Redis restart** — `docker restart redis` → qisqa uzilishdan keyin normal; cheksiz retry siklі YO'Q (safety net).
 
@@ -85,6 +85,37 @@ Belgilar: `[x]` — o'tdi, `[!]` — xato topildi (izoh yozing), `[ ]` — hali 
 - [ ] **J7. Tartibli ack — jonli tekshiruv (ENG MUHIMI)** — yuk ostida (Oracle pull faol, navbatda xabarlar bor) `systemctl restart gateway-service` → restartdan keyin: `journalctl`da `ERROR` yo'q, Kafka **lag 0 ga qaytadi**, `Bmb_Requests`da o'sha oynadagi so'rovlar **hammasi `D`** (yo'qolgan `null` holat yo'q). Dublikat qayta ishlash log'da ko'rinishi NORMAL (idempotentlik darvozasi ushlaydi) — yo'qolish esa yo'q. Tekshirish so'rovi: restart oynasidagi `request_id` diapazonida `state is null` qolgan yozuv bo'lmasligi.
 - [ ] **J8. SPA bundle bo'linishi** — brauzer Network tab: Sozlamalar sahifasida `StatisticsPage-*.js` **yuklanmaydi**; Statistika sahifasiga o'tganda o'sha chunk alohida so'rov bilan keladi. Boshlang'ich yuk ~2.8 MB dan ~1.3 MB ga tushgan bo'lishi kerak.
 
+## K. Adaptive CB backpressure (v2.3.0)
+
+Barcha `RETRY_CB_*` kalitlari **UI'da YO'Q** (ataylab — `SettingsRegistry`da ro'yxatdan o'tmagan):
+ularni `/opt/services/qosid-flow/.env` da o'zgartirib, `systemctl restart gateway-service` qilinadi.
+Sinovdan keyin `.env`ni qaytarishni unutmang. Kutish oynasini kuzatish uchun foydali buyruqlar:
+`journalctl -u gateway-service -f | grep -i "cb-blocked\|parked\|circuit"`,
+`curl -s localhost:8091/actuator/prometheus | grep circuitbreaker_requeue`,
+`docker exec redpanda rpk group describe gateway-service-group` (lag; `KAFKA_GROUP_ID`).
+
+- [ ] **K1. Park, don't spin** — CB'ni sun'iy ochish uchun `gateway.api.base-url`ni mavjud
+      bo'lmagan portga o'zgartiring (ops orqali, gateway o'chiq holda), start qiling, 10+ so'rov
+      keling. Kutilgan: jurnalda `parked until cb-... accepts traffic`, DLQ **bo'sh**,
+      `gateway_http_circuitbreaker_requeue_pending` gauge > 0, Kafka lag **o'sadi** (bu normal).
+      Base-url'ni qaytaring → parked xabarlar o'tadi, lag 0 ga qaytadi, DLQ hali bo'sh.
+- [ ] **K2. Vaqt bo'yicha taslim** — `RETRY_MAX_MESSAGE_AGE=60000` qilib, CB'ni 2 daqiqa ochiq
+      qoldiring. Kutilgan: ~60s dan keyin DLQ, sabab `Circuit breaker still open after NNNNNms`
+      (requeues EMAS), har xabar uchun BITTA DLQ yozuvi.
+      *Diqqat:* bu kalit — `gateway.retry.max-message-age-ms` — `RETRY_CB_*` lardan farqli, settings
+      DB'da migratsiya qilingan, ya'ni **env-var endi ta'sir qilmaydi**. Uni gateway o'chiq holda ops
+      orqali o'zgartiring: `PUT /ops/api/settings/gateway.retry.max-message-age-ms` (yoki SPA →
+      Sozlamalar), keyin start. Sinovdan keyin 300000 ga qaytaring.
+- [ ] **K3. Pending chegarasi** — `RETRY_CB_MAX_PENDING=5`, CB ochiq, 20 so'rov. Kutilgan:
+      5 tasi park, qolgani `Circuit breaker open and requeue buffer full` sababi bilan DLQ.
+- [ ] **K4. Restart parked xabarni yo'qotmaydi** — CB ochiq, 10 xabar park bo'lgan holda
+      `systemctl restart gateway-service`. Kutilgan: shutdown'da `draining N parked CB requeues`,
+      restartdan keyin o'sha 10 id Redis'da COMPLETED bo'ladi (yoki qayta yetkaziladi) —
+      **birortasi yo'qolmaydi**. Tekshirish:
+      `docker exec redis redis-cli GET "request:state:<tenantId>:<requestId>"` (holat JSON qatori;
+      `null` qolgan id — yo'qolish belgisi).
+
 ---
 
-**Yakun mezoni:** A–G to'liq yashil (H/I/J ixtiyoriy, lekin **J7 prod deploydan keyin majburiy**) → `debug` push + release PR.
+**Yakun mezoni:** A–G to'liq yashil (H/I/J/K ixtiyoriy, lekin **J7 prod deploydan keyin majburiy**,
+K1 esa CB yo'lini o'zgartirgan har bir releasedan keyin) → `debug` push + release PR.

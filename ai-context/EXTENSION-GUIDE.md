@@ -294,6 +294,14 @@ public class MyService {
 }
 ```
 
+4. **Decide, explicitly, whether the key is operator-editable.** Adding a `SettingMeta` row to
+   `SettingsRegistry` (settings-core) makes it appear in the ops UI and editable while the gateway
+   is stopped; leaving it out makes it `.env`/yaml-only, applied on the next start. Omission is a
+   legitimate choice, not an oversight — the `gateway.retry.cb-*` back-pressure keys are
+   deliberately absent because they bound a memory-holding, ack-owning path where a typo is a
+   message-loss risk rather than a tuning mistake. Either way, document the key (and which side of
+   this line it falls on) in `ai-context/CONFIGURATION.md`.
+
 ---
 
 ## Recipe 6: Add a New Notification Channel

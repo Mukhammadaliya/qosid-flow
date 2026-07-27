@@ -96,7 +96,52 @@ gateway:
 | `gateway.retry.interval-ms` | long | `3000` | `RETRY_INTERVAL_MS` | Interval between retries (ms) |
 | `gateway.retry.retryable-statuses` | String | `408,429,500,502,503,504` | `RETRY_STATUSES` | HTTP statuses that trigger retry |
 | `gateway.retry.max-message-age-ms` | long | `300000` | `RETRY_MAX_MESSAGE_AGE` | Max message age (ms) before expiry. Default 5 min. Measured from `createdAt`, stamped at both ingress points (`ProxyController`, `TenantMappingService.toInternal`). |
-| `gateway.retry.cb-max-requeues` | int | `50` | `RETRY_CB_MAX_REQUEUES` | Cap on CB-blocked re-queues per request (Redis counter `request:cb-requeue:<compositeId>`); past the cap the message goes to DLQ. `attemptCount` is still untouched — see SAFETY-RULES rule 23. |
+| `gateway.retry.cb-requeue-delay-ms` | long | `2000` | `RETRY_CB_REQUEUE_DELAY` | First wait before re-checking a blocked circuit. Up to 250 ms of jitter is added so a burst parked in the same window does not stampede the upstream in lockstep when the circuit closes. |
+| `gateway.retry.cb-requeue-max-delay-ms` | long | `30000` | `RETRY_CB_REQUEUE_MAX_DELAY` | Ceiling for the doubling wait. Defaults to one `wait-duration-in-open-state` — waiting longer than the open window cannot help. |
+| `gateway.retry.cb-max-pending` | int | `5000` | `RETRY_CB_MAX_PENDING` | Max parked messages held in memory **per flow** (Oracle and API have separate budgets). Past it: DLQ, reason `Circuit breaker open and requeue buffer full`. |
+| `gateway.retry.cb-max-pending-bytes` | long | `268435456` (256 MiB) | `RETRY_CB_MAX_PENDING_BYTES` | Max total parked body size per flow. Usually **the binding bound**: a REST body may be 20 MiB (`gateway.proxy.max-body-size`), so ~13 such messages exhaust 256 MiB long before the 5000-message count. Measured as the body string's character length, so it approximates heap cost rather than accounting for it exactly. |
+| `gateway.retry.cb-max-requeues` | int | `1000` | `RETRY_CB_MAX_REQUEUES` | **Runaway guard, not a retry policy.** Counts parks per request (Redis counter `request:cb-requeue:<compositeId>`); tripping it means the delay path is broken, since a 2 s floor caps a legitimate message at ~150. Was `50` until 2026-07-27, when it DLQ'd 212 live requests in one circuit window. `attemptCount` is still untouched — see SAFETY-RULES rule 23. |
+
+### CB back-pressure: why these numbers (v2.3.0)
+
+A CB-blocked message is **parked in memory** until its circuit accepts traffic again, then produced
+back to its request topic (`CbRequeueScheduler`). Before v2.3.0 it was re-queued immediately, so it
+returned every ~20 ms for the whole 30 s open window — ~1500 pointless Kafka round trips per
+message, and the count cap that bounded that loop was spent in about one second, turning retryable
+traffic into DLQ records (2026-07-27: 212 live production requests). With the delay, one 30 s
+window costs a message **4 timer wake-ups** (2 s → 4 s → 8 s → 16 s) and **one** Kafka round trip;
+across the full 5 min `max-message-age-ms` budget it is ~13 wake-ups, because the wait is capped at
+30 s. Where a message waits changed too: it now occupies gateway heap (bounded by the two
+`cb-max-pending*` keys) instead of Kafka disk — which is the trade the 2026-05-18 Redpanda 57 GB
+disk-full outage argues for.
+
+Tuning notes:
+
+- **`max-message-age-ms` is the give-up deadline**, so it is what decides how long an upstream
+  outage is tolerated. Raising `cb-requeue-delay-ms` costs recovery latency (up to one delay after
+  the circuit closes) but nothing else; lowering it toward the round-trip regime re-creates the
+  spin.
+- **Remove `RETRY_CB_MAX_REQUEUES` from the production `.env`** if it is still there. A stop-gap
+  value (`1500`) was set before the delayed requeue shipped; keeping a hand-tuned count only hides
+  a broken delay path, and the yaml default (1000) is the intended guard.
+- These five `gateway.retry.cb-*` keys are **deliberately absent from `SettingsRegistry`**, exactly
+  like `cb-max-requeues` before them, so they are **not** editable through the ops UI — `.env`/yaml
+  only, applied on the next start. They bound a memory-holding, ack-owning code path where an
+  operator typo is a message-loss risk rather than a tuning mistake; the four `gateway.retry.*`
+  keys that *are* registry-managed (`max-attempts`, `interval-ms`, `retryable-statuses`,
+  `max-message-age-ms`) are all plain numbers with no such coupling.
+
+Metrics for this path. The three counters carry `stage=http_request` like the rest of E4; the two
+gauges carry `flow=API|ORACLE` instead (one gauge per scheduler instance, because the flows keep
+separate budgets) — so a dashboard query must not assume a common tag set:
+
+| Metric | Type | Meaning |
+|--------|------|---------|
+| `gateway.http.circuitbreaker.requeue.delayed` | Counter | Messages parked to wait for a circuit. Rises during every open window — expected, not an error. |
+| `gateway.http.circuitbreaker.requeue.pending{flow}` | Gauge | Messages currently parked. Should return to 0 shortly after the circuit closes; a plateau means the upstream is still refusing. |
+| `gateway.http.circuitbreaker.requeue.pending.bytes{flow}` | Gauge | Parked body bytes. Watch this one against `cb-max-pending-bytes` — it hits the bound first. |
+| `gateway.http.circuitbreaker.requeue.rejected` | Counter | Parks refused because a bound was full → DLQ. Non-zero means memory pressure, i.e. raise the bounds or shed load. |
+| `gateway.http.circuitbreaker.requeue.exhausted` | Counter | Parked messages that gave up: aged out (`max-message-age-ms`) or tripped the runaway guard. Non-zero means a genuinely unavailable upstream. |
 
 ## gateway.concurrency.* — Dynamic Scaling
 

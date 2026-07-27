@@ -14,6 +14,8 @@ Base package: `uz.greenwhite.gateway`
 | `http/` | HTTP client logic | Custom HTTP handling beyond `HttpRequestService` |
 | `kafka/consumer/` | Kafka consumers | New Kafka consumer classes |
 | `kafka/producer/` | Kafka producers | New producer methods or classes |
+| `kafka/ack/` | Acknowledgement ordering (`OrderedAckTracker`) | Rarely — changes here decide whether offsets can commit past in-flight work (SAFETY-RULES 39) |
+| `kafka/retry/` | Deferred re-delivery of messages the pipeline is not ready to send (`CbRequeueScheduler`) | A new hold-and-retry-later mechanism; anything that owns a record's completion must follow SAFETY-RULES 40 |
 | `metrics/` | Metrics definitions | **Never create new files here** — all metrics go in `GatewayMetrics.java` |
 | `model/` | Domain models | New domain objects |
 | `model/kafka/` | Kafka message models | New `*Message.java` classes |
