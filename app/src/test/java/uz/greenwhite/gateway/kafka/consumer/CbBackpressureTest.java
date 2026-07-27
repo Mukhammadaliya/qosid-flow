@@ -1,6 +1,7 @@
 package uz.greenwhite.gateway.kafka.consumer;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -133,9 +134,13 @@ class CbBackpressureTest {
     }
 
     private ApiRequestConsumer consumer(RetryProperties props) {
+        return consumer(props, metrics());
+    }
+
+    private ApiRequestConsumer consumer(RetryProperties props, GatewayMetrics metrics) {
         stubCbBlockedPath();
         return new ApiRequestConsumer(http, state, producer, props, inlineExecutor(),
-                metrics(), mock(KafkaProperties.class, RETURNS_DEEP_STUBS),
+                metrics, mock(KafkaProperties.class, RETURNS_DEEP_STUBS),
                 mock(OAuth2ProviderService.class), timer);
     }
 
@@ -145,9 +150,13 @@ class CbBackpressureTest {
      * cases below are duplicated rather than parameterised over a shared abstraction.
      */
     private OracleRequestConsumer oracleConsumer(RetryProperties props) {
+        return oracleConsumer(props, metrics());
+    }
+
+    private OracleRequestConsumer oracleConsumer(RetryProperties props, GatewayMetrics metrics) {
         stubCbBlockedPath();
         return new OracleRequestConsumer(http, state, producer, props, inlineExecutor(),
-                metrics(), mock(KafkaProperties.class, RETURNS_DEEP_STUBS),
+                metrics, mock(KafkaProperties.class, RETURNS_DEEP_STUBS),
                 mock(OAuth2ProviderService.class), timer);
     }
 
@@ -324,5 +333,51 @@ class CbBackpressureTest {
 
         verify(producer).sendToOracleDlq(any());
         verify(ack).acknowledge();
+    }
+
+    // ==================== FLOW ISOLATION (SAFETY-RULES 5) ====================
+
+    /**
+     * The reason the CB-parking code is duplicated instead of shared: one flow's stuck circuit must
+     * never spend the other flow's parking budget. Every other case here builds a single consumer,
+     * so making {@code cbRequeueScheduler} static — or hoisting it to a shared bean — would leave
+     * them all green while silently coupling the flows.
+     *
+     * <p>Both consumers are built against ONE {@code GatewayMetrics} (and therefore one real
+     * {@link SimpleMeterRegistry}, exactly as in production) with room for exactly ONE parked
+     * message. Oracle parks first and fills its own budget; the API message must still park. With a
+     * shared pending map the API message would find the bound full and be DLQ'd instead.
+     *
+     * <p>The same shared registry pins the second half of the invariant: two scheduler instances
+     * coexisting in one registry must each register their own gauge. A tag collision does not throw
+     * in Micrometer — the first registration silently wins — so a lost {@code flow=ORACLE} gauge
+     * would otherwise be invisible.
+     */
+    @Test
+    void theTwoFlowsNeitherShareTheirParkingBudgetNorTheirGauges() {
+        GatewayMetrics shared = metrics();
+        MeterRegistry registry = shared.getRegistry();
+        RetryProperties props = retryProps(1);   // room for exactly one parked message PER FLOW
+
+        Acknowledgment oracleAck = mock(Acknowledgment.class);
+        oracleConsumer(props, shared).consumeRequest(record(LocalDateTime.now()), oracleAck);
+
+        Acknowledgment apiAck = mock(Acknowledgment.class);
+        consumer(props, shared).consumeRequest(record(LocalDateTime.now()), apiAck);
+
+        // Both parked: neither flow saw a full bound, so neither gave up.
+        verify(producer, never()).sendToApiDlq(any());
+        verify(producer, never()).sendToOracleDlq(any());
+        verify(apiAck, never()).acknowledge();
+        verify(oracleAck, never()).acknowledge();
+
+        assertThat(registry.find("gateway.http.circuitbreaker.requeue.pending")
+                .tag("flow", "API").gauge())
+                .as("API flow gauge must survive the ORACLE registration")
+                .isNotNull();
+        assertThat(registry.find("gateway.http.circuitbreaker.requeue.pending")
+                .tag("flow", "ORACLE").gauge())
+                .as("ORACLE flow gauge must survive the API registration")
+                .isNotNull();
     }
 }
