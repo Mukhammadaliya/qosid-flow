@@ -1095,7 +1095,7 @@ Config: `gateway.api.max-concurrent-per-host` (`API_MAX_CONCURRENT_PER_HOST`), d
 ## Rollout
 
 1. Deploy **Phase 1 alone** first, during a quiet window (the 09:15 deploy was clean because traffic was idle; the 14:21 one created the burst that started this incident). Verify K1 and K4 from the manual plan.
-2. Watch for one full day: `gateway_http_circuitbreaker_requeue_delayed_total` should be non-zero during upstream trouble while `gateway_http_circuitbreaker_requeue_exhausted_total` stays at 0, and the DLQ should contain **no** `Circuit breaker still open` records.
+2. Watch for one full day. `gateway_http_circuitbreaker_requeue_delayed_total` should be non-zero during upstream trouble, and `gateway_http_circuitbreaker_requeue_pending{flow}` should rise and return to 0 as each circuit recovers. **Amended after Task 5c:** `..._requeue_exhausted_total` is no longer expected to stay at 0 — the scheduler now enforces the deadline itself, so an outage that outlives `retry.max-message-age-ms` (5 min) legitimately produces `Circuit breaker still open after <ageMs>ms` DLQ records and increments that counter. What would signal a regression is the *opposite* pattern: `exhausted` climbing while `pending` never rises (the park is not happening), or DLQ records reading `Circuit breaker still open after <n> requeues` (the pre-v2.3.0 count-based give-up).
 3. Then Phase 2, then Phase 3.
 4. Remove the `RETRY_CB_MAX_REQUEUES=1500` mitigation from the production `.env` after Phase 1 is confirmed.
 
