@@ -26,7 +26,9 @@ public class LokiResponseParser {
             JsonNode result = objectMapper.readTree(lokiJson).path("data").path("result");
             for (JsonNode stream : result) {
                 Map<String, String> labels = new LinkedHashMap<>();
-                stream.path("stream").fields().forEachRemaining(e -> labels.put(e.getKey(), e.getValue().asText()));
+                // properties(), not the deprecated fields(): Jackson 2.19 (which Spring Boot 3.5
+                // brings in) deprecated the Iterator-returning variant in favour of this Set.
+                stream.path("stream").properties().forEach(e -> labels.put(e.getKey(), e.getValue().asText()));
                 String level = labels.getOrDefault("level", "");
                 for (JsonNode value : stream.path("values")) {
                     long ns = Long.parseLong(value.get(0).asText());

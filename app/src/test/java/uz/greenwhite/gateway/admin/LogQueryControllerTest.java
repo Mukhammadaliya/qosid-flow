@@ -3,7 +3,7 @@ package uz.greenwhite.gateway.admin;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -32,7 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class LogQueryControllerTest {
 
     @Autowired MockMvc mvc;
-    @MockBean LogQueryService logQueryService;
+    @MockitoBean LogQueryService logQueryService;
 
     @Test
     void unauthenticatedIs401() throws Exception {

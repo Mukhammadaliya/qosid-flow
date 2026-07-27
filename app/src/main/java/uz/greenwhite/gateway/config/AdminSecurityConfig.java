@@ -84,10 +84,18 @@ public class AdminSecurityConfig {
      */
     private static CookieCsrfTokenRepository csrfTokenRepository(boolean cookieSecure) {
         CookieCsrfTokenRepository repo = CookieCsrfTokenRepository.withHttpOnlyFalse();
-        repo.setCookieCustomizer(cookie -> cookie.sameSite("Lax"));
-        if (cookieSecure) {
-            repo.setSecure(true);
-        }
+        // One customizer for both attributes. The individual setters (setSecure and friends) are
+        // deprecated as of Spring Security 6.5, and setCookieCustomizer REPLACES the previous
+        // customizer rather than appending — so sameSite and secure have to be set together or
+        // the second call silently drops the first.
+        repo.setCookieCustomizer(cookie -> {
+            cookie.sameSite("Lax");
+            if (cookieSecure) {
+                // Only when the flag is on: leaving it untouched keeps the builder's default,
+                // which already reflects request.isSecure() — see the note above.
+                cookie.secure(true);
+            }
+        });
         return repo;
     }
 

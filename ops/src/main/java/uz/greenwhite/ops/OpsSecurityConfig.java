@@ -38,10 +38,15 @@ public class OpsSecurityConfig {
         CookieCsrfTokenRepository csrfRepo = CookieCsrfTokenRepository.withHttpOnlyFalse();
         csrfRepo.setCookieName("OPS-XSRF-TOKEN");      // gateway XSRF-TOKEN bilan to'qnashmasin
         csrfRepo.setHeaderName("X-OPS-XSRF-TOKEN");
-        csrfRepo.setCookieCustomizer(cookie -> cookie.sameSite("Lax"));
-        if (cookieSecure) {
-            csrfRepo.setSecure(true);
-        }
+        // Both attributes in ONE customizer: the individual setters (setSecure and friends) are
+        // deprecated as of Spring Security 6.5, and setCookieCustomizer replaces rather than
+        // appends, so a second call would silently drop sameSite.
+        csrfRepo.setCookieCustomizer(cookie -> {
+            cookie.sameSite("Lax");
+            if (cookieSecure) {
+                cookie.secure(true);
+            }
+        });
         http
             .securityMatcher("/ops/**")
             .authorizeHttpRequests(a -> a
