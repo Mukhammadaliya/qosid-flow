@@ -65,6 +65,7 @@ public class GatewayMetrics {
 
     // ==================== DLQ ====================
     private final Counter dlqSent;
+    private final Counter alertCoalesced;
 
     // ==================== End-to-End ====================
     private final Timer requestE2eTimer;
@@ -256,6 +257,12 @@ public class GatewayMetrics {
 
         this.dlqSent = Counter.builder("gateway.dlq.sent")
                 .description("Messages sent to Dead Letter Queue")
+                .register(registry);
+
+        this.alertCoalesced = Counter.builder("gateway.notification.alert.coalesced")
+                .description("DLQ alerts that did not become their own Telegram message — folded "
+                        + "into a summary, or held back by a 429 / send failure and reported on "
+                        + "the next message that goes out")
                 .register(registry);
 
         // ==================== End-to-End ====================

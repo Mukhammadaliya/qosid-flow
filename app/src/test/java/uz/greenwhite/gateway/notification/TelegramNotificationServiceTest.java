@@ -1,12 +1,17 @@
 package uz.greenwhite.gateway.notification;
 
+import io.micrometer.core.instrument.Counter;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestTemplate;
 import uz.greenwhite.gateway.config.TelegramProperties;
+import uz.greenwhite.gateway.metrics.GatewayMetrics;
 import uz.greenwhite.gateway.model.kafka.DlqMessage;
 import uz.greenwhite.gateway.settings.SettingsService;
 
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -25,6 +30,19 @@ import static org.mockito.Mockito.when;
  * (env/yaml) fallback. Token sir — getSecret orqali.
  */
 class TelegramNotificationServiceTest {
+
+    private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor();
+
+    @AfterEach
+    void stopTimer() {
+        timer.shutdownNow();
+    }
+
+    private GatewayMetrics metrics() {
+        GatewayMetrics m = mock(GatewayMetrics.class);
+        when(m.getAlertCoalesced()).thenReturn(mock(Counter.class));
+        return m;
+    }
 
     private SettingsService settingsWith(String enabled, String token, String chatId, String threadId) {
         SettingsService s = mock(SettingsService.class);
@@ -52,7 +70,7 @@ class TelegramNotificationServiceTest {
         // env: disabled/bo'sh; DB: enabled + token bor -> DB yutadi
         SettingsService s = settingsWith("true", "db-token", "77", null);
         TelegramNotificationService svc =
-                new TelegramNotificationService(props(false, "", 0L), s, mock(RestTemplate.class));
+                new TelegramNotificationService(props(false, "", 0L), s, metrics(), timer, mock(RestTemplate.class));
         assertTrue(svc.isEnabled());
     }
 
@@ -60,7 +78,7 @@ class TelegramNotificationServiceTest {
     void envFallbackWhenNoDbRows() {
         SettingsService s = settingsWith(null, null, null, null);
         TelegramNotificationService svc =
-                new TelegramNotificationService(props(true, "env-token", 5L), s, mock(RestTemplate.class));
+                new TelegramNotificationService(props(true, "env-token", 5L), s, metrics(), timer, mock(RestTemplate.class));
         assertTrue(svc.isEnabled());
     }
 
@@ -68,7 +86,7 @@ class TelegramNotificationServiceTest {
     void disabledWhenNoTokenAnywhere() {
         SettingsService s = settingsWith(null, null, null, null);
         TelegramNotificationService svc =
-                new TelegramNotificationService(props(true, "", 0L), s, mock(RestTemplate.class));
+                new TelegramNotificationService(props(true, "", 0L), s, metrics(), timer, mock(RestTemplate.class));
         assertFalse(svc.isEnabled());
         assertDoesNotThrow(() -> svc.sendDlqAlert(
                 DlqMessage.builder().tenantId(1L).requestId(2L).failureReason("x").build()));
@@ -78,7 +96,7 @@ class TelegramNotificationServiceTest {
     void dbEnabledFalseOverridesEnvTrue() {
         SettingsService s = settingsWith("false", null, null, null);
         TelegramNotificationService svc =
-                new TelegramNotificationService(props(true, "env-token", 5L), s, mock(RestTemplate.class));
+                new TelegramNotificationService(props(true, "env-token", 5L), s, metrics(), timer, mock(RestTemplate.class));
         assertFalse(svc.isEnabled());
     }
 
@@ -87,7 +105,7 @@ class TelegramNotificationServiceTest {
         SettingsService s = settingsWith("true", "tok123", "42", null);
         RestTemplate rt = mock(RestTemplate.class);
         TelegramNotificationService svc =
-                new TelegramNotificationService(props(false, "", 0L), s, rt);
+                new TelegramNotificationService(props(false, "", 0L), s, metrics(), timer, rt);
         svc.sendDlqAlert(DlqMessage.builder().tenantId(1L).requestId(2L).failureReason("boom").build());
         verify(rt).postForEntity(eq("https://api.telegram.org/bottok123/sendMessage"), any(), eq(String.class));
     }
@@ -97,7 +115,7 @@ class TelegramNotificationServiceTest {
         SettingsService s = settingsWith("true", "tok123", "42", null);
         RestTemplate rt = mock(RestTemplate.class);
         TelegramNotificationService svc =
-                new TelegramNotificationService(props(false, "", 0L), s, rt);
+                new TelegramNotificationService(props(false, "", 0L), s, metrics(), timer, rt);
         Map<String, Object> r = svc.sendTest();
         assertThat(r.get("ok")).isEqualTo(true);
         verify(rt).postForEntity(anyString(), any(), eq(String.class));
@@ -108,7 +126,7 @@ class TelegramNotificationServiceTest {
         SettingsService s = settingsWith(null, null, null, null);
         RestTemplate rt = mock(RestTemplate.class);
         TelegramNotificationService svc =
-                new TelegramNotificationService(props(true, "", 0L), s, rt);
+                new TelegramNotificationService(props(true, "", 0L), s, metrics(), timer, rt);
         Map<String, Object> r = svc.sendTest();
         assertThat(r.get("ok")).isEqualTo(false);
         assertThat(r.get("error")).isEqualTo("telegram-disabled");
@@ -122,7 +140,7 @@ class TelegramNotificationServiceTest {
         when(rt.postForEntity(anyString(), any(), eq(String.class)))
                 .thenThrow(new RuntimeException("I/O error on POST https://api.telegram.org/bottok123/sendMessage"));
         TelegramNotificationService svc =
-                new TelegramNotificationService(props(false, "", 0L), s, rt);
+                new TelegramNotificationService(props(false, "", 0L), s, metrics(), timer, rt);
         Map<String, Object> r = svc.sendTest();
         assertThat(r.get("ok")).isEqualTo(false);
         assertThat((String) r.get("error")).doesNotContain("tok123").contains("***");

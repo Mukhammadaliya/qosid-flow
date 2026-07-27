@@ -259,7 +259,7 @@ rules 23 and 40.
 | `model/kafka/` | Kafka message models | `RequestMessage`, `ResponseMessage`, `DlqMessage` |
 | `model/enums/` | Enumerations | `RequestStatus`, `ErrorSource` |
 | `config/` | All configuration and bean definitions | `KafkaConfig`, `RedisConfig`, `HttpClientConfig`, `ThreadPoolConfig`, `*Properties` |
-| `notification/` | Alert notifications | `NotificationService` (interface), `TelegramNotificationService` (always the active bean; config resolved per send from settings-DB → env fallback; disabled → warn-log only) |
+| `notification/` | Alert notifications | `NotificationService` (interface), `TelegramNotificationService` (always the active bean; config resolved per send from settings-DB → env fallback; disabled → warn-log only). **Coalesces** DLQ alerts per (reason-class, host) inside `gateway.telegram.coalesce-window-ms` — first alert immediate, the rest arrive as one summary — and honours a 429's `retry_after` by suppressing sends instead of retrying (2026-07-27: 212 alerts → 298 rate-limit failures). Windows close on the `alert-coalesce-timer` thread and are flushed on shutdown. |
 | `validation/` | Validation logic | `RequestValidator` |
 | `source/` | Data source interfaces + source-channel outbound auth (B3) | `RequestSourceClient`, `ResponseSinkClient`, `SourceAuthService` (resolves basic\|apikey\|oauth2 per `gateway.source.auth.type`), `SourceTokenService` (isolated `source:oauth2:token` cache) |
 | `health/` | Custom health checks | `SystemHealthIndicator` |

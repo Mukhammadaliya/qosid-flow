@@ -311,6 +311,32 @@ groups:
           summary: "🚨 Circuit Breaker OPENED"
           description: "Requests to external API are being rejected by Circuit Breaker. API may not be working."
 
+      # v2.3.0 backpressure. Parked messages are the EARLY signal an outage is being absorbed:
+      # they hold uncommitted offsets and are given up (DLQ) once max-message-age-ms passes.
+      # A short plateau during a circuit window is normal — 5 minutes of it means the upstream
+      # is not coming back and the deadline is about to expire.
+      - alert: CbParkedMessagesPlateau
+        expr: gateway_http_circuitbreaker_requeue_pending > 0
+        for: 5m
+        labels:
+          severity: warning
+          stage: http_request
+        annotations:
+          summary: "⏸ Messages parked on an open circuit for 5m+"
+          description: "{{ $value }} message(s) parked on flow {{ $labels.flow }}. They are waiting, not lost — but they DLQ once retry.max-message-age-ms passes. Check the upstream now."
+
+      # The pending bound is full: messages are going straight to DLQ without ever being tried.
+      # This is the one CB-backpressure state that loses service immediately.
+      - alert: CbRequeueBufferFull
+        expr: increase(gateway_http_circuitbreaker_requeue_rejected_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          stage: http_request
+        annotations:
+          summary: "🚨 CB requeue buffer full — messages going straight to DLQ"
+          description: "The park buffer hit cb-max-pending / cb-max-pending-bytes. Requests are being DLQ'd untried. Raise the bound or fix the upstream."
+
   # ============================================================
   # 7. E5: ORACLE SAVE — Response saving
   # ============================================================

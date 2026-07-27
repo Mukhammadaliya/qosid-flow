@@ -156,8 +156,86 @@ listener ko'tarish**.
       COMPLETED bo'ladi. **Birortasi ham izsiz yo'qolmasligi** kerak. Tekshirish:
       `docker exec redis redis-cli GET "request:state:<tenantId>:<requestId>"` — bo'sh (`nil`)
       qaytgan id yo'qolish belgisi.
+- [ ] **K5. Per-host parallellik chegarasi (Faza 2)** — `API_MAX_CONCURRENT_PER_HOST=5`, restart,
+      **sog'lom** upstream'ga 100 so'rovlik burst. Kutilgan: upstream bir vaqtda 5 tadan ortiq
+      ulanish ko'rmaydi, `gateway_http_host_limiter_rejected_total` o'sadi, ortiqchasi park
+      yo'liga tushadi (`requeue_pending` ko'tariladi) va **hammasi oxir-oqibat COMPLETED** —
+      DLQ bo'sh, CB umuman ochilmaydi (`gateway_http_circuitbreaker_open_total` o'zgarmaydi).
+      Chegarani qaytaring.
+- [ ] **K6. Bitta hodisa — bitta alert (Faza 3)** — K0 holatida (o'lik port) 20+ so'rovni
+      `max-message-age-ms=60000` bilan muddatdan chiqishiga qo'yib bering, ya'ni 20+ DLQ yozuvi.
+      Kutilgan Telegram'da: **1 ta to'liq ogohlantirish + 1 ta jamlanma** (`Yana N ta DLQ yozuvi`),
+      20 ta alohida xabar EMAS. `gateway_notification_alert_coalesced_total` ≈ N.
+      Jurnalda `DLQ alert coalesced into the open [...] window`.
+- [ ] **K7. 429 hurmat qilinadi** — K6 ni `TELEGRAM_COALESCE_WINDOW_MS=1000` bilan takrorlang
+      (Telegram sekundiga ~1 xabardan ortig'ini rad etadi). Kutilgan: `429` kelganda jurnalda
+      `Telegram rate-limited (429) — suppressing alerts for Ns`, **darhol qayta urinish yo'q**
+      (ketma-ket `429` xatolari yig'ilmaydi), muddat tugagach keyingi xabar boshida
+      `🔇 N ta ogohlantirish ... yuborilmadi` satri bo'ladi. Oynani 60000 ga qaytaring.
+
+---
+
+## L. Prodda yuk testi (v2.3.0 backpressure zanjirini haqiqiy yukda ko'rish)
+
+**Nega kerak:** K1–K7 sun'iy sharoitda bitta yo'lni tekshiradi. 2026-07-27 hodisasi esa aynan
+**yuk** hodisasi edi — 15 soniyada 1000 so'rov. Uch faza ham (park, host-chegara, alert-jamlash)
+faqat burst ostida bir-biriga qanday ta'sir qilishini ko'rganda tasdiqlangan hisoblanadi.
+
+### L0. O'lchov qoidalari — buni o'qimasdan boshlamang
+
+- **Jurnalga tayanib o'lchamang.** J7 da `systemd-journald` burst paytida **88 881 xabarni
+  tashlab yubordi** va birinchi hisob "865 so'rov yo'qolgan" degan soxta xulosa berdi. Har
+  o'lchovdan keyin tekshiring:
+  `journalctl -u gateway-service --since X --until Y | grep -iE "Suppressed [0-9]+ messages"`.
+- **Yakuniy dalil — Redis holati**, log emas:
+  `sed 's|^|GET request:state:|' ids.txt | docker exec -i redis redis-cli`
+- **Trafik BURST rejimida** — 13 daqiqagacha nol oynalar normal. Throughput'ni bir daqiqalik
+  oyna bilan baholamang, histogramma oling:
+  `journalctl -u gateway-service --since X | grep "Response saved successfully" | awk '{print $3}' | cut -c1-5 | uniq -c`
+- **Prodda sun'iy yuk faqat test-tenant (101) bilan.** Tenant 100 — jonli biznes trafigi;
+  soxta order_export yuborish real biznes ta'siri demakdir.
+
+### L1. Tabiiy burst (eng xavfsiz variant, birinchi bo'lib shuni qiling)
+
+Deploydan keyin manba backlog'i o'zi burst yaratadi (14:21 restart aynan shunday qilgan edi).
+Deploy oynasidan keyingi 15 daqiqani kuzating.
+
+- [ ] **L1.1** `resilience4j_circuitbreaker_state{name="cb-smartup.online"}` — **CLOSED bo'lib
+      qolishi** kutiladi (Faza 2 ning butun maqsadi shu). OPEN bo'lsa — bu muvaffaqiyatsizlik
+      emas, lekin `API_MAX_CONCURRENT_PER_HOST` ni pasaytirish signali.
+- [ ] **L1.2** `gateway_http_host_limiter_rejected_total` — **o'sishi kutiladi**, bu ish
+      ketayotganining belgisi (xato emas).
+- [ ] **L1.3** `gateway_http_circuitbreaker_requeue_pending{flow}` — ko'tarilib, **0 ga qaytishi**
+      kerak. Plato = upstream hamon rad etmoqda.
+- [ ] **L1.4** DLQ **bo'sh**; `gateway_dlq_sent_total` o'zgarmaydi.
+- [ ] **L1.5** Balans: oyna bo'yicha qabul qilingan har bir id Redis'da `COMPLETED`. Yo'qolish 0.
+
+### L2. Boshqariladigan sun'iy burst (test tenant)
+
+- [ ] **L2.1** Test tenant (101) bilan 500 so'rovni ~30 soniyada yuboring (upstream sifatida
+      zararsiz endpoint). Kutilgan: hammasi COMPLETED, DLQ bo'sh, CB CLOSED, limiter counter o'sadi.
+- [ ] **L2.2** Yukni **upstream o'lik** holatda takrorlang (test endpoint portini yoping).
+      Kutilgan: hammasi park bo'ladi (`requeue_pending` o'sadi), Kafka lag o'sadi, **Telegram'ga
+      ko'pi bilan 2 ta xabar** (1 ta to'liq + 1 ta jamlanma) — 500 ta emas. Bu Faza 3 ning
+      yuk ostidagi asosiy tekshiruvi.
+- [ ] **L2.3** `max-message-age-ms` (5 daqiqa) o'tgach: har park qilingan xabar uchun **bitta**
+      DLQ yozuvi, `..._requeue_exhausted_total` o'sadi, Telegram'da yana jamlanma (yuzlab xabar
+      emas).
+
+### L3. Resurs chegaralari — 2026-05-18 avariyasi takrorlanmasin
+
+- [ ] **L3.1** Redpanda diski: `df -h /var/lib/docker` — yuk oldidan va keyin. 57 GB volume
+      to'lib gateway 34 soatga osilgan edi; park qilish aynan shu churn'ni yo'q qilish uchun
+      kiritilgan, shuning uchun bu ko'rsatkich **deyarli o'zgarmasligi** kerak.
+- [ ] **L3.2** `gateway_http_circuitbreaker_requeue_pending_bytes{flow}` — `cb-max-pending-bytes`
+      (256 MiB) ga nisbatan. Chegaraga birinchi bo'lib shu yetadi.
+- [ ] **L3.3** JVM RSS (`systemctl status gateway-service`) — park qilingan xabarlar xotirada
+      turadi. J7 da 846 MB edi; 1 GB dan sezilarli oshsa `cb-max-pending` ni pasaytiring.
+- [ ] **L3.4** Consumer lag — park paytida **o'sishi normal va kutilgan** (offset ataylab
+      commit qilinmaydi, 40-qoida). Yuk tugagach 0 ga qaytishi shart.
 
 ---
 
 **Yakun mezoni:** A–G to'liq yashil (H/I/J/K ixtiyoriy, lekin **J7 prod deploydan keyin majburiy**,
-K1 esa CB yo'lini o'zgartirgan har bir releasedan keyin) → `debug` push + release PR.
+K1 esa CB yo'lini o'zgartirgan har bir releasedan keyin, **L1 esa v2.3.0 deployidan keyin
+majburiy** — backpressure zanjiri faqat yukda tasdiqlanadi) → `debug` push + release PR.

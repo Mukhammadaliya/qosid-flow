@@ -282,6 +282,11 @@ gateway:
     bot-token: ${TELEGRAM_BOT_TOKEN:}
     chat-id: ${TELEGRAM_CHAT_ID:0}
     message-thread-id: ${TELEGRAM_MESSAGE_THREAD_ID:}
+    # Bitta hodisa — bitta xabar. Bir xil (sabab-sinfi, host) juftligidagi DLQ
+    # ogohlantirishlari shu oynada yig'iladi: birinchisi darhol, qolganlari bitta
+    # jamlanma bo'lib chiqadi. 2026-07-27 da 212 ta alert 298 marta 429 bo'lgan edi.
+    # DB'dan boshqarilmaydi — faqat env/yaml.
+    coalesce-window-ms: ${TELEGRAM_COALESCE_WINDOW_MS:60000}
 
   # --- Loki (Errors UI log source, D2) ---
   loki:

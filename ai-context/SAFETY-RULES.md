@@ -497,8 +497,8 @@ Four related invariants inside the scheduler itself:
   purpose: the offset is still uncommitted, and throwing would abandon the remaining parked
   messages.
 
-**Never let the CB timer double as the application scheduler.** `cbRequeueTimer` is the context's
-only `ScheduledExecutorService` bean, and Spring Boot's auto-configured `taskScheduler` is guarded
+**Never let the CB timer double as the application scheduler.** `cbRequeueTimer` was the context's
+first `ScheduledExecutorService` bean, and Spring Boot's auto-configured `taskScheduler` is guarded
 by `@ConditionalOnMissingBean({TaskScheduler, ScheduledExecutorService})` (bytecode-checked in
 `spring-boot-autoconfigure-3.5.16`, `TaskSchedulingConfigurations$TaskSchedulerConfiguration`).
 Introducing the timer therefore switched that bean off, and `@Scheduled` fell back to the one
@@ -528,6 +528,43 @@ to preserve:
 
 Guards: `SchedulerIsolationTest`, `CbBackpressureTest`, `CbRequeueSchedulerTest`,
 `OrderedAckConsumerTest`.
+
+**A second `ScheduledExecutorService` bean is allowed, but never for pipeline work.**
+`alertCoalesceTimer` (rule 41) exists precisely so a blocking Telegram call cannot occupy a CB
+requeue thread. It does not re-trigger anything — the back-off already happened at the first such
+bean and `taskScheduler` is declared explicitly — but every additional timer must justify itself
+the same way: name it, keep its own thread prefix, and never hand it work the pipeline waits on.
+`SchedulerIsolationTest` pins the full set of `ScheduledExecutorService` beans, so adding one is a
+deliberate edit, not an accident.
+
+---
+
+### 41. Never retry a Telegram 429 immediately, and never send one message per DLQ record
+
+DLQ alerting is a **channel with a rate limit**, not a log sink. On 2026-07-27 a single circuit
+window produced 212 DLQ records; each became its own `sendMessage` call, Telegram answered
+`429 retry after N` **298 times**, and 14 messages got through. The alert channel failed exactly
+when it was needed.
+
+Two invariants in `TelegramNotificationService`:
+
+- **Coalesce.** Alerts are grouped by (reason-class, host) — the reason with digit runs replaced
+  by `#`, so the same failure with different ids is one group. The first alert of a group is sent
+  immediately (the fast signal is the point of alerting); the rest of the
+  `gateway.telegram.coalesce-window-ms` window are counted and leave as one summary. The number
+  of *open* groups is itself capped (`MAX_OPEN_WINDOWS`) into a single overflow group, because
+  reasons can vary in ways digit-stripping does not normalise — without that cap a flood of
+  distinct reasons reopens the original incident.
+- **Obey `retry_after`.** On a 429 the service reads `parameters.retry_after` from Telegram's
+  body (then the `Retry-After` header, then 5 s), adds a second of slack, and sends **nothing**
+  until it passes. There is no retry — a retry is what produced the 298 failures. Held-back
+  alerts are counted and reported on the next message that does go out, so suppression is never
+  a silent drop.
+
+Neither invariant may be "simplified" into a per-record send, and no retry loop belongs on this
+path. Failing to alert is bad; making the channel unusable during an incident is worse.
+Guards: `AlertCoalescingTest`, `TelegramNotificationServiceTest`, `SchedulerIsolationTest`
+(the flush must not run on `cb-requeue-timer`).
 
 ---
 

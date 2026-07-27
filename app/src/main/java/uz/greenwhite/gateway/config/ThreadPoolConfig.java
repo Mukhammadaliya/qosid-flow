@@ -72,6 +72,23 @@ public class ThreadPoolConfig {
     }
 
     /**
+     * Timer that closes DLQ-alert coalescing windows.
+     *
+     * <p>Deliberately NOT {@link #cbRequeueTimer()}: flushing a window makes a blocking HTTP call
+     * to Telegram with a 5 s connect + 5 s read timeout, and the CB timer has two threads that
+     * parked requests depend on to be re-queued on time. One sick notification channel must not
+     * delay the pipeline's own recovery.
+     */
+    @Bean(destroyMethod = "shutdown")
+    public ScheduledExecutorService alertCoalesceTimer() {
+        return Executors.newScheduledThreadPool(1, r -> {
+            Thread t = new Thread(r, "alert-coalesce-timer");
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    /**
      * The pool behind every {@code @Scheduled} method — declared explicitly, and it must stay that
      * way. Spring Boot's auto-configured {@code taskScheduler} carries
      * {@code @ConditionalOnMissingBean({TaskScheduler, ScheduledExecutorService})}, so the

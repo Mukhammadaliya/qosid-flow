@@ -84,15 +84,34 @@ class SchedulerIsolationTest {
     @Test
     void cbRequeueTimerRemainsItsOwnSeparatelyNamedBean() throws Exception {
         assertThat(ctx.getBeanNamesForType(ScheduledExecutorService.class))
-                .as("The CB timer stays the only ScheduledExecutorService, and taskScheduler is "
-                        + "deliberately not one — otherwise the back-off returns")
-                .containsExactly("cbRequeueTimer");
+                .as("Each timer is its own named bean, and taskScheduler is deliberately NOT a "
+                        + "ScheduledExecutorService — otherwise Boot's back-off returns")
+                .containsExactlyInAnyOrder("cbRequeueTimer", "alertCoalesceTimer");
 
         CompletableFuture<String> name = new CompletableFuture<>();
         cbRequeueTimer.execute(() -> name.complete(Thread.currentThread().getName()));
         assertThat(name.get(10, TimeUnit.SECONDS))
                 .as("CbRequeueScheduler's threads keep their prefix — rule 40's guards read it")
                 .isEqualTo(CB_TIMER_THREAD);
+    }
+
+    /**
+     * A DLQ-alert window flush makes a blocking Telegram call (5 s connect + 5 s read). If it ran
+     * on the CB timer's two threads it could delay a parked request's requeue by ten seconds per
+     * stuck alert — the pipeline's recovery must not depend on a notification channel's health.
+     */
+    @Test
+    void alertCoalescingRunsOffTheCbRequeueTimer() throws Exception {
+        ScheduledExecutorService alertTimer =
+                ctx.getBean("alertCoalesceTimer", ScheduledExecutorService.class);
+
+        CompletableFuture<String> name = new CompletableFuture<>();
+        alertTimer.execute(() -> name.complete(Thread.currentThread().getName()));
+
+        assertThat(name.get(10, TimeUnit.SECONDS))
+                .as("A blocking Telegram flush must never occupy a CB requeue thread")
+                .isEqualTo("alert-coalesce-timer")
+                .doesNotStartWith(CB_TIMER_THREAD);
     }
 
     @TestConfiguration
