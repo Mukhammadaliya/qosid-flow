@@ -33,6 +33,24 @@ class CircuitStateQueryTest {
         assertThat(service.circuitBreakerName(request)).isEqualTo("cb-smartup.online");
     }
 
+    /**
+     * A second host, because one asserted name cannot tell a derivation apart from a constant.
+     * This one is the example in {@code extractDomainForCB}'s own javadoc and it also pins the
+     * port being stripped — {@code :8080} must not reach the name, or the same service reached on
+     * two ports would be protected by two independent circuits.
+     */
+    @Test
+    void circuitBreakerNameDropsSchemeAndPort() {
+        HttpRequestService service = serviceWith(registry);
+        RequestMessage request = RequestMessage.builder()
+                .tenantId(100L).requestId(2L)
+                .method("GET")
+                .baseUrl("http://api.example.com:8080")
+                .build();
+
+        assertThat(service.circuitBreakerName(request)).isEqualTo("cb-api.example.com");
+    }
+
     @Test
     void openCircuitReadsAsOpen() {
         CircuitBreaker cb = registry.circuitBreaker("cb-smartup.online");
@@ -72,8 +90,14 @@ class CircuitStateQueryTest {
         assertThat(registry.find("cb-never-seen")).isEmpty();
     }
 
+    /**
+     * The registry side uses the literal name on purpose. Deriving it from
+     * {@code circuitBreakerName} on both sides would make this pass for any naming rule at all,
+     * including a constant — it would prove the two calls agree with each other rather than that
+     * either agrees with the send path.
+     */
     @Test
-    void queryReadsTheSameInstanceTheSendPathWouldUse() {
+    void queryReadsTheEntryTheSendPathWouldOpen() {
         RequestMessage request = RequestMessage.builder()
                 .tenantId(100L).requestId(1L)
                 .method("POST")
@@ -81,9 +105,8 @@ class CircuitStateQueryTest {
                 .build();
         HttpRequestService service = serviceWith(registry);
 
-        // The send path resolves its breaker out of the registry by this exact name, so opening
-        // that entry must be visible to the query — otherwise the two can disagree.
-        registry.circuitBreaker(service.circuitBreakerName(request)).transitionToOpenState();
+        // This is literally what the send path does: registry.circuitBreaker(extractDomainForCB(baseUrl)).
+        registry.circuitBreaker("cb-smartup.online").transitionToOpenState();
 
         assertThat(service.isCircuitOpen(service.circuitBreakerName(request))).isTrue();
     }
