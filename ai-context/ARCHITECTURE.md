@@ -194,11 +194,12 @@ body can be 20 MiB); past either bound the message goes to the DLQ rather than g
 Each flow owns its own scheduler instance, gauges and budget (rule 5); they share only the
 two-thread `cbRequeueTimer`, so the flows are coupled in scheduling *latency* — a parked hand-back
 calls `KafkaTemplate.send`, which can block up to `max.block.ms` — but never in state. Those two
-threads currently also run every `@Scheduled` method in the app (E1 pull, lag monitor, RocksDB
-retention): declaring a `ScheduledExecutorService` bean makes Boot's own `taskScheduler` back off,
-so `@Scheduled` adopts it. That is an accident of bean typing rather than a design decision — see
-the "known coupling" note in SAFETY-RULES rule 40. Reasoning and the 2026-07-27 incident that
-produced this design: SAFETY-RULES rules 23 and 40.
+threads carry nothing else: `@Scheduled` work (E1 pull, lag monitor, RocksDB retention) runs on
+Boot's own `scheduling-*` pool because `ThreadPoolConfig` declares the `taskScheduler` bean
+explicitly. It has to — a `ScheduledExecutorService` bean makes Boot's auto-configured
+`taskScheduler` back off, and `@Scheduled` would otherwise adopt the CB timer by accident of bean
+typing (rule 40). Reasoning and the 2026-07-27 incident that produced this design: SAFETY-RULES
+rules 23 and 40.
 
 ### E4: HTTP Request — `HttpRequestService.java`
 

@@ -2,9 +2,11 @@ package uz.greenwhite.gateway.config;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.task.ThreadPoolTaskSchedulerBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -67,6 +69,26 @@ public class ThreadPoolConfig {
             t.setDaemon(true);
             return t;
         });
+    }
+
+    /**
+     * The pool behind every {@code @Scheduled} method — declared explicitly, and it must stay that
+     * way. Spring Boot's auto-configured {@code taskScheduler} carries
+     * {@code @ConditionalOnMissingBean({TaskScheduler, ScheduledExecutorService})}, so the
+     * {@link #cbRequeueTimer()} bean above silently switches it off; {@code @Scheduled} then adopts
+     * the CB timer's two threads and the E1 pull loop's blocking source call shares them with
+     * hand-backs that can block on {@code KafkaTemplate.send}. Deleting this bean as
+     * "redundant with Boot's default" re-creates that entanglement without changing any behaviour
+     * a test could otherwise see — only thread names.
+     *
+     * <p>Built from Boot's own {@code ThreadPoolTaskSchedulerBuilder} (that bean is unconditional,
+     * so it survives the back-off) rather than configured by hand, so every
+     * {@code spring.task.scheduling.*} property — pool size, thread-name prefix, shutdown
+     * behaviour — keeps the meaning the Spring Boot reference documentation gives it.
+     */
+    @Bean
+    public ThreadPoolTaskScheduler taskScheduler(ThreadPoolTaskSchedulerBuilder builder) {
+        return builder.build();
     }
 
     private ThreadPoolTaskExecutor buildExecutor(int min, int max, String prefix) {

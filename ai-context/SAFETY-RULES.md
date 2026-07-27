@@ -180,9 +180,10 @@ Also load-bearing, and easy to break while refactoring:
   no state leaks between Oracle and API. They are, honestly, coupled in scheduling *latency*: a
   hand-back calls `KafkaTemplate.send`, which can block up to `max.block.ms` if the broker is
   unreachable, and two such hand-backs occupy both threads. That delays the other flow's
-  re-checks; it does not lose or mis-route anything. Widen the pool before adding a third flow —
-  and read rule 40's "known coupling" note, because those same two threads currently run every
-  `@Scheduled` job in the application as well.
+  re-checks; it does not lose or mis-route anything. Widen the pool before adding a third flow.
+  Those two threads carry CB hand-backs and nothing else: `@Scheduled` work (including the E1 pull
+  loop) runs on Boot's separate `scheduling-*` pool, which is only true because `ThreadPoolConfig`
+  declares `taskScheduler` explicitly — see rule 40.
 - **`HALF_OPEN` deliberately reads as "not open"** in `isCircuitOpen`, so a waiting message
   becomes one of resilience4j's probe calls instead of sleeping through the recovery window.
 - **The park depends on `automatic-transition-from-open-to-half-open-enabled: true`**
@@ -471,20 +472,37 @@ Three related invariants inside the scheduler itself:
   drain. Failures there are logged and swallowed on purpose: the offset is still uncommitted, and
   throwing would abandon the remaining parked messages.
 
-**Known coupling, verified 2026-07-27 and not yet fixed:** `cbRequeueTimer` is the context's only
-`ScheduledExecutorService` bean, and Spring Boot's auto-configured `taskScheduler` backs off on
-`@ConditionalOnMissingBean({TaskScheduler, ScheduledExecutorService})` (bytecode-checked in
-`spring-boot-autoconfigure-3.5.16`, `TaskSchedulingConfigurations$TaskSchedulerConfiguration`), so
-`@Scheduled` adopts these same two threads. Test logs show `ConcurrencyMonitorService` running on
-`cb-requeue-timer`, which means the E1 pull loop (`RequestPuller`, blocking HTTP to the source) and
-the RocksDB retention job share them too. Nothing is lost by this, but the latencies are entangled:
-two hand-backs blocked on `KafkaTemplate.send` (up to `max.block.ms`) stall the pull loop, and a
-slow pull delays a CB re-check. The fix is to stop letting a private timer double as the
-application scheduler — declare an explicit `taskScheduler` bean (restoring Boot's default for
-`@Scheduled`) or expose the CB timer as a non-`ScheduledExecutorService`-typed bean — and it must
-not be "fixed" by giving the two flows separate timers, which changes nothing about this.
+**Never let the CB timer double as the application scheduler.** `cbRequeueTimer` is the context's
+only `ScheduledExecutorService` bean, and Spring Boot's auto-configured `taskScheduler` is guarded
+by `@ConditionalOnMissingBean({TaskScheduler, ScheduledExecutorService})` (bytecode-checked in
+`spring-boot-autoconfigure-3.5.16`, `TaskSchedulingConfigurations$TaskSchedulerConfiguration`).
+Introducing the timer therefore switched that bean off, and `@Scheduled` fell back to the one
+`ScheduledExecutorService` it could find: the E1 pull loop (`RequestPuller`, blocking HTTP to the
+source), the RocksDB retention job and the consumer-lag monitor all moved onto the CB timer's two
+threads. Nothing was lost by it, which is exactly why it went unnoticed — the failure mode is
+latency entanglement, and it lands in the pipeline's most sensitive stage: two hand-backs blocked on
+`KafkaTemplate.send` (up to `max.block.ms`) stall the pull loop, and a slow pull delays every CB
+re-check.
 
-Guards: `CbBackpressureTest`, `CbRequeueSchedulerTest`, `OrderedAckConsumerTest`.
+Fixed 2026-07-27 by declaring `taskScheduler` explicitly in `ThreadPoolConfig`, built from Boot's
+`ThreadPoolTaskSchedulerBuilder` — that bean is unconditional, so it survives the back-off, and
+routing through it keeps every `spring.task.scheduling.*` property meaning what the Spring Boot
+reference documentation says it means rather than freezing a hard-coded pool size. Two consequences
+to preserve:
+
+- **The two beans must stay separate and differently typed.** `taskScheduler` is a
+  `ThreadPoolTaskScheduler` — a `TaskScheduler`, deliberately *not* a `ScheduledExecutorService` —
+  so its own presence cannot re-trigger the back-off, and `@Scheduled` picks it because Spring
+  resolves `TaskScheduler` before `ScheduledExecutorService`. Merging the two, or giving each flow
+  its own timer, changes nothing about the coupling.
+- **Deleting the explicit bean as "redundant with Boot's default" silently restores the defect.** No
+  metric moves, no message is lost, no test of pipeline behaviour notices; the only observable
+  difference is the thread name in the logs. `SchedulerIsolationTest` is the whole guard: it runs a
+  real `@Scheduled` method and asserts the thread is `scheduling-*` and not `cb-requeue-timer`, and
+  that the pool still honours `spring.task.scheduling.pool.size`.
+
+Guards: `SchedulerIsolationTest`, `CbBackpressureTest`, `CbRequeueSchedulerTest`,
+`OrderedAckConsumerTest`.
 
 ---
 

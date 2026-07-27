@@ -429,6 +429,7 @@ COOKIE_SECURE=true    # set this the same day nginx/TLS fronts the console
 | `server.port` | int | `8090` | `SERVER_PORT` | Application HTTP port |
 | `management.server.port` | int | `8091` | `MANAGEMENT_PORT` | Actuator/metrics port |
 | `spring.lifecycle.timeout-per-shutdown-phase` | Duration | `30s` | — | Graceful shutdown timeout |
+| `spring.task.scheduling.*` | — | Boot defaults (`pool.size=1`, `thread-name-prefix=scheduling-`) | — | Pool behind every `@Scheduled` job — the E1 pull loop, RocksDB retention cleanup and the consumer-lag monitor. Not set in `application.yml`; `ThreadPoolConfig#taskScheduler` builds the bean from Boot's `ThreadPoolTaskSchedulerBuilder` so these properties keep their documented meaning. That bean must not be deleted — the `cbRequeueTimer` `ScheduledExecutorService` makes Boot's own `taskScheduler` back off, and `@Scheduled` would silently move onto the CB timer's threads (SAFETY rule 40). Raise `pool.size` only if a new `@Scheduled` job would otherwise queue behind the 5 s pull loop. |
 | `server.compression.enabled` | boolean | `true` | — | GZIP compression for JSON/text responses. |
 | `server.tomcat.accept-count` | int | `1000` | `TOMCAT_ACCEPT_COUNT` | Accept queue size. |
 | `server.tomcat.max-connections` | int | `10000` | `TOMCAT_MAX_CONNECTIONS` | Max concurrent connections. |
