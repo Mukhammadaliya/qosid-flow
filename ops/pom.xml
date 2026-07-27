@@ -11,7 +11,7 @@
     </parent>
     <groupId>uz.greenwhite</groupId>
     <artifactId>qosid-ops</artifactId>
-    <version>2.2.0</version>
+    <version>2.3.0</version>
     <name>qosid-ops</name>
     <properties>
         <java.version>21</java.version>
@@ -21,7 +21,7 @@
         <dependency>
             <groupId>uz.greenwhite</groupId>
             <artifactId>qosid-settings-core</artifactId>
-            <version>2.2.0</version>
+            <version>2.3.0</version>
         </dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>
