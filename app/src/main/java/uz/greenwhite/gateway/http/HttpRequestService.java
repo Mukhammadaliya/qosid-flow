@@ -206,7 +206,8 @@ public class HttpRequestService {
                     .doFinally(signal -> hostLimiter.release(cbName));
         } catch (RuntimeException e) {
             // Defensive: a synchronous throw while BUILDING the request (e.g. multipart body
-            // assembly) escapes the Mono — the permit must not escape with it.
+            // assembly on a corrupt file part) escapes the Mono — the permit must not escape
+            // with it. Reachable from source data; pinned by HostLimiterWiringTest.
             hostLimiter.release(cbName);
             throw e;
         }

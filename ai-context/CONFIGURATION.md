@@ -144,6 +144,18 @@ separate budgets) — so a dashboard query must not assume a common tag set:
 | `gateway.http.circuitbreaker.requeue.exhausted` | Counter | Messages that gave up by TIME: aged past `max-message-age-ms` while parked on an open circuit (the scheduler's own per-fire deadline check — **the normal exit of a real outage, and the signal to watch**), plus the two corner cases inside the CB branch (already expired on arrival, and the runaway guard). Non-zero for the guard reason means the delay path is broken. |
 | `gateway.http.host.limiter.rejected` | Counter | Calls deferred by the **per-host concurrency bound** (`gateway.api.max-concurrent-per-host`, Phase 2). Same park-and-recheck handling as a CB rejection but a **distinct cause**: this counter rising while the circuit stays CLOSED is our own backpressure working as designed — expected under any burst, not an error. Rising **together with** an open circuit means the limit did not shield the upstream enough. |
 
+**Operator note — limiter deferrals WEAR THE CIRCUIT-BREAKER'S CLOTHES downstream.** A refused
+permit travels the CB-blocked path by design (zero consumer changes), so everything the consumers
+say about it uses circuit vocabulary even though the circuit may never have opened: each deferral
+logs the consumer WARN `CB-blocked, parked until cb-<host> accepts traffic`, and a message that
+ages out during *sustained* limiter saturation produces a DLQ record reading `Circuit breaker
+still open after <ms>ms` (or `Circuit breaker open and requeue buffer full`). **The discriminator
+is the metrics, not the strings:** `gateway_http_host_limiter_rejected_total` rising while
+resilience4j's circuit-state metric (`resilience4j_circuitbreaker_state`, exposed per circuit)
+stays CLOSED = our own backpressure; the circuit metric showing OPEN = a real upstream refusal.
+Check the metrics before believing a "circuit breaker" log line or DLQ reason from a burst
+window.
+
 ### Which signal actually moves when an upstream is down
 
 The give-up that fires in a real outage is the scheduler's **own deadline check**: every timer

@@ -16,8 +16,10 @@ import uz.greenwhite.gateway.model.kafka.ResponseMessage;
 import uz.greenwhite.gateway.oauth2.OAuth2ProviderService;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -185,14 +187,59 @@ class HostLimiterWiringTest {
         HttpRequestService service = serviceWithLimit(1, null);
         registry.circuitBreaker(HOST_KEY).transitionToOpenState();
 
-        ResponseMessage response = service.sendRequest(request()).block();
+        // Deliberately NOT subscribed yet: the release must have happened synchronously in the
+        // catch, because a Mono that is built and then dropped never runs its operators — a
+        // doFinally-based release here would leak one permit per call against an open circuit.
+        Mono<ResponseMessage> refused = service.sendRequest(request());
 
-        assertThat(response.getHttpStatus()).isEqualTo(503);
-        assertThat(response.getErrorMessage()).contains("is OPEN"); // the CB cause, not the limiter's
-        assertThat(metrics.getHostLimiterRejected().count()).isZero(); // two causes stay distinct
         assertThat(limiter.inFlight(HOST_KEY)).isZero();
-        assertThat(limiter.tryAcquire(HOST_KEY)).isTrue();
+        assertThat(metrics.getHostLimiterRejected().count()).isZero(); // two causes stay distinct
+        assertThat(limiter.tryAcquire(HOST_KEY)).isTrue(); // permit genuinely back, pre-subscription
+        limiter.release(HOST_KEY);
+
+        // Subscribing afterwards is safe (no permit rides in this Mono) and pins WHICH branch
+        // answered: the CB cause, not the limiter's.
+        ResponseMessage response = refused.block();
+        assertThat(response.getHttpStatus()).isEqualTo(503);
+        assertThat(response.getErrorMessage()).contains("is OPEN");
+        assertThat(limiter.inFlight(HOST_KEY)).isZero(); // and subscribing released nothing twice
         verifyNoInteractions(webClient);
+    }
+
+    /**
+     * Release path 2 — a synchronous throw while BUILDING the request, after the permit and the
+     * CB permission were both granted. Reachable from source data: a multipart-fallback message
+     * (S3 failed → DB storage) whose file part carries no bytes makes {@code buildMultipartBody}
+     * throw before any Mono exists, so neither {@code doFinally} nor the CB catch can release —
+     * only the defensive catch can. Without it, every such corrupt message leaks one permit and
+     * the host throttles shut silently. (The review suggested {@code method("FOO")}, but
+     * spring-web 6.2.5 {@code HttpMethod.valueOf} returns {@code new HttpMethod("FOO")} for
+     * unknown names instead of throwing — bytecode-verified — so an invalid method is NOT a
+     * synchronous-throw vector; this one is.)
+     */
+    @Test
+    void synchronousThrowWhileBuildingTheRequestReleasesThePermit() {
+        HttpRequestService service = serviceWithLimit(1, null);
+        RequestMessage corruptMultipart = RequestMessage.builder()
+                .tenantId(100L).requestId(1L)
+                .method("POST")
+                .baseUrl("https://example.com")
+                .uri("/api")
+                .body("{}")
+                .biruniUploadMode("param")
+                .fileParts(List.of(RequestMessage.FilePart.builder()
+                        .fieldName("file[0]").fileName("x.bin")
+                        .contentType("application/octet-stream")
+                        .data(null) // corrupt part: write(null) → NPE → RuntimeException wrapper
+                        .build()))
+                .build();
+
+        assertThatThrownBy(() -> service.sendRequest(corruptMultipart))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("multipart");
+
+        assertThat(limiter.inFlight(HOST_KEY)).isZero();
+        assertThat(limiter.tryAcquire(HOST_KEY)).isTrue(); // permit genuinely back
     }
 
     /** The operator escape hatch wired through: {@code <= 0} means no call is ever refused. */

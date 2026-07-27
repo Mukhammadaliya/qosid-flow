@@ -46,6 +46,8 @@ In `RequestStateService`, `getAttemptCount()` and `incrementAttempt()` return `I
 
 Oracle and API flows use separate topics, consumers, and thread pools by design. `OracleResponseConsumer` saves to Biruni; `ApiResponseConsumer` does NOT. Merging them re-introduces the coupling that caused cascading failures — one flow's outage would stall the other.
 
+**One deliberate, weighed exception (v2.3.0 Phase 2): `HostConcurrencyLimiter` is a single instance shared by both flows.** Do NOT "fix" it into per-flow instances — the per-host bound protects the *upstream host*, one physical resource regardless of caller, and two per-flow limiters would let 2× the bound hit it. Its shared state cannot stall or mis-route a flow: every permit is released on every chain termination, bounded by the HTTP timeout. See ARCHITECTURE.md → E4 → Host concurrency limiter.
+
 ### 11. Never disable `@EnableRetry` or remove `@Recover` from `CallbackSender`
 
 `@EnableRetry` on `GatewayApplication` is what makes `@Retryable` active — without it, `sendCallback` silently becomes a single-attempt call (no retries, no backoff). The `@Recover` method is what stops exhausted retries from propagating out of the Kafka consumer; remove it and a bad callback URL kills message acknowledgment, which then stalls the partition.
