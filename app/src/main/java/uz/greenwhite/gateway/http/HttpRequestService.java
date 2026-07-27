@@ -14,6 +14,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import reactor.core.publisher.Mono;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import uz.greenwhite.gateway.model.kafka.ResponseMessage;
+import uz.greenwhite.gateway.metrics.GatewayMetrics;
 import uz.greenwhite.gateway.oauth2.OAuth2ProviderService;
 import uz.greenwhite.gateway.oauth2.model.Token;
 import uz.greenwhite.gateway.config.HttpProperties;
@@ -39,6 +40,8 @@ public class HttpRequestService {
     private final CircuitBreakerRegistry circuitBreakerRegistry;
     private final OAuth2ProviderService oAuth2ProviderService;
     private final HttpProperties httpProperties;
+    private final HostConcurrencyLimiter hostLimiter;
+    private final GatewayMetrics metrics;
 
     private final Set<String> registeredEventListeners = ConcurrentHashMap.newKeySet();
 
@@ -136,9 +139,18 @@ public class HttpRequestService {
      *
      * Order of operations:
      *   1. Resolve OAuth2 token (before CB — token failure is NOT an external API issue)
-     *   2. Acquire CB permission (only if we're actually going to make HTTP call)
-     *   3. Send HTTP request
-     *   4. Record CB result (onSuccess / onError)
+     *   2. Acquire host concurrency permit (Phase 2 backpressure — refusal is CB-shaped,
+     *      so consumers park-and-recheck it exactly like an open circuit)
+     *   3. Acquire CB permission (only if we're actually going to make HTTP call)
+     *   4. Send HTTP request
+     *   5. Record CB result (onSuccess / onError)
+     *
+     * Permit accounting is 1:1 by construction — a successful tryAcquire is released on exactly
+     * one of three mutually exclusive paths: (a) the CB-rejection catch (synchronous, before the
+     * Mono is even built), (b) the defensive catch around request construction (synchronous), or
+     * (c) doFinally on the returned Mono, which fires once per subscription on completion, error
+     * AND cancellation. The consumers always subscribe exactly once, so no Mono is ever built and
+     * then dropped with the permit inside it.
      */
     public Mono<ResponseMessage> sendRequest(RequestMessage request) {
         String compositeId = request.getCompositeId();
@@ -164,15 +176,48 @@ public class HttpRequestService {
         CircuitBreaker circuitBreaker = getCircuitBreaker(request.getBaseUrl());
         String cbName = circuitBreaker.getName();
 
-        // 3. Check if Circuit Breaker is OPEN
+        // 3. Per-host concurrency permit — keyed by the CB name so the limiter and the circuit
+        //    agree on what "one host" means (single naming rule, cannot drift). A refusal is
+        //    common under load and handled by the park-and-recheck path, hence DEBUG not WARN.
+        if (!hostLimiter.tryAcquire(cbName)) {
+            metrics.getHostLimiterRejected().increment();
+            log.debug("Host limiter [{}] at capacity ({} in flight) — request deferred: {}",
+                    cbName, hostLimiter.inFlight(cbName), compositeId);
+            return Mono.just(buildHostLimiterResponse(request, cbName));
+        }
+        // From here the permit is held: exactly one release happens, on exactly one of the
+        // paths below (CB-rejection catch / defensive catch / doFinally on the returned Mono).
+
+        // 4. Check if Circuit Breaker is OPEN
         try {
             circuitBreaker.acquirePermission();
         } catch (CallNotPermittedException ex) {
+            hostLimiter.release(cbName);
             log.warn("Circuit breaker [{}] OPEN — request blocked: {}", cbName, compositeId);
             return Mono.just(buildCircuitBreakerResponse(request, cbName));
         }
 
-        // 4. Send HTTP request — CB tracks only real HTTP outcomes
+        try {
+            return doSendRequest(request, circuitBreaker, headers)
+                    // The ONLY release for a Mono that reached the wire: doFinally covers
+                    // completion, error and cancellation (e.g. the consumer-side .timeout()),
+                    // and fires once per subscription. Without it a permit leaks and throttles
+                    // this host forever — invisible until saturation.
+                    .doFinally(signal -> hostLimiter.release(cbName));
+        } catch (RuntimeException e) {
+            // Defensive: a synchronous throw while BUILDING the request (e.g. multipart body
+            // assembly) escapes the Mono — the permit must not escape with it.
+            hostLimiter.release(cbName);
+            throw e;
+        }
+    }
+
+    private Mono<ResponseMessage> doSendRequest(RequestMessage request, CircuitBreaker circuitBreaker,
+            Map<String, String> headers) {
+        String compositeId = request.getCompositeId();
+        String cbName = circuitBreaker.getName();
+
+        // 5. Send HTTP request — CB tracks only real HTTP outcomes
         long startTime = System.nanoTime();
         String fullUrl = buildFullUrl(request);
         HttpMethod method = HttpMethod.valueOf(request.getMethod().toUpperCase(Locale.ROOT));
@@ -357,11 +402,30 @@ public class HttpRequestService {
      * Build response for when Circuit Breaker is OPEN (503).
      */
     private ResponseMessage buildCircuitBreakerResponse(RequestMessage request, String cbName) {
+        return buildCbShapedResponse(request,
+                "Circuit breaker [" + cbName + "] is OPEN: external API unavailable");
+    }
+
+    /**
+     * Build response for a refused host-concurrency permit. Same SHAPE as
+     * {@link #buildCircuitBreakerResponse} on purpose ({@code errorSource=CIRCUIT_BREAKER},
+     * 503): the consumers' park-and-recheck branch keys on that shape, so a deferred call is
+     * absorbed with no consumer changes at all. Only the message text and the metric
+     * ({@code gateway.http.host.limiter.rejected} vs the circuit's own) tell the two causes
+     * apart.
+     */
+    private ResponseMessage buildHostLimiterResponse(RequestMessage request, String cbName) {
+        return buildCbShapedResponse(request,
+                "Host concurrency limit reached for [" + cbName + "]: request deferred");
+    }
+
+    /** The one CB-blocked shape both causes share — a single builder so they cannot diverge. */
+    private ResponseMessage buildCbShapedResponse(RequestMessage request, String errorMessage) {
         return ResponseMessage.builder()
                 .tenantId(request.getTenantId())
                 .requestId(request.getRequestId())
                 .httpStatus(503)
-                .errorMessage("Circuit breaker [" + cbName + "] is OPEN: external API unavailable")
+                .errorMessage(errorMessage)
                 .errorSource("CIRCUIT_BREAKER")
                 .processedAt(LocalDateTime.now())
                 .callbackUrl(request.getCallbackUrl())

@@ -160,7 +160,11 @@ contention the message is `nack(10s)`-ed back to Kafka (rule 33), on a Redis gat
 from the `createdAt` stamped at ingress) goes to the DLQ via `handlePermanentFailure` (rule 23).
 
 **CB-blocked messages park and re-check; they do not spin (v2.3.0).** When E4 answers
-`errorSource=CIRCUIT_BREAKER`, the consumer asks `HttpRequestService.circuitBreakerName(message)`
+`errorSource=CIRCUIT_BREAKER` — for **either** cause: the circuit is open, or the per-host
+concurrency bound refused a permit (`HostConcurrencyLimiter`, Phase 2; same response shape by
+design, so this path needs no cause-awareness; a limiter-deferred message just finds the circuit
+closed on the first re-check and requeues after one short park) — the consumer asks
+`HttpRequestService.circuitBreakerName(message)`
 which circuit refused it and hands the message to its flow's `CbRequeueScheduler`
 (`kafka/retry/`), which:
 
@@ -213,6 +217,7 @@ rules 23 and 40.
 | **Input** | `RequestMessage` from E3 |
 | **Output** | Oracle → `gateway.oracle.response`, API → `gateway.api.response` |
 | **Circuit Breaker** | Per-domain Resilience4j CB. If OPEN, returns 503 immediately. |
+| **Host concurrency limiter (v2.3.0, Phase 2)** | `HostConcurrencyLimiter` — bounds OUR concurrent in-flight calls per upstream host (`gateway.api.max-concurrent-per-host`, default 25; `<= 0` disables), keyed by the CB name so limiter and circuit agree on what "one host" is. **Shared across both flows on purpose** (weighed against rule 5): the upstream host is one physical resource — two per-flow limiters would let 2× the bound hit it. A refused permit answers the **same CB-blocked shape** (503, `errorSource=CIRCUIT_BREAKER`, its own message text) so the E3 park-and-recheck path absorbs it with zero consumer changes; the cause stays distinguishable via `gateway.http.host.limiter.rejected` (vs. an open circuit) and is logged at DEBUG (common under load). Permit accounting is 1:1: acquire immediately before `acquirePermission()`, release on exactly one of — the CB-rejection catch (sync), the defensive catch around request build (sync), or `doFinally` on the returned Mono (completion, error AND cancellation, e.g. the consumer-side `.timeout()`). This is the Phase 2 answer to 2026-07-27: a restart backlog dispatched at ~67 req/s opened `cb-smartup.online`; 25 concurrent calls at ~200 ms latency drain ~125 req/s without presenting the upstream hundreds of parallel connections, so the circuit stops opening in the first place. |
 | **OAuth2** | If `oauth2Provider` set, fetches token via `OAuth2ProviderService` and adds `Authorization` header |
 | **Timeouts** | Default: connect 10s, read 30s. Per-endpoint overrides via `gateway.http.endpoint-timeouts` |
 | **Compression** | `HttpClientConfig` does NOT enable reactor-netty `.compress(true)` (broken with Cloudflare). `decompressIfNeeded(body, headers)` handles `Content-Encoding: gzip/deflate/x-gzip` defensively on both success and error paths so `/result` always gets plain bytes. |
@@ -243,7 +248,7 @@ rules 23 and 40.
 | `kafka/consumer/api/` | E3 + E5 — API request/response/DLQ | `ApiRequestConsumer`, `ApiResponseConsumer`, `ApiDlqConsumer` |
 | `kafka/ack/` | E3 — contiguous-prefix acknowledgement (rule 39) | `OrderedAckTracker` |
 | `kafka/retry/` | E3 — CB-blocked messages wait on their circuit instead of re-queuing at Kafka speed (rules 23, 40) | `CbRequeueScheduler` (one instance per flow, shared `cbRequeueTimer` threads) |
-| `http/` | E4 — HTTP client with CB + OAuth2 | `HttpRequestService` |
+| `http/` | E4 — HTTP client with CB + OAuth2 + per-host concurrency bound | `HttpRequestService`, `HostConcurrencyLimiter` |
 | `state/` | Redis state management + distributed locks | `RequestStateService` |
 | `oauth2/` | OAuth2 token caching + distributed locking | `OAuth2ProviderService`, `OAuth2TokenRedisCache`, `OAuth2ProviderFetcher` |
 | `oauth2/client/` | Pluggable OAuth2 client implementations | `OAuth2Client` (interface), `JsonBodyOAuth2Client` (`getName()="biruni"`, JSON body), `StandardOAuth2Client` (`type=standard`, RFC 6749 form-urlencoded, e.g. Regos) |

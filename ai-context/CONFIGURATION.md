@@ -142,6 +142,7 @@ separate budgets) — so a dashboard query must not assume a common tag set:
 | `gateway.http.circuitbreaker.requeue.pending.bytes{flow}` | Gauge | Parked body bytes. Watch this one against `cb-max-pending-bytes` — it hits the bound first. |
 | `gateway.http.circuitbreaker.requeue.rejected` | Counter | Parks refused because a bound was full → DLQ (`Circuit breaker open and requeue buffer full`). Non-zero means memory pressure: raise the bounds or shed load. |
 | `gateway.http.circuitbreaker.requeue.exhausted` | Counter | Messages that gave up by TIME: aged past `max-message-age-ms` while parked on an open circuit (the scheduler's own per-fire deadline check — **the normal exit of a real outage, and the signal to watch**), plus the two corner cases inside the CB branch (already expired on arrival, and the runaway guard). Non-zero for the guard reason means the delay path is broken. |
+| `gateway.http.host.limiter.rejected` | Counter | Calls deferred by the **per-host concurrency bound** (`gateway.api.max-concurrent-per-host`, Phase 2). Same park-and-recheck handling as a CB rejection but a **distinct cause**: this counter rising while the circuit stays CLOSED is our own backpressure working as designed — expected under any burst, not an error. Rising **together with** an open circuit means the limit did not shield the upstream enough. |
 
 ### Which signal actually moves when an upstream is down
 
@@ -244,6 +245,18 @@ The four **behavioral** keys below are now **DB-managed** (settings DB, like `ga
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
 | `gateway.api.base-url` | String | `` (empty — configured via Settings UI) | `API_BASE_URL` | Upstream base URL, **including any path prefix** (e.g. `/b`). **Request-lifecycle endpoint — configured ONLY via the Settings UI** (empty transitional env fallback). API proxy requests are forwarded to `{baseUrl}{stripped client URI}`. Client URIs therefore omit the `/b` prefix — e.g. client sends `/qosid/api/v1/queue/sb/sbr/…` and qosid-flow calls `https://app.smartup24.com/b/sb/sbr/…`. Prod: `https://app.smartup24.com/b` (must include `/b`). **LIVE-editable** — `ProxyController` resolves it per request via `SettingsService`. |
+| `gateway.api.max-concurrent-per-host` | int | `25` | `API_MAX_CONCURRENT_PER_HOST` | Max concurrent in-flight HTTP calls **per upstream host** (E4, `HostConcurrencyLimiter`, keyed by CB name — one bound per circuit, shared by both flows because the host is one physical resource). A refused permit returns the CB-blocked shape (503, `errorSource=CIRCUIT_BREAKER`) → park-and-recheck, **never** DLQ, counted by `gateway.http.host.limiter.rejected`. `<= 0` disables the bound (escape hatch, like `gateway.proxy.max-body-size`). **Deliberately absent from `SettingsRegistry`** like the `gateway.retry.cb-*` keys — `.env`/yaml only, applied on next start. |
+
+### `gateway.api.max-concurrent-per-host` — why 25 (v2.3.0, Phase 2)
+
+The 2026-07-27 incident: a deploy restart left a pull backlog, ~1000 requests were pulled in 15 s
+and dispatched at ~67 req/s against one host; ≥5 of any 10 sliding-window calls failed and
+`cb-smartup.online` opened. Phase 1 made the open window survivable; this key stops the burst from
+opening it at all. **25 concurrent calls at a ~200 ms upstream latency sustain ~125 req/s** —
+comfortably above the ~67 req/s arrival rate (the backlog still drains fast), while never
+presenting the upstream with hundreds of simultaneous connections. A deferred call parks like a
+CB-blocked one and typically returns within one `cb-requeue-delay-ms` (2 s), because its circuit
+reads closed on the first re-check.
 
 ## gateway.proxy.* — REST Proxy Layout
 

@@ -3,7 +3,9 @@ package uz.greenwhite.gateway.http;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.mockito.Mockito;
 import org.springframework.web.reactive.function.client.WebClient;
+import uz.greenwhite.gateway.config.ApiProperties;
 import uz.greenwhite.gateway.config.HttpProperties;
+import uz.greenwhite.gateway.metrics.GatewayMetrics;
 import uz.greenwhite.gateway.oauth2.OAuth2ProviderService;
 
 /**
@@ -32,6 +34,10 @@ final class HttpRequestServiceTestFixtures {
                 Mockito.mock(WebClient.class),
                 registry,
                 Mockito.mock(OAuth2ProviderService.class),
-                Mockito.mock(HttpProperties.class));
+                Mockito.mock(HttpProperties.class),
+                // Real limiter at the yaml default: the query path never acquires, and a mock
+                // whose tryAcquire answers false would silently reroute any send-path use.
+                new HostConcurrencyLimiter(new ApiProperties()),
+                Mockito.mock(GatewayMetrics.class));
     }
 }

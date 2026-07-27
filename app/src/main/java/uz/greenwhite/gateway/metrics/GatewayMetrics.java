@@ -54,6 +54,7 @@ public class GatewayMetrics {
     private final Counter cbRequeueExhausted;
     private final Counter cbRequeueDelayed;
     private final Counter cbRequeueRejected;
+    private final Counter hostLimiterRejected;
     private final Counter poolRejection;
 
     // ==================== E5: Oracle Save ====================
@@ -211,6 +212,14 @@ public class GatewayMetrics {
 
         this.cbRequeueRejected = Counter.builder("gateway.http.circuitbreaker.requeue.rejected")
                 .description("CB-blocked messages sent to DLQ because the pending bound was full")
+                .tag("stage", "http_request")
+                .register(registry);
+
+        this.hostLimiterRejected = Counter.builder("gateway.http.host.limiter.rejected")
+                .description("Calls deferred because the per-host concurrency bound "
+                        + "(gateway.api.max-concurrent-per-host) was reached — same "
+                        + "park-and-recheck handling as a CB rejection, but a DISTINCT cause: "
+                        + "this is our own backpressure working, not an open circuit")
                 .tag("stage", "http_request")
                 .register(registry);
 

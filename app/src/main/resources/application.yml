@@ -189,6 +189,11 @@ gateway:
   # --- API Proxy ---
   api:
     base-url: ${API_BASE_URL:}
+    # Max concurrent in-flight HTTP calls per upstream host (E4, both flows). 25 at ~200ms
+    # upstream latency sustains ~125 req/s — above the ~67 req/s burst that opened
+    # cb-smartup.online on 2026-07-27 — without hammering the host with hundreds of parallel
+    # connections. A refused permit takes the CB park-and-recheck path (not DLQ). <=0 disables.
+    max-concurrent-per-host: ${API_MAX_CONCURRENT_PER_HOST:25}
 
   # --- Proxy (REST API entry point) ---
   proxy:
