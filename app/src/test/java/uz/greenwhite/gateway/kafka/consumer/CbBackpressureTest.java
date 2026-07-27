@@ -239,6 +239,39 @@ class CbBackpressureTest {
         verify(state).releaseLock(KEY);
     }
 
+    /**
+     * The headline property of the whole change: a message that ages out WHILE PARKED is given
+     * up by the scheduler itself — one DLQ record with the CB reason, `...requeue.exhausted`
+     * moves, the record is completed, and the message is never produced back to Kafka. The
+     * circuit stays open for the entire test, so passing proves the give-up does not depend on
+     * the circuit ever closing (the pre-5c behaviour: the parked entry would sit forever and
+     * this test would time out on the DLQ verify with zero acks).
+     *
+     * <p>The message is fresh at consume time (so it parks instead of hitting the in-branch
+     * expiry) and is back-dated after the park — RequestMessage is mutable and the scheduler's
+     * expiry supplier closes over it, so the next timer fire (20–40 ms delays here) reads the
+     * expired age. Deterministic: no dependency on which fire sees it, only that one does.
+     */
+    @Test
+    void messageThatExpiresWhileParkedIsDlqdByTheSchedulerNotHandedBack() {
+        Acknowledgment ack = mock(Acknowledgment.class);
+        GatewayMetrics m = metrics();
+        Counter exhausted = mock(Counter.class);
+        when(m.getCbRequeueExhausted()).thenReturn(exhausted);
+        ConsumerRecord<String, RequestMessage> rec = record(LocalDateTime.now());
+
+        consumer(retryProps(100), m).consumeRequest(rec, ack);
+        // Parked now (circuit open, record uncommitted). Age it out while it waits:
+        rec.value().setCreatedAt(LocalDateTime.now().minusMinutes(6));
+
+        ArgumentCaptor<DlqMessage> dlq = ArgumentCaptor.forClass(DlqMessage.class);
+        verify(producer, timeout(2000)).sendToApiDlq(dlq.capture());
+        assertThat(dlq.getValue().getFailureReason()).startsWith("Circuit breaker still open after");
+        verify(exhausted, timeout(2000)).increment();
+        verify(ack, timeout(2000)).acknowledge();
+        verify(producer, never()).sendApiRequest(any());
+    }
+
     @Test
     void pendingBoundFullFallsBackToDlq() {
         Acknowledgment ack = mock(Acknowledgment.class);
@@ -323,6 +356,31 @@ class CbBackpressureTest {
         verify(producer, never()).sendOracleRequest(any());
         verify(ack).acknowledge();
         verify(state).releaseLock(KEY);
+    }
+
+    /**
+     * The Oracle twin of {@link #messageThatExpiresWhileParkedIsDlqdByTheSchedulerNotHandedBack}:
+     * the give-up wiring is duplicated per flow (SAFETY-RULES 5), so it is pinned per flow —
+     * a regression in the Oracle give-up callback must not hide behind the API test passing.
+     */
+    @Test
+    void oracleMessageThatExpiresWhileParkedIsDlqdByTheSchedulerNotHandedBack() {
+        Acknowledgment ack = mock(Acknowledgment.class);
+        GatewayMetrics m = metrics();
+        Counter exhausted = mock(Counter.class);
+        when(m.getCbRequeueExhausted()).thenReturn(exhausted);
+        ConsumerRecord<String, RequestMessage> rec = record(LocalDateTime.now());
+
+        oracleConsumer(retryProps(100), m).consumeRequest(rec, ack);
+        // Parked now (circuit open, record uncommitted). Age it out while it waits:
+        rec.value().setCreatedAt(LocalDateTime.now().minusMinutes(6));
+
+        ArgumentCaptor<DlqMessage> dlq = ArgumentCaptor.forClass(DlqMessage.class);
+        verify(producer, timeout(2000)).sendToOracleDlq(dlq.capture());
+        assertThat(dlq.getValue().getFailureReason()).startsWith("Circuit breaker still open after");
+        verify(exhausted, timeout(2000)).increment();
+        verify(ack, timeout(2000)).acknowledge();
+        verify(producer, never()).sendOracleRequest(any());
     }
 
     @Test

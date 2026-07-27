@@ -49,18 +49,24 @@ class CbRequeueSchedulerTest {
         return m;
     }
 
+    /** Never-expiring supplier for the cases that pin behaviour other than the deadline. */
+    private static final java.util.function.BooleanSupplier FRESH = () -> false;
+
     @Test
     void doesNotRequeueWhileTheCircuitIsStillOpen() throws Exception {
         AtomicBoolean open = new AtomicBoolean(true);
         AtomicBoolean requeued = new AtomicBoolean(false);
+        AtomicBoolean gaveUp = new AtomicBoolean(false);
         CbRequeueScheduler scheduler = new CbRequeueScheduler(
                 "TEST", executor, props(100, 1_000_000), metrics(), cb -> open.get());
 
-        assertThat(scheduler.schedule("1:1", "cb-x", 100, () -> requeued.set(true))).isTrue();
+        assertThat(scheduler.schedule("1:1", "cb-x", 100, FRESH,
+                () -> requeued.set(true), () -> gaveUp.set(true))).isTrue();
 
         Thread.sleep(200);
         assertThat(requeued).as("circuit still open — the message must keep waiting").isFalse();
-        assertThat(scheduler.pendingCount()).isEqualTo(1);
+        assertThat(gaveUp).as("not expired — the message must not give up").isFalse();
+        assertThat(scheduler.pendingCount()).as("an unexpired entry must still be re-arming").isEqualTo(1);
     }
 
     @Test
@@ -69,7 +75,7 @@ class CbRequeueSchedulerTest {
         AtomicBoolean requeued = new AtomicBoolean(false);
         CbRequeueScheduler scheduler = new CbRequeueScheduler(
                 "TEST", executor, props(100, 1_000_000), metrics(), cb -> open.get());
-        scheduler.schedule("1:1", "cb-x", 100, () -> requeued.set(true));
+        scheduler.schedule("1:1", "cb-x", 100, FRESH, () -> requeued.set(true), () -> {});
 
         open.set(false);
 
@@ -82,14 +88,69 @@ class CbRequeueSchedulerTest {
         assertThat(scheduler.pendingBytes()).isZero();
     }
 
+    /**
+     * The give-up-by-TIME property lives HERE, not on the next delivery: a parked message whose
+     * deadline has passed must run the give-up callback on its next timer fire even though the
+     * circuit predicate still says open — otherwise a circuit that never flips (e.g.
+     * automatic-transition-from-open-to-half-open-enabled turned off, no other traffic) holds
+     * the message and its uncommitted offset forever.
+     */
+    @Test
+    void expiredEntryGivesUpEvenThoughTheCircuitIsStillOpen() throws Exception {
+        AtomicBoolean requeued = new AtomicBoolean(false);
+        AtomicBoolean gaveUp = new AtomicBoolean(false);
+        CbRequeueScheduler scheduler = new CbRequeueScheduler(
+                "TEST", executor, props(100, 1_000_000), metrics(), cb -> true);
+
+        scheduler.schedule("1:1", "cb-x", 100, () -> true,
+                () -> requeued.set(true), () -> gaveUp.set(true));
+
+        long deadline = System.currentTimeMillis() + 2000;
+        while (!gaveUp.get() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+        assertThat(gaveUp).as("expired while parked — must give up without waiting on the circuit").isTrue();
+        assertThat(requeued).as("a given-up message must never also be requeued").isFalse();
+        assertThat(scheduler.pendingCount()).isZero();
+        assertThat(scheduler.pendingBytes()).isZero();
+    }
+
+    /**
+     * The deadline must be re-evaluated on EVERY fire, not once at park time: age accrues while
+     * the message waits, so an entry parked fresh must still age out if the circuit outlives it.
+     */
+    @Test
+    void entryThatExpiresAfterParkingGivesUpOnALaterFire() throws Exception {
+        AtomicBoolean expired = new AtomicBoolean(false);
+        AtomicBoolean requeued = new AtomicBoolean(false);
+        AtomicBoolean gaveUp = new AtomicBoolean(false);
+        CbRequeueScheduler scheduler = new CbRequeueScheduler(
+                "TEST", executor, props(100, 1_000_000), metrics(), cb -> true);
+
+        scheduler.schedule("1:1", "cb-x", 100, expired::get,
+                () -> requeued.set(true), () -> gaveUp.set(true));
+
+        Thread.sleep(100);   // let at least one fresh fire re-arm first
+        expired.set(true);
+
+        long deadline = System.currentTimeMillis() + 2000;
+        while (!gaveUp.get() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+        assertThat(gaveUp).as("a re-armed entry must notice a deadline that passed while parked").isTrue();
+        assertThat(requeued).isFalse();
+        assertThat(scheduler.pendingCount()).isZero();
+        assertThat(scheduler.pendingBytes()).isZero();
+    }
+
     @Test
     void refusesWhenTheCountBoundIsReached() {
         CbRequeueScheduler scheduler = new CbRequeueScheduler(
                 "TEST", executor, props(2, 1_000_000), metrics(), cb -> true);
 
-        assertThat(scheduler.schedule("1:1", "cb-x", 10, () -> {})).isTrue();
-        assertThat(scheduler.schedule("1:2", "cb-x", 10, () -> {})).isTrue();
-        assertThat(scheduler.schedule("1:3", "cb-x", 10, () -> {}))
+        assertThat(scheduler.schedule("1:1", "cb-x", 10, FRESH, () -> {}, () -> {})).isTrue();
+        assertThat(scheduler.schedule("1:2", "cb-x", 10, FRESH, () -> {}, () -> {})).isTrue();
+        assertThat(scheduler.schedule("1:3", "cb-x", 10, FRESH, () -> {}, () -> {}))
                 .as("beyond the bound the caller must DLQ rather than the scheduler growing")
                 .isFalse();
     }
@@ -100,8 +161,8 @@ class CbRequeueSchedulerTest {
         CbRequeueScheduler scheduler = new CbRequeueScheduler(
                 "TEST", executor, props(1000, 1000), metrics(), cb -> true);
 
-        assertThat(scheduler.schedule("1:1", "cb-x", 900, () -> {})).isTrue();
-        assertThat(scheduler.schedule("1:2", "cb-x", 200, () -> {})).isFalse();
+        assertThat(scheduler.schedule("1:1", "cb-x", 900, FRESH, () -> {}, () -> {})).isTrue();
+        assertThat(scheduler.schedule("1:2", "cb-x", 200, FRESH, () -> {}, () -> {})).isFalse();
     }
 
     /** Graceful shutdown must not sit on messages whose offsets are uncommitted. */
@@ -110,12 +171,36 @@ class CbRequeueSchedulerTest {
         List<String> done = new CopyOnWriteArrayList<>();
         CbRequeueScheduler scheduler = new CbRequeueScheduler(
                 "TEST", executor, props(100, 1_000_000), metrics(), cb -> true);
-        scheduler.schedule("1:1", "cb-x", 10, () -> done.add("1:1"));
-        scheduler.schedule("1:2", "cb-x", 10, () -> done.add("1:2"));
+        scheduler.schedule("1:1", "cb-x", 10, FRESH, () -> done.add("1:1"), () -> {});
+        scheduler.schedule("1:2", "cb-x", 10, FRESH, () -> done.add("1:2"), () -> {});
 
         scheduler.shutdown();
 
         assertThat(done).containsExactlyInAnyOrder("1:1", "1:2");
+        assertThat(scheduler.pendingCount()).isZero();
+    }
+
+    /**
+     * The drain deliberately requeues even an already-expired entry: on shutdown a produced
+     * hand-back beats a DLQ decision taken with no timer left to own it, and the outer
+     * processRequest gate DLQs the expired message on redelivery anyway. The long delay keeps
+     * the timer from firing first, so the drain is the only thread that can act.
+     */
+    @Test
+    void shutdownDrainRequeuesRatherThanGivesUpAnExpiredEntry() {
+        RetryProperties slow = props(100, 1_000_000);
+        slow.setCbRequeueDelayMs(60_000);
+        AtomicBoolean requeued = new AtomicBoolean(false);
+        AtomicBoolean gaveUp = new AtomicBoolean(false);
+        CbRequeueScheduler scheduler = new CbRequeueScheduler(
+                "TEST", executor, slow, metrics(), cb -> true);
+        scheduler.schedule("1:1", "cb-x", 10, () -> true,
+                () -> requeued.set(true), () -> gaveUp.set(true));
+
+        scheduler.shutdown();
+
+        assertThat(requeued).as("drain hands the message back — redelivery ages it out").isTrue();
+        assertThat(gaveUp).as("exactly one outcome per entry: the drain already took it").isFalse();
         assertThat(scheduler.pendingCount()).isZero();
     }
 
@@ -132,8 +217,8 @@ class CbRequeueSchedulerTest {
         CbRequeueScheduler scheduler = new CbRequeueScheduler(
                 "TEST", executor, props(100, 1_000_000), metrics(), cb -> open.get());
 
-        scheduler.schedule("1:1", "cb-x", 300, () -> done.add("stale"));
-        scheduler.schedule("1:1", "cb-x", 100, () -> done.add("fresh"));
+        scheduler.schedule("1:1", "cb-x", 300, FRESH, () -> done.add("stale"), () -> {});
+        scheduler.schedule("1:1", "cb-x", 100, FRESH, () -> done.add("fresh"), () -> {});
 
         assertThat(scheduler.pendingCount()).isEqualTo(1);
         assertThat(scheduler.pendingBytes())

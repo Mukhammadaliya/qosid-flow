@@ -198,7 +198,9 @@ public class GatewayMetrics {
                 .register(registry);
 
         this.cbRequeueExhausted = Counter.builder("gateway.http.circuitbreaker.requeue.exhausted")
-                .description("CB-blocked messages sent to DLQ after exceeding cb-max-requeues")
+                .description("CB-blocked messages given up to DLQ after aging past "
+                        + "max-message-age-ms while a circuit stayed open "
+                        + "(or via the cb-max-requeues runaway guard)")
                 .tag("stage", "http_request")
                 .register(registry);
 

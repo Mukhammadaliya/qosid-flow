@@ -55,10 +55,11 @@ public class ApiRequestConsumer implements ConsumerSeekAware {
     private final OAuth2ProviderService oAuth2ProviderService;
 
     /**
-     * Parks CB-blocked messages until the circuit accepts traffic again, instead of
-     * re-queuing them at Kafka round-trip speed (SAFETY-RULES 23). Its own instance —
-     * pending state is never shared with the Oracle flow (SAFETY-RULES 5); only the
-     * underlying timer threads are shared.
+     * Parks CB-blocked messages until the circuit accepts traffic again — or until the
+     * message ages past max-message-age-ms while parked, in which case the scheduler runs
+     * our give-up callback (DLQ + complete) instead of re-queuing (SAFETY-RULES 23). Its
+     * own instance — pending state is never shared with the Oracle flow (SAFETY-RULES 5);
+     * only the underlying timer threads are shared.
      */
     private final CbRequeueScheduler cbRequeueScheduler;
 
@@ -289,8 +290,11 @@ public class ApiRequestConsumer implements ConsumerSeekAware {
             //
             // Give-up is by TIME, not by round-trip count: the message is parked until the
             // circuit accepts traffic again, and isMessageExpired (max-message-age-ms, 5 min)
-            // is what eventually turns a genuinely stuck message into one DLQ record. The
-            // count cap below is only a runaway guard for a broken delay path.
+            // is what eventually turns a genuinely stuck message into one DLQ record — the
+            // scheduler re-checks it on every timer fire (the give-up callback below), and
+            // the check here catches a message already late on arrival, so it is never
+            // parked at all. The count cap below is only a runaway guard for a broken
+            // delay path.
             if (isMessageExpired(message)) {
                 long ageMs = Duration.between(message.getCreatedAt(), LocalDateTime.now()).toMillis();
                 metrics.getCbRequeueExhausted().increment();
@@ -318,10 +322,34 @@ public class ApiRequestConsumer implements ConsumerSeekAware {
             try {
                 cbName = httpRequestService.circuitBreakerName(message);
                 long bodyBytes = message.getBody() == null ? 0 : message.getBody().length();
-                parked = cbRequeueScheduler.schedule(key, cbName, bodyBytes, () -> {
-                    requestProducer.sendApiRequest(message);
-                    ackTracker.complete(partition, offset);
-                });
+                parked = cbRequeueScheduler.schedule(key, cbName, bodyBytes,
+                        // The scheduler's per-fire deadline check — OUR expiry logic, passed in
+                        // rather than reimplemented there, so the registry-managed
+                        // max-message-age-ms is read live and cannot drift between the two.
+                        () -> isMessageExpired(message),
+                        () -> {
+                            requestProducer.sendApiRequest(message);
+                            ackTracker.complete(partition, offset);
+                        },
+                        // Give-up: the message aged out while parked — the NORMAL exit of a
+                        // real outage. Same DLQ path and reason shape as the in-branch expiry
+                        // above, and the exactly-once record completion transfers here
+                        // (SAFETY-RULES 39, 40).
+                        () -> {
+                            long parkedAgeMs = Duration.between(
+                                    message.getCreatedAt(), LocalDateTime.now()).toMillis();
+                            metrics.getCbRequeueExhausted().increment();
+                            log.error("[API] CB still open and parked message expired (age={}ms), "
+                                    + "sending to DLQ: {}", parkedAgeMs, key);
+                            handlePermanentFailure(key, message, httpStatus,
+                                    "Circuit breaker still open after " + parkedAgeMs + "ms",
+                                    ErrorSource.SYSTEM);
+                            // Already released when the message was parked; compare-and-delete
+                            // makes this a no-op then. Kept so the give-up path stands on its
+                            // own feet rather than on the park path's finally block.
+                            requestStateService.releaseLock(key);
+                            ackTracker.complete(partition, offset);
+                        });
             } catch (Exception e) {
                 // Belt-and-braces, both branches should be unreachable: circuitBreakerName
                 // throws NPE only for a null baseUrl (impossible on this path — the CB
