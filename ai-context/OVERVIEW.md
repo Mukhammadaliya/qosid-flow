@@ -5,7 +5,7 @@
 | Field | Value |
 |-------|-------|
 | **Name** | Qosid Flow (qosid-flow) |
-| **Version** | 2.3.0 |
+| **Version** | 2.3.1 |
 | **Language** | Java 21 |
 | **Framework** | Spring Boot 3.5.16 |
 | **Base Package** | `uz.greenwhite.gateway` |
@@ -94,7 +94,7 @@ qosid-flow/                              # Maven reactor (qosid-parent): setting
     exception/       # GlobalExceptionHandler + typed exceptions
     file/            # Multipart parsing, content-type validation, S3 clients
     health/          # Custom health indicators
-    http/            # HTTP client with Circuit Breaker + OAuth2
+    http/            # HTTP client with Circuit Breaker + OAuth2 + per-host concurrency limit
     kafka/           # Kafka consumers and producers
       ack/           #   Ordered acknowledgement (OrderedAckTracker, SAFETY-RULES 39)
       retry/         #   Parked CB-blocked requeues (CbRequeueScheduler, SAFETY-RULES 23/40)
@@ -153,15 +153,26 @@ The repository uses **two branches only**: `master` (stable, production — GitH
 - Do NOT push directly to `master` — merge via PR from `debug`.
 - Upstream (`greenwhite/qosid-flow`) is the source of truth. Developer forks (e.g., `origin`) should stay in sync with upstream.
 
-### Release process (manual)
+### Release process
 
-1. Open a PR `debug` → `master` on `greenwhite/qosid-flow` and merge when stable.
-2. Create an annotated tag `v<version>` on the merged commit and push it:
-   ```bash
-   git tag -a v1.0.0 -m "Release notes..."
-   git push upstream v1.0.0
-   ```
-3. A GitHub Actions workflow (`.github/workflows/build.yml`) builds a JAR and creates a GitHub Release **when `VERSION.md` changes on `master`**. For releases without a VERSION.md bump, attach the JAR to the GitHub Release manually.
-4. Deploy to prod by hand: `git pull` on the server, `mvn clean package -DskipTests`, restart the systemd unit. Other services run in Docker via `docker-compose`.
+The human step is **merging the PR**; tagging and the GitHub Release are automatic.
 
-Auto-release on every VERSION.md change is available but intentionally not used yet — all production releases are gated by a human step.
+1. On `debug`, bump the version in **7 places** — `VERSION.md`, the four poms (root, `settings-core`,
+   `app`, `ops`; in `app`/`ops` both the `<parent>` block and the `qosid-settings-core` dependency),
+   and `frontend/package.json` — plus the version references in `OVERVIEW.md` (this table) and the
+   JAR paths in `CONFIGURATION.md`. **Verify the diff line by line:** `resilience4j-spring-boot3` is
+   pinned at `2.2.0` and a careless search-and-replace has already bumped it once by accident. A
+   correct bump touches exactly 7 version lines.
+2. Open a PR `debug` → `master` on `greenwhite/qosid-flow`; merge when the checks are green
+   (`gitleaks` runs on every PR).
+3. `.github/workflows/build.yml` fires **on any push to `master` that changes `VERSION.md`**. It
+   reads the version, refuses to proceed if `v<version>` already exists, builds with
+   `mvn clean package -DskipTests`, and publishes a GitHub Release tagged `v<version>` with
+   generated notes and both JARs attached (`app/target/*.jar`, `ops/target/qosid-ops.jar`).
+   **Do not create the tag by hand** — the workflow owns it, and a pre-existing tag makes it fail.
+   A docs-only or fix-only merge that leaves `VERSION.md` untouched simply produces no release;
+   `workflow_dispatch` is there for a manual re-run.
+4. Deploy to prod by hand — see the deploy runbook in `CONFIGURATION.md`. In short: `git pull` on
+   the server, `mvn clean package -DskipTests`, **update the hard-coded JAR name in the systemd
+   unit**, restart `gateway-service` and `qosid-ops`. Everything else runs in Docker via
+   `docker-compose`, which only needs recreating when `docker-compose.yml` itself changed.

@@ -195,6 +195,19 @@ Examples:
 2. Initialize in constructor with `meterRegistry`
 3. Create accessor method if needed
 4. Update Grafana dashboard in `infrastructure/dashboard_grafana.json`
+5. If it is worth waking someone for, add a rule to `infrastructure/prometheus/gateway-alerts.yml`
+   — and remember the prod gotcha: that file is a **single-file bind mount**, so `git pull` swaps
+   the inode and the running container keeps the old copy. `/-/reload` returns 200 and loads
+   nothing; `docker compose up -d --force-recreate prometheus` is what actually applies it.
+
+**The one sanctioned exception to "only in `GatewayMetrics`":** a gauge whose value belongs to a
+per-instance object (e.g. `CbRequeueScheduler`'s `requeue.pending{flow}`) is registered by that
+object against `metrics.getRegistry()`. The counter fields still live in `GatewayMetrics`; only the
+object-bound gauge is registered locally, because there is one per flow and Micrometer needs the
+instance to read from. Do not generalise this into "metrics anywhere".
+
+**Never remove a metric** (SAFETY-RULES 3) — Prometheus rules and Grafana panels reference them by
+name, and a deleted metric fails silently as a blank panel rather than a build error.
 
 ## Configuration Pattern
 
@@ -268,3 +281,8 @@ annotations on the internal model. See `ai-context/SAFETY-RULES.md` rule 30.
 | Hardcoded config values | Use `*Properties.java` + `application.yml` |
 | `AUTO` Kafka ack mode | Always `MANUAL` — acknowledge after processing |
 | Swallowing exceptions silently | Log or handle; never empty catch blocks |
+| Acknowledging a record directly | Route every ack through `OrderedAckTracker`; a parked CB record is completed by `CbRequeueScheduler` alone (SAFETY-RULES 39, 40) |
+| Treating a CB block as a failure | It is transient back-pressure: park and re-check, never increment `attemptCount` (SAFETY-RULES 23) |
+| Bounding a wait by a round-trip **count** | Bound it by **time**. A count is a proxy for elapsed time that collapses under load — that is exactly how 212 live requests were DLQ'd in one second |
+| One alert per failed message | Coalesce per (reason-class, host); a flood makes the channel useless precisely when it matters (SAFETY-RULES 41) |
+| Retrying immediately on HTTP 429 | Read `retry_after` and stay silent until it passes |

@@ -308,6 +308,21 @@ public class MyService {
 
 **When:** Alerts need to be sent to a new destination (e.g., Slack, email, webhook).
 
+> **Before you write the send call, read SAFETY-RULES 41.** A DLQ alert channel is a rate-limited
+> destination, not a log sink: an incident produces a *burst* of DLQ records, and one message per
+> record is how the channel becomes useless exactly when it matters (2026-07-27: 212 records → 14
+> delivered, 298 rate-limit rejections). Any new channel needs the same two properties as
+> `TelegramNotificationService`:
+>
+> - **Coalesce** by (reason-class, host) inside a window — first alert immediate, the rest as one
+>   summary, with the number of open groups itself bounded.
+> - **Obey the destination's rate-limit signal** (`Retry-After` / `retry_after` / equivalent) by
+>   staying silent until it passes, counting what was held back and reporting it on the next
+>   message. **Never retry the rejection immediately.**
+>
+> Flush windows on a **dedicated** timer (`alertCoalesceTimer`), never `cbRequeueTimer` — a
+> blocking send must not delay a parked request's requeue.
+
 **Steps:**
 
 1. **Create** `notification/SlackNotificationService.java`:

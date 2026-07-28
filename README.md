@@ -1,8 +1,8 @@
 # Qosid Flow
 
-**Version:** 1.2.0  
-**Java:** 21 | **Spring Boot:** 3.4.4  
-**Package:** `uz.greenwhite.gateway`
+**Version:** 2.3.1  
+**Java:** 21 | **Spring Boot:** 3.5.16 | **Spring Cloud:** 2025.0.3  
+**Package:** `uz.greenwhite.gateway` (Maven reactor: `settings-core` + `app` + `ops`)
 
 ---
 
@@ -44,11 +44,11 @@ Qosid Flow is a **message processing pipeline** that pulls HTTP requests from an
 
 | Stage | Name | File | What it does |
 |-------|------|------|--------------|
-| E1 | Oracle Pull | `RequestPuller.java` | Pulls `status=N` requests from Oracle in batches (every 5 sec) |
-| E2 | Kafka Produce | `RequestProducer.java` | Sends pulled requests to `gateway.request.new` topic |
-| E3 | Consumer Process | `RequestConsumer.java` | Consumes from Kafka, checks idempotency, acquires Redis lock |
-| E4 | HTTP Request | `HttpRequestService.java` | Sends to external API via WebClient (Circuit Breaker + OAuth2) |
-| E5 | Oracle Save | `ResponseConsumer.java` | Saves response back to Oracle, updates status to `C` or `F` |
+| E1 | Source Pull | `RequestPuller.java` + `SourceClient.java` | Pulls `status=N` requests from the source system in batches (every 5 sec) |
+| E2 | Kafka Produce | `RequestProducer.java` | Sends requests to the flow's topic (`gateway.oracle.request` / `gateway.api.request`) |
+| E3 | Consumer Process | `OracleRequestConsumer.java` / `ApiRequestConsumer.java` | Idempotency check, Redis lock, async dispatch, CB park branch. **Two classes on purpose — never merge them** (SAFETY-RULES 5) |
+| E4 | HTTP Request | `HttpRequestService.java` (+ `HostConcurrencyLimiter`) | Sends to the external API via WebClient: per-host permit → Circuit Breaker → OAuth2 |
+| E5 | Response Processing | `OracleResponseConsumer.java` / `ApiResponseConsumer.java` | Oracle save + RocksDB, or RocksDB + callback; updates status to `C` or `F` |
 
 ### 2.2 Request Status Lifecycle
 
@@ -141,10 +141,26 @@ resilience4j:
 - **Per-domain CB:** Each external API base URL gets its own Circuit Breaker instance (e.g., `cb-api.example.com` and `cb-api.other.com` are independent). One API going down doesn't affect the other.
 - **OAuth2 errors excluded from CB:** Token acquisition failures are treated as internal issues and don't count toward the CB failure rate. This prevents authentication glitches from falsely tripping the breaker.
 
-**What happens when CB is OPEN:**
-- All requests to that specific API immediately receive HTTP 503 with `errorSource: "CIRCUIT_BREAKER"`
-- The response is sent to the response topic → Oracle gets updated with the error
-- No actual HTTP call is made — saves resources and prevents thread blocking
+**What happens when CB is OPEN (since v2.3.0 — this changed):**
+- No HTTP call is made; the send path returns a synthetic 503 with `errorSource: "CIRCUIT_BREAKER"`.
+- That is **back-pressure, not a failure.** The consumer **parks** the message in memory
+  (`CbRequeueScheduler`) and re-checks the circuit on a doubling delay (500 ms → 30 s). When the
+  circuit accepts traffic again the message is re-queued and processed normally. The attempt count
+  is never incremented, and nothing is written to Oracle or the DLQ.
+- The message's **Kafka offset stays uncommitted for the whole wait**, so a crash redelivers it
+  rather than losing it. The visible side effect is **consumer lag rising while a circuit is open —
+  that is expected and correct**, not a symptom.
+- Give-up is by **time**: once a parked message is older than `gateway.retry.max-message-age-ms`
+  (5 min) it becomes exactly one DLQ record (`Circuit breaker still open after <ms>ms`).
+- Until v2.3.0 the message was re-queued to Kafka immediately instead — a ~20 ms spin that burned
+  the old 50-requeue budget in about one second. On 2026-07-27 that turned a single 30 s circuit
+  window into **212 DLQ'd live production requests** the upstream never saw.
+
+**Not opening the circuit in the first place (v2.3.0, Phase 2):** `HostConcurrencyLimiter` caps our
+own concurrent in-flight calls per upstream host (`gateway.api.max-concurrent-per-host`, default 25).
+A refused permit returns the same CB-blocked shape, so it takes the same park-and-retry path. In a
+production burst on 2026-07-28 (~330 req/s arriving, 5× denser than the incident) it deferred ~87 %
+of the burst, **the circuit never opened, and nothing was lost or DLQ'd**.
 
 ### 3.2 🔐 OAuth2 Authentication
 
@@ -383,7 +399,15 @@ The Gateway exposes all metrics on port 8091 at `/actuator/prometheus`.
 | `gateway_oracle_save_total{result="success/error"}` | Counter | Oracle save success/failure |
 | `gateway_oracle_save_retry_total` | Counter | Oracle save retry attempts |
 | `gateway_dlq_sent_total` | Counter | Messages sent to DLQ |
-| `gateway_consumer_received_total` | Counter | Messages received by consumer |
+| `gateway_http_circuitbreaker_rejected_total` | Counter | Calls refused by an OPEN circuit |
+| `gateway_http_circuitbreaker_requeue_delayed_total` | Counter | Messages **parked** to wait a circuit out (v2.3.0) |
+| `gateway_http_circuitbreaker_requeue_pending{flow}` | Gauge | Currently parked, per flow. Rises during an outage and **must return to 0** once it clears; a plateau means the upstream is still refusing |
+| `gateway_http_circuitbreaker_requeue_pending_bytes{flow}` | Gauge | Parked body bytes — this hits `cb-max-pending-bytes` before the count bound does |
+| `gateway_http_circuitbreaker_requeue_exhausted_total` | Counter | Parked messages that aged past `max-message-age-ms` and were DLQ'd — **the real outage signal** |
+| `gateway_http_circuitbreaker_requeue_rejected_total` | Counter | DLQ'd because the park buffer was full — service loss, alert on it |
+| `gateway_http_host_limiter_rejected_total` | Counter | Calls deferred by the per-host concurrency bound. Rising while circuits stay CLOSED is **backpressure working**, not an error |
+| `gateway_notification_alert_coalesced_total` | Counter | DLQ alerts folded into a summary or held back by a Telegram 429 |
+| `gateway_consumer_received_total` | Counter | Messages received by consumer (**includes re-deliveries of parked messages**, so it exceeds the unique request count during a burst) |
 | `gateway_consumer_skipped_total{reason="duplicate"}` | Counter | Skipped as already processed |
 | `gateway_consumer_skipped_total{reason="lock_failed"}` | Counter | Skipped — another instance processing |
 | `gateway_kafka_consumer_lag` | Gauge | Kafka consumer lag (pending messages) |
@@ -504,6 +528,24 @@ GatewayHighErrorRate
 3. Is external API reachable? → Test directly with `curl`
 4. Timeout too low? → Adjust `gateway.http.endpoint-timeouts` for specific domains
 5. Thread pool exhausted? → Check `gateway_http_pool_queue` in Grafana. If consistently > 0, increase pool size.
+
+**Since v2.3.0, "stuck at E4" usually means parked, not lost.** Read the metrics before the logs:
+
+| What you see | What it means | Action |
+|---|---|---|
+| `requeue_pending{flow}` > 0, circuit OPEN, lag rising | Working as designed — messages are waiting out the outage, offsets deliberately uncommitted | Fix the upstream. Nothing is lost; they DLQ only after `max-message-age-ms` (5 min) |
+| `host_limiter_rejected_total` rising, circuits **CLOSED** | Our own burst is being smoothed | None. Raise `gateway.api.max-concurrent-per-host` only if the upstream is provably idle |
+| `requeue_exhausted_total` rising | Messages aged out while parked → real DLQ records | Genuine outage — the upstream did not come back within 5 minutes |
+| `requeue_rejected_total` > 0 | Park buffer full; messages DLQ'd **untried** | Raise `cb-max-pending`/`cb-max-pending-bytes` or fix the upstream now |
+| `exhausted` rising while `pending` never rises | The park is **not happening** — a regression | Check that the CB branch still parks (SAFETY-RULES 23, 40) |
+| DLQ reason says `... after <n> requeues` | Pre-v2.3.0 count-based give-up came back | Regression — the delay path is bypassed |
+
+**Do not measure a burst from `journalctl`.** Under load `systemd-journald` silently drops
+messages (it dropped 88 881 during one production test), so log-derived counts undercount and can
+look like data loss. Confirm with Redis instead:
+`sed 's|^|GET request:state:|' ids.txt | docker exec -i redis redis-cli`, plus consumer lag and the
+gauges above. Check whether it dropped:
+`journalctl -u gateway-service --since X --until Y | grep -c "Suppressed"`.
 
 ### 6.5 Message stuck at E5 (Oracle Save)
 
@@ -636,7 +678,24 @@ resilience4j.circuitbreaker.configs.default:
   permitted-number-of-calls-in-half-open-state: 3
   slow-call-duration-threshold: 10s
   slow-call-rate-threshold: 50
+  # Must stay true: the park's circuit poll is a passive read and never drives the
+  # OPEN → HALF_OPEN transition itself (SAFETY-RULES 23).
   automatic-transition-from-open-to-half-open-enabled: true
+
+# ========== CB BACK-PRESSURE (v2.3.0) ==========
+gateway.retry:
+  max-message-age-ms: 300000        # RETRY_MAX_MESSAGE_AGE — the real give-up deadline
+  cb-requeue-delay-ms: 500          # RETRY_CB_REQUEUE_DELAY — first re-check, doubles from here
+  cb-requeue-max-delay-ms: 30000    # RETRY_CB_REQUEUE_MAX_DELAY — one CB open-window
+  cb-max-pending: 5000              # RETRY_CB_MAX_PENDING — parked messages per flow
+  cb-max-pending-bytes: 268435456   # RETRY_CB_MAX_PENDING_BYTES — 256 MiB per flow
+  cb-max-requeues: 1000             # RETRY_CB_MAX_REQUEUES — runaway guard ONLY, not a policy
+
+gateway.api:
+  max-concurrent-per-host: 25       # API_MAX_CONCURRENT_PER_HOST — <=0 disables the bound
+
+gateway.telegram:
+  coalesce-window-ms: 60000         # TELEGRAM_COALESCE_WINDOW_MS — one incident, one alert
 
 # ========== SERVER ==========
 server:
@@ -825,9 +884,17 @@ See **Section 10** for the detailed task list and resolution plan.
 
 ## 10. Production Readiness — Task List
 
-### 🔴 CRITICAL-1: Remove Blocking `.block()` in RequestConsumer
+### ✅ CRITICAL-1 (RESOLVED): Remove Blocking `.block()` in RequestConsumer
 
-**File:** `src/main/java/uz/greenwhite/gateway/kafka/consumer/RequestConsumer.java`
+> **Done.** Both request consumers now subscribe to the `Mono` and handle the response in a
+> callback; `grep -rn "\.block(" app/src/main/java/.../kafka/consumer/` returns nothing. The lock
+> is released and the record acknowledged in the callback's `finally` — except for a parked
+> CB-blocked message, whose record is completed by `CbRequeueScheduler` instead (SAFETY-RULES 40).
+> The class named below has since been split per flow (`OracleRequestConsumer` /
+> `ApiRequestConsumer`, SAFETY-RULES 5). The original analysis is kept because it explains *why*
+> the pipeline is shaped this way.
+
+**File (historical):** `src/main/java/uz/greenwhite/gateway/kafka/consumer/RequestConsumer.java`
 
 **Current problem:**
 ```java
@@ -1096,21 +1163,24 @@ props.put(JsonSerializer.TYPE_MAPPINGS,
 
 ### Summary: Production Readiness Task List
 
-| # | Task | Priority | Effort | Risk if skipped |
-|---|------|----------|--------|-----------------|
-| 1 | Remove `.block()` — convert to reactive chain | 🔴 Critical | 1-2 days | Thread starvation under load |
-| 2 | Redis HA (Sentinel or Cluster) | 🔴 Critical | 2-3 days | Total pipeline failure on Redis crash |
-| 3 | Kafka 3-node cluster with replication | 🔴 Critical | 1-2 days | Permanent message loss on disk failure |
-| 4 | Restrict `trusted.packages` | 🔴 Critical | 30 min | Remote Code Execution vulnerability |
-| 5 | Move Telegram bot token to ENV variable | 🟡 Medium | 15 min | Token exposed in version control |
-| 6 | Rename POM artifact from `messagebroker` | 🟡 Medium | 15 min | Confusion in CI/CD pipelines |
-| 7 | Add unit/integration tests for Gateway | 🟡 Medium | 3-5 days | Regression risk on changes |
-| 8 | Add log file rotation (logback.xml) | 🟢 Low | 1 hour | Disk space exhaustion |
-| 9 | Remove legacy Biruni-specific names in code | 🟢 Low | 1-2 days | Code clarity |
+Status as of **v2.3.0 (2026-07-28)**. Items are struck through when verified done in the codebase,
+not merely planned.
 
-**Recommended execution order:** 4 → 1 → 3 → 2 → 5 → 6 → 7 → 8 → 9
+| # | Task | Priority | Status |
+|---|------|----------|--------|
+| 1 | ~~Remove `.block()` — convert to reactive chain~~ | 🔴 Critical | ✅ **Done** — consumers subscribe and complete in a callback; no `.block(` remains in `kafka/consumer/` |
+| 2 | Redis HA (Sentinel or Cluster) | 🔴 Critical | ⬜ **Open** — still single-node. Mitigated, not solved: every Redis-unavailable path fails closed via the `Integer.MAX_VALUE` net (SAFETY-RULES 8), so a Redis outage DLQs rather than loops |
+| 3 | Kafka 3-node cluster with replication | 🔴 Critical | ⬜ **Open** — single RedPanda node. Its disk filling caused the 2026-05-18 34-hour outage; the v2.3.0 park removed the requeue churn that filled it, but replication is still absent |
+| 4 | Restrict `spring.json.trusted.packages` | 🔴 Critical | ⬜ **Open** — still `"*"` in `application.yml`. Reachable only by someone who can already write to the internal topics, but it is a 30-minute fix |
+| 5 | ~~Move Telegram bot token out of version control~~ | 🟡 Medium | ✅ **Done** — DB-managed (AES-encrypted, masked on read) with env fallback. The leaked token was revoked; see `docs/SECURITY-REMEDIATION.md` |
+| 6 | ~~Rename POM artifact from `messagebroker`~~ | 🟡 Medium | ✅ **Done** — `qosid-flow`, now a 3-module reactor |
+| 7 | ~~Add unit/integration tests~~ | 🟡 Medium | ✅ **Done** — 375 tests (settings-core 30 + app 289 + ops 56) |
+| 8 | ~~Add log file rotation~~ | 🟢 Low | ✅ **Done** — `RollingFileAppender` with `maxFileSize`/`maxHistory`/`totalSizeCap` |
+| 9 | ~~Remove legacy Biruni-specific names~~ | 🟢 Low | ✅ **Done** — `SourceClient` / `JsonBodyOAuth2Client`; the `"biruni"` provider-type string stays frozen on purpose (matched against an Oracle column) |
 
-Start with #4 (30 min, highest security impact), then #1 (biggest functional risk), then infra (#3, #2).
+**What is actually left: 2, 3, 4 — all infrastructure or config, none of them application logic.**
+Recommended order: **4** (30 minutes, highest security impact) → **3** (replication; the one that
+has already caused a real outage) → **2**.
 
 ---
 
@@ -1148,24 +1218,30 @@ Upload these files as **Project Knowledge** so Claude always has context about t
 
 | File | Why it matters |
 |------|---------------|
-| `src/.../kafka/consumer/RequestConsumer.java` | E3: Main processing logic, idempotency, threading |
-| `src/.../kafka/consumer/ResponseConsumer.java` | E5: Response saving logic |
-| `src/.../kafka/producer/RequestProducer.java` | E2: Kafka message production |
-| `src/.../http/HttpRequestService.java` | E4: HTTP calls, Circuit Breaker, OAuth2 integration |
-| `src/.../oracle/RequestPuller.java` | E1: Oracle polling scheduler |
-| `src/.../state/RequestStateService.java` | Redis state management, locks, idempotency |
+| `app/src/.../kafka/consumer/oracle/OracleRequestConsumer.java` | E3, Oracle flow: idempotency, lock, threading, CB park branch |
+| `app/src/.../kafka/consumer/api/ApiRequestConsumer.java` | E3, REST flow: the same logic, **deliberately never merged** (SAFETY-RULES 5) |
+| `app/src/.../kafka/consumer/oracle/OracleResponseConsumer.java` | E5: source save + RocksDB |
+| `app/src/.../kafka/consumer/api/ApiResponseConsumer.java` | E5: RocksDB + callback |
+| `app/src/.../kafka/ack/OrderedAckTracker.java` | Contiguous-prefix acknowledgement — the guard against silent loss (SAFETY-RULES 39) |
+| `app/src/.../kafka/retry/CbRequeueScheduler.java` | CB back-pressure park; sole owner of a parked record's completion (SAFETY-RULES 40) |
+| `app/src/.../kafka/producer/RequestProducer.java` | E2: Kafka message production |
+| `app/src/.../http/HttpRequestService.java` | E4: HTTP calls, Circuit Breaker, OAuth2, per-host permit |
+| `app/src/.../http/HostConcurrencyLimiter.java` | Per-host concurrency bound (v2.3.0, Phase 2) |
+| `app/src/.../oracle/RequestPuller.java` | E1: source polling scheduler |
+| `app/src/.../state/RequestStateService.java` | Redis state management, locks, idempotency |
 
 **Priority 3 — Configuration & Infrastructure:**
 
 | File | Why it matters |
 |------|---------------|
-| `src/.../config/KafkaConfig.java` | Consumer/producer factories, error handling |
-| `src/.../config/ThreadPoolConfig.java` | HTTP thread pool, backpressure |
-| `src/.../concurrency/DynamicConcurrencyManager.java` | Auto-scaling logic |
-| `src/.../concurrency/ConcurrencyMonitorService.java` | Lag monitoring |
-| `src/.../oauth2/OAuth2TokenRedisCache.java` | Token caching, distributed lock |
-| `src/.../metrics/GatewayMetrics.java` | All custom Prometheus metrics |
-| `src/.../health/SystemHealthIndicator.java` | Health check logic |
+| `app/src/.../config/KafkaConfig.java` | Consumer/producer factories, error handling |
+| `app/src/.../config/ThreadPoolConfig.java` | HTTP thread pools, `cbRequeueTimer` / `alertCoalesceTimer`, explicit `taskScheduler` |
+| `app/src/.../concurrency/DynamicConcurrencyManager.java` | Auto-scaling logic |
+| `app/src/.../concurrency/ConcurrencyMonitorService.java` | Lag monitoring |
+| `app/src/.../oauth2/OAuth2TokenRedisCache.java` | Token caching, distributed lock |
+| `app/src/.../metrics/GatewayMetrics.java` | All custom Prometheus metrics |
+| `app/src/.../notification/TelegramNotificationService.java` | DLQ alerts: coalescing + Telegram 429 handling (SAFETY-RULES 41) |
+| `app/src/.../health/SystemHealthIndicator.java` | Health check logic |
 
 **Priority 4 — Supporting Files:**
 
@@ -1348,87 +1424,70 @@ Claude: → Step 1: Topic partition increase command
 ## 12. Project Structure
 
 ```
-qosid-flow/
-├── docker-compose.yml
-├── Dockerfile
-├── pom.xml
-├── .env.example
+qosid-flow/                                   # Maven reactor: qosid-parent
+├── pom.xml                                   # Root aggregator (settings-core + app + ops)
+├── VERSION.md                                # Version — changing it on master triggers the release
+├── docker-compose.yml                        # RedPanda, Redis, Prometheus, Grafana, Loki, AlertManager
+├── .env.example                              # Every env var, documented
+│
+├── settings-core/                            # Shared module used by BOTH JVMs (uz.greenwhite.qosid.settings)
+│   └── src/main/                             #   SettingsRegistry, SettingsCipher (AES-GCM), repositories,
+│                                             #   LoginRateLimiter, LoginHandoffRepository, settings-schema.sql
+│
+├── app/                                      # The gateway JVM (:8090, management :8091)
+│   ├── src/main/java/uz/greenwhite/gateway/
+│   │   ├── GatewayApplication.java
+│   │   ├── admin/                            # Admin control-plane API (/qosid/admin/api/**)
+│   │   ├── api/                              # REST layer: ProxyController, StatusController, CallbackController
+│   │   ├── auth/                             # Pluggable AuthorizationProvider SPI
+│   │   ├── callback/                         # Outbound callback dispatch (@Retryable + @Recover)
+│   │   ├── concurrency/                      # Lag-driven consumer concurrency scaling
+│   │   ├── config/                           # *Properties + *Config (Kafka, HTTP, thread pools, Redis, …)
+│   │   ├── exception/                        # GlobalExceptionHandler + typed exceptions
+│   │   ├── file/                             # Multipart parsing + S3-compatible upload
+│   │   ├── health/                           # Custom health indicators
+│   │   ├── http/
+│   │   │   ├── HttpRequestService.java       # E4: WebClient + Circuit Breaker + OAuth2
+│   │   │   └── HostConcurrencyLimiter.java   # Per-host in-flight bound (v2.3.0, Phase 2)
+│   │   ├── kafka/
+│   │   │   ├── ack/OrderedAckTracker.java    # Contiguous-prefix ack (SAFETY-RULES 39)
+│   │   │   ├── retry/CbRequeueScheduler.java # CB park + delayed requeue (SAFETY-RULES 23, 40)
+│   │   │   ├── consumer/
+│   │   │   │   ├── oracle/                   # OracleRequestConsumer / ResponseConsumer / DlqConsumer
+│   │   │   │   └── api/                      # ApiRequestConsumer / ResponseConsumer / DlqConsumer
+│   │   │   │                                 #   NEVER merged with the oracle flow (SAFETY-RULES 5)
+│   │   │   └── producer/RequestProducer.java # E2 + DLQ production
+│   │   ├── logs/                             # Read-only Loki proxy (Errors module)
+│   │   ├── metrics/GatewayMetrics.java       # Every custom Prometheus metric
+│   │   ├── model/                            # kafka/ messages + enums/
+│   │   ├── notification/                     # Telegram DLQ alerts (coalescing + 429, SAFETY-RULES 41)
+│   │   ├── oauth2/                           # Token clients + Redis-backed cache
+│   │   ├── oracle/                           # SourceClient (pull/save) + RequestPuller (E1)
+│   │   ├── source/                           # Source-system SPI
+│   │   ├── state/RequestStateService.java    # Redis state, locks, attempt/requeue counters
+│   │   ├── stats/                            # Read-only Prometheus proxy (Statistics module)
+│   │   ├── storage/                          # RocksDB response bodies (7-day retention)
+│   │   ├── tenant/                           # Tenant boundary translation (C-faza)
+│   │   └── validation/                       # Request validation
+│   └── src/main/resources/
+│       ├── application.yml                   # All configuration with env-var overrides
+│       └── logback-spring.xml                # Rolling file appenders + DLQ JSON appender
+│
+├── ops/                                      # Ops console sidecar JVM (:8092, API-only)
+│   ├── src/main/java/uz/greenwhite/ops/      # start/stop, status poll, SSE logs, stop-to-edit settings
+│   └── qosid-ops.service                     # Its own systemd unit
+│
+├── frontend/                                 # React SPA (Vite). Built by app's `frontend` profile;
+│                                             # nginx serves frontend/dist in production
+├── deploy/nginx-qosid.conf                   # Reference single-origin nginx config
 │
 ├── infrastructure/
-│   ├── prometheus/
-│   │   ├── prometheus.yml            # Prometheus scrape config
-│   │   └── gateway-alerts.yml        # Alert rules
-│   ├── alertmanager/
-│   │   └── alertmanager.yml          # Telegram notification config
-│   ├── redis/
-│   │   └── redis.conf                # Redis persistence & memory config
-│   └── dashboard_grafana.json        # Grafana dashboard (48 panels)
+│   ├── prometheus/{prometheus.yml,gateway-alerts.yml}
+│   ├── alertmanager/alertmanager.yml
+│   ├── redis/redis.conf
+│   └── *.json                                # Grafana dashboards
 │
-├── src/main/java/uz/greenwhite/gateway/
-│   ├── GatewayApplication.java        # Main entry point
-│   │
-│   ├── config/
-│   │   ├── KafkaConfig.java           # Consumer/producer factories, error handler
-│   │   ├── KafkaProperties.java       # Kafka topic names, group ID
-│   │   ├── HttpClientConfig.java      # WebClient bean with Netty
-│   │   ├── HttpProperties.java        # Per-endpoint timeout settings
-│   │   ├── ThreadPoolConfig.java      # Dedicated HTTP thread pool
-│   │   ├── SourceProperties.java      # Oracle/Biruni connection settings
-│   │   ├── PollingProperties.java     # Poll interval, batch size
-│   │   ├── RetryProperties.java       # Max attempts, retryable status codes
-│   │   ├── ConcurrencyProperties.java # Dynamic scaling thresholds
-│   │   └── RedisProperties.java       # State TTL, lock TTL
-│   │
-│   ├── kafka/
-│   │   ├── consumer/
-│   │   │   ├── RequestConsumer.java    # E3: Kafka → idempotency → HTTP
-│   │   │   ├── ResponseConsumer.java   # E5: Response → Oracle save
-│   │   │   └── DlqConsumer.java        # DLQ → Telegram notification
-│   │   └── producer/
-│   │       └── RequestProducer.java    # E2: Oracle data → Kafka
-│   │
-│   ├── http/
-│   │   └── HttpRequestService.java     # E4: WebClient + CB + OAuth2
-│   │
-│   ├── oracle/
-│   │   ├── RequestPuller.java          # E1: Scheduled Oracle pull
-│   │   └── DataSourceClient.java       # Oracle HTTP client
-│   │
-│   ├── state/
-│   │   └── RequestStateService.java    # Redis: state + lock + attempt count
-│   │
-│   ├── oauth2/
-│   │   ├── OAuth2ProviderService.java  # Token management interface
-│   │   └── OAuth2TokenRedisCache.java  # Redis-backed token cache + dist. lock
-│   │
-│   ├── concurrency/
-│   │   ├── ConcurrencyMonitorService.java  # Lag monitoring scheduler
-│   │   └── DynamicConcurrencyManager.java  # Thread count adjustment
-│   │
-│   ├── notification/
-│   │   └── TelegramNotificationService.java # Telegram bot integration
-│   │
-│   ├── metrics/
-│   │   └── GatewayMetrics.java         # All custom Prometheus metrics
-│   │
-│   ├── health/
-│   │   └── SystemHealthIndicator.java  # Custom health check (CB, lag, pool)
-│   │
-│   ├── model/
-│   │   ├── kafka/
-│   │   │   ├── RequestMessage.java     # Oracle → Kafka message
-│   │   │   ├── ResponseMessage.java    # HTTP response → Oracle
-│   │   │   └── DlqMessage.java         # Failed message metadata
-│   │   └── enums/
-│   │       ├── RequestStatus.java      # N, P, S, C, F
-│   │       └── ErrorSource.java        # HTTP, CIRCUIT_BREAKER, OAUTH2, KAFKA
-│   │
-│   └── controller/
-│       └── TestController.java         # /api/test/* endpoints for manual testing
-│
-└── src/main/resources/
-    ├── application.yml                 # Base configuration (all defaults)
-    ├── application-dev.yml             # Dev profile (local RedPanda, debug logging)
-    ├── application-prod.yml            # Prod profile (all from ENV variables)
-    └── .env.example                    # ENV variable documentation
+├── ai-context/                               # Documentation for AI tools (read these first)
+├── docs/                                     # Manual test plan, security remediation, plans
+└── .github/workflows/build.yml               # Tag + GitHub Release on a VERSION.md change
 ```
