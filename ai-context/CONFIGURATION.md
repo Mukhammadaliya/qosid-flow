@@ -96,7 +96,7 @@ gateway:
 | `gateway.retry.interval-ms` | long | `3000` | `RETRY_INTERVAL_MS` | Interval between retries (ms) |
 | `gateway.retry.retryable-statuses` | String | `408,429,500,502,503,504` | `RETRY_STATUSES` | HTTP statuses that trigger retry |
 | `gateway.retry.max-message-age-ms` | long | `300000` | `RETRY_MAX_MESSAGE_AGE` | Max message age (ms) before expiry. Default 5 min. Measured from `createdAt`, stamped at both ingress points (`ProxyController`, `TenantMappingService.toInternal`). |
-| `gateway.retry.cb-requeue-delay-ms` | long | `2000` | `RETRY_CB_REQUEUE_DELAY` | First wait before re-checking a blocked circuit. Up to 250 ms of jitter is added so a burst parked in the same window does not stampede the upstream in lockstep when the circuit closes. |
+| `gateway.retry.cb-requeue-delay-ms` | long | `500` | `RETRY_CB_REQUEUE_DELAY` | First wait before re-checking a blocked circuit; doubles up to `cb-requeue-max-delay-ms`. Up to 250 ms of jitter is added so a burst parked in the same window does not stampede the upstream in lockstep when the circuit closes. Was `2000` until the 2026-07-28 production measurement below. |
 | `gateway.retry.cb-requeue-max-delay-ms` | long | `30000` | `RETRY_CB_REQUEUE_MAX_DELAY` | Ceiling for the doubling wait. Defaults to one `wait-duration-in-open-state` — waiting longer than the open window cannot help. |
 | `gateway.retry.cb-max-pending` | int | `5000` | `RETRY_CB_MAX_PENDING` | Max parked messages held in memory **per flow** (Oracle and API have separate budgets). Past it: DLQ, reason `Circuit breaker open and requeue buffer full`. |
 | `gateway.retry.cb-max-pending-bytes` | long | `268435456` (256 MiB) | `RETRY_CB_MAX_PENDING_BYTES` | Max total parked body size per flow. Usually **the binding bound**: a REST body may be 20 MiB (`gateway.proxy.max-body-size`), so ~13 such messages exhaust 256 MiB long before the 5000-message count. Measured as the body string's character length, so it approximates heap cost rather than accounting for it exactly. |
@@ -121,6 +121,22 @@ Tuning notes:
   outage is tolerated. Raising `cb-requeue-delay-ms` costs recovery latency (up to one delay after
   the circuit closes) but nothing else; lowering it toward the round-trip regime re-creates the
   spin.
+- **The first wait is dominated by limiter deferrals, not outages — measured 2026-07-28 in
+  production.** Most parks are `max-concurrent-per-host` deferrals, which clear in milliseconds,
+  so the first delay is pure added latency for them. Across real bursts (~330 req/s arrival, ~87 %
+  of the burst deferred):
+
+  | | `2000` ms | `500` ms |
+  |---|---|---|
+  | park → requeue, minimum | 2.061 s | **0.628 s** |
+  | park → requeue, mean (typical burst) | 14.31 s | **0.813 s** |
+  | parks per unique request (churn) | 2.71 | **2.46** |
+  | loss / backpressure DLQ | 0 / 0 | 0 / 0 |
+
+  The predicted cost of a shorter delay — the message returning before the limiter has room and
+  parking again, one extra Kafka round trip — did not appear; the churn ratio went *down*, because
+  a faster return lands more often on a freed permit. Hence the default moved to `500`. Going much
+  lower approaches the ~20 ms Kafka round-trip regime and re-creates the spin this replaced.
 - **Remove `RETRY_CB_MAX_REQUEUES` from the production `.env`** if it is still there. A stop-gap
   value (`1500`) was set before the delayed requeue shipped; keeping a hand-tuned count only hides
   a broken delay path, and the yaml default (1000) is the intended guard.
@@ -289,8 +305,9 @@ and dispatched at ~67 req/s against one host; ≥5 of any 10 sliding-window call
 opening it at all. **25 concurrent calls at a ~200 ms upstream latency sustain ~125 req/s** —
 comfortably above the ~67 req/s arrival rate (the backlog still drains fast), while never
 presenting the upstream with hundreds of simultaneous connections. A deferred call parks like a
-CB-blocked one and typically returns within one `cb-requeue-delay-ms` (2 s), because its circuit
-reads closed on the first re-check.
+CB-blocked one and typically returns within one `cb-requeue-delay-ms` (500 ms), because its
+circuit reads closed on the first re-check — measured at 0.63 s minimum / 0.81 s mean on
+production bursts (2026-07-28).
 
 ## gateway.proxy.* — REST Proxy Layout
 
