@@ -96,7 +96,90 @@ gateway:
 | `gateway.retry.interval-ms` | long | `3000` | `RETRY_INTERVAL_MS` | Interval between retries (ms) |
 | `gateway.retry.retryable-statuses` | String | `408,429,500,502,503,504` | `RETRY_STATUSES` | HTTP statuses that trigger retry |
 | `gateway.retry.max-message-age-ms` | long | `300000` | `RETRY_MAX_MESSAGE_AGE` | Max message age (ms) before expiry. Default 5 min. Measured from `createdAt`, stamped at both ingress points (`ProxyController`, `TenantMappingService.toInternal`). |
-| `gateway.retry.cb-max-requeues` | int | `50` | `RETRY_CB_MAX_REQUEUES` | Cap on CB-blocked re-queues per request (Redis counter `request:cb-requeue:<compositeId>`); past the cap the message goes to DLQ. `attemptCount` is still untouched — see SAFETY-RULES rule 23. |
+| `gateway.retry.cb-requeue-delay-ms` | long | `2000` | `RETRY_CB_REQUEUE_DELAY` | First wait before re-checking a blocked circuit. Up to 250 ms of jitter is added so a burst parked in the same window does not stampede the upstream in lockstep when the circuit closes. |
+| `gateway.retry.cb-requeue-max-delay-ms` | long | `30000` | `RETRY_CB_REQUEUE_MAX_DELAY` | Ceiling for the doubling wait. Defaults to one `wait-duration-in-open-state` — waiting longer than the open window cannot help. |
+| `gateway.retry.cb-max-pending` | int | `5000` | `RETRY_CB_MAX_PENDING` | Max parked messages held in memory **per flow** (Oracle and API have separate budgets). Past it: DLQ, reason `Circuit breaker open and requeue buffer full`. |
+| `gateway.retry.cb-max-pending-bytes` | long | `268435456` (256 MiB) | `RETRY_CB_MAX_PENDING_BYTES` | Max total parked body size per flow. Usually **the binding bound**: a REST body may be 20 MiB (`gateway.proxy.max-body-size`), so ~13 such messages exhaust 256 MiB long before the 5000-message count. Measured as the body string's character length, so it approximates heap cost rather than accounting for it exactly. |
+| `gateway.retry.cb-max-requeues` | int | `1000` | `RETRY_CB_MAX_REQUEUES` | **Runaway guard, not a retry policy.** Counts park *attempts* per request (Redis counter `request:cb-requeue:<compositeId>`, incremented before the park is attempted and never rolled back if the bound refuses it or the fallback catch fires); tripping it means the delay path is broken, since a 2 s floor caps a legitimate message at ~150. Was `50` until 2026-07-27, when it DLQ'd 212 live requests in one circuit window. `attemptCount` is still untouched — see SAFETY-RULES rule 23. |
+
+### CB back-pressure: why these numbers (v2.3.0)
+
+A CB-blocked message is **parked in memory** until its circuit accepts traffic again, then produced
+back to its request topic (`CbRequeueScheduler`). Before v2.3.0 it was re-queued immediately, so it
+returned every ~20 ms for the whole 30 s open window — ~1500 pointless Kafka round trips per
+message, and the count cap that bounded that loop was spent in about one second, turning retryable
+traffic into DLQ records (2026-07-27: 212 live production requests). With the delay, one 30 s
+window costs a message **4 timer wake-ups** (2 s → 4 s → 8 s → 16 s) and **one** Kafka round trip;
+across the full 5 min `max-message-age-ms` budget it is ~13 wake-ups, because the wait is capped at
+30 s. Where a message waits changed too: it now occupies gateway heap (bounded by the two
+`cb-max-pending*` keys) instead of Kafka disk — which is the trade the 2026-05-18 Redpanda 57 GB
+disk-full outage argues for.
+
+Tuning notes:
+
+- **`max-message-age-ms` is the give-up deadline**, so it is what decides how long an upstream
+  outage is tolerated. Raising `cb-requeue-delay-ms` costs recovery latency (up to one delay after
+  the circuit closes) but nothing else; lowering it toward the round-trip regime re-creates the
+  spin.
+- **Remove `RETRY_CB_MAX_REQUEUES` from the production `.env`** if it is still there. A stop-gap
+  value (`1500`) was set before the delayed requeue shipped; keeping a hand-tuned count only hides
+  a broken delay path, and the yaml default (1000) is the intended guard.
+- These five `gateway.retry.cb-*` keys are **deliberately absent from `SettingsRegistry`**, exactly
+  like `cb-max-requeues` before them, so they are **not** editable through the ops UI — `.env`/yaml
+  only, applied on the next start. They bound a memory-holding, ack-owning code path where an
+  operator typo is a message-loss risk rather than a tuning mistake; the four `gateway.retry.*`
+  keys that *are* registry-managed (`max-attempts`, `interval-ms`, `retryable-statuses`,
+  `max-message-age-ms`) are all plain numbers with no such coupling.
+
+Metrics for this path. The three counters carry `stage=http_request` like the rest of E4; the two
+gauges carry `flow=API|ORACLE` instead (one gauge per scheduler instance, because the flows keep
+separate budgets) — so a dashboard query must not assume a common tag set:
+
+| Metric | Type | Meaning |
+|--------|------|---------|
+| `gateway.http.circuitbreaker.requeue.delayed` | Counter | Messages parked to wait for a circuit. Rises during every open window — expected, not an error. |
+| `gateway.http.circuitbreaker.requeue.pending{flow}` | Gauge | Messages currently parked. Should return to 0 shortly after the circuit closes; a plateau means the upstream is still refusing. |
+| `gateway.http.circuitbreaker.requeue.pending.bytes{flow}` | Gauge | Parked body bytes. Watch this one against `cb-max-pending-bytes` — it hits the bound first. |
+| `gateway.http.circuitbreaker.requeue.rejected` | Counter | Parks refused because a bound was full → DLQ (`Circuit breaker open and requeue buffer full`). Non-zero means memory pressure: raise the bounds or shed load. |
+| `gateway.http.circuitbreaker.requeue.exhausted` | Counter | Messages that gave up by TIME: aged past `max-message-age-ms` while parked on an open circuit (the scheduler's own per-fire deadline check — **the normal exit of a real outage, and the signal to watch**), plus the two corner cases inside the CB branch (already expired on arrival, and the runaway guard). Non-zero for the guard reason means the delay path is broken. |
+| `gateway.http.host.limiter.rejected` | Counter | Calls deferred by the **per-host concurrency bound** (`gateway.api.max-concurrent-per-host`, Phase 2). Same park-and-recheck handling as a CB rejection but a **distinct cause**: this counter rising while the circuit stays CLOSED is our own backpressure working as designed — expected under any burst, not an error. Rising **together with** an open circuit means the limit did not shield the upstream enough. |
+
+**Operator note — limiter deferrals WEAR THE CIRCUIT-BREAKER'S CLOTHES downstream.** A refused
+permit travels the CB-blocked path by design (zero consumer changes), so everything the consumers
+say about it uses circuit vocabulary even though the circuit may never have opened: each deferral
+logs the consumer WARN `CB-blocked, parked until cb-<host> accepts traffic`, and a message that
+ages out during *sustained* limiter saturation produces a DLQ record reading `Circuit breaker
+still open after <ms>ms` (or `Circuit breaker open and requeue buffer full`). **The discriminator
+is the metrics, not the strings:** `gateway_http_host_limiter_rejected_total` rising while
+resilience4j's circuit-state metric (`resilience4j_circuitbreaker_state`, exposed per circuit)
+stays CLOSED = our own backpressure; the circuit metric showing OPEN = a real upstream refusal.
+Check the metrics before believing a "circuit breaker" log line or DLQ reason from a burst
+window.
+
+### Which signal actually moves when an upstream is down
+
+The give-up that fires in a real outage is the scheduler's **own deadline check**: every timer
+fire evaluates the consumer's `isMessageExpired` before the circuit state, so a message that ages
+past `max-message-age-ms` while parked is DLQ'd from the park itself — `Circuit breaker still open
+after <ageMs>ms` (`errorSource=SYSTEM`, `httpStatus=503`) — moving **`...requeue.exhausted`**
+(+ `dlq.sent`). It does not wait for the circuit to let it back first. So during a genuine outage:
+
+- **Watch:** `...requeue.exhausted` rising (one per parked message that hit the deadline), DLQ
+  records reading `Circuit breaker still open after …`, and `...requeue.pending{flow}` sitting at
+  a plateau (messages still inside their age budget) or stair-stepping down as they age out.
+- **Also expect, and do not confuse with a bug:** DLQ records with the raw transport error as
+  their reason. Calls attempted before the circuit opened, or permitted as HALF_OPEN probes, fail
+  for real, increment `attemptCount`, and after `max-attempts` take the ordinary permanent-failure
+  path. `Message expired after …` records (the outer `processRequest` gate, `httpStatus=0`) are
+  the same message class one hop later — an expired message that travelled through Kafka once more
+  via a shutdown drain or an ordinary retry — and should be rare.
+
+Also note: the deadline is checked on timer fires, not continuously, so a parked message can still
+outlive `max-message-age-ms` by up to one re-check interval (≤30 s at the defaults) — but no
+longer indefinitely: even a circuit that never flips (see
+`automatic-transition-from-open-to-half-open-enabled` below) cannot hold a parked message past its
+deadline. `max-message-age-ms` is a give-up deadline, not an exact cap on park duration.
+SAFETY-RULES rule 23 carries the full exit table.
 
 ## gateway.concurrency.* — Dynamic Scaling
 
@@ -136,6 +219,28 @@ The four **behavioral** keys below are now **DB-managed** (settings DB, like `ga
 | `gateway.telegram.message-thread-id` | Integer | `null` | DB-managed, env fallback `TELEGRAM_MESSAGE_THREAD_ID` | Optional topic thread ID. Resolved per send. |
 | `gateway.telegram.connect-timeout-ms` | int | `5000` | env/yaml only | Telegram API connect timeout (bean-construction time). |
 | `gateway.telegram.read-timeout-ms` | int | `5000` | env/yaml only | Telegram API read timeout (bean-construction time). |
+| `gateway.telegram.coalesce-window-ms` | long | `60000` | env/yaml only `TELEGRAM_COALESCE_WINDOW_MS` | Alert coalescing window (see below). Read once at bean construction. |
+
+### Alert coalescing and Telegram rate limits (v2.3.0)
+
+A DLQ alert is grouped by **(reason-class, host)**, where the reason-class is the `failureReason`
+with digit runs replaced by `#` — so `Circuit breaker still open after 41293ms` and
+`...after 5000ms` are one group. The **first** alert of a group is sent immediately (the fast
+signal is unchanged); every further alert inside `coalesce-window-ms` is counted, and when the
+window closes a single summary goes out: *"Yana 199 ta DLQ yozuvi (60s ichida)"* with the
+reason-class, host and the first composite id.
+
+On HTTP **429** the service reads `parameters.retry_after` from Telegram's body (falling back to
+the `Retry-After` header, then to 5 s), adds one second of slack and **sends nothing at all**
+until it elapses. There is no immediate retry — on 2026-07-27 that behaviour turned 212 DLQ
+records into 14 delivered messages and **298 rate-limit failures**. Alerts held back during the
+suppression are counted and reported as a `🔇 N ta ogohlantirish ... yuborilmadi` line on the
+next message that does go out, so nothing disappears silently.
+
+Metric: `gateway_notification_alert_coalesced_total` — alerts folded into a summary or held back
+by a 429 rather than becoming their own message. Windows are closed by the dedicated
+`alert-coalesce-timer` thread (never `cb-requeue-timer`: a blocking Telegram call must not delay
+a parked request's requeue), and open windows are flushed on shutdown.
 
 ## gateway.redis.* — Redis Settings
 
@@ -165,6 +270,7 @@ The four **behavioral** keys below are now **DB-managed** (settings DB, like `ga
 | `permitted-number-of-calls-in-half-open-state` | int | `3` | Test calls in HALF_OPEN |
 | `slow-call-duration-threshold` | Duration | `10s` | Threshold for slow call detection |
 | `slow-call-rate-threshold` | int | `50` | Slow call percentage to trigger OPEN (%) |
+| `automatic-transition-from-open-to-half-open-enabled` | boolean | `true` | **Load-bearing for CB back-pressure — never turn off.** The parked-requeue path polls circuit state with a passive read (`isCircuitOpen`) that acquires no permission and therefore cannot itself move OPEN→HALF_OPEN. With this flag on, resilience4j performs the transition on a timer once `wait-duration-in-open-state` elapses and parked messages wake. With it off, a parked backlog with no *other* traffic to that host never wakes as a requeue; the scheduler's own deadline check then ages every parked message out into the DLQ after `max-message-age-ms` — messages that a 30 s blip should have delivered. The deadline is a backstop against the pre-Task-5c forever-park, not a substitute for this flag. See SAFETY-RULES rule 23. |
 
 ## gateway.api.* — API Proxy Target
 
@@ -173,6 +279,18 @@ The four **behavioral** keys below are now **DB-managed** (settings DB, like `ga
 | Property | Type | Default | Env Var | Description |
 |----------|------|---------|---------|-------------|
 | `gateway.api.base-url` | String | `` (empty — configured via Settings UI) | `API_BASE_URL` | Upstream base URL, **including any path prefix** (e.g. `/b`). **Request-lifecycle endpoint — configured ONLY via the Settings UI** (empty transitional env fallback). API proxy requests are forwarded to `{baseUrl}{stripped client URI}`. Client URIs therefore omit the `/b` prefix — e.g. client sends `/qosid/api/v1/queue/sb/sbr/…` and qosid-flow calls `https://app.smartup24.com/b/sb/sbr/…`. Prod: `https://app.smartup24.com/b` (must include `/b`). **LIVE-editable** — `ProxyController` resolves it per request via `SettingsService`. |
+| `gateway.api.max-concurrent-per-host` | int | `25` | `API_MAX_CONCURRENT_PER_HOST` | Max concurrent in-flight HTTP calls **per upstream host** (E4, `HostConcurrencyLimiter`, keyed by CB name — one bound per circuit, shared by both flows because the host is one physical resource). A refused permit returns the CB-blocked shape (503, `errorSource=CIRCUIT_BREAKER`) → park-and-recheck, **never** DLQ, counted by `gateway.http.host.limiter.rejected`. `<= 0` disables the bound (escape hatch, like `gateway.proxy.max-body-size`). **Deliberately absent from `SettingsRegistry`** like the `gateway.retry.cb-*` keys — `.env`/yaml only, applied on next start. |
+
+### `gateway.api.max-concurrent-per-host` — why 25 (v2.3.0, Phase 2)
+
+The 2026-07-27 incident: a deploy restart left a pull backlog, ~1000 requests were pulled in 15 s
+and dispatched at ~67 req/s against one host; ≥5 of any 10 sliding-window calls failed and
+`cb-smartup.online` opened. Phase 1 made the open window survivable; this key stops the burst from
+opening it at all. **25 concurrent calls at a ~200 ms upstream latency sustain ~125 req/s** —
+comfortably above the ~67 req/s arrival rate (the backlog still drains fast), while never
+presenting the upstream with hundreds of simultaneous connections. A deferred call parks like a
+CB-blocked one and typically returns within one `cb-requeue-delay-ms` (2 s), because its circuit
+reads closed on the first re-check.
 
 ## gateway.proxy.* — REST Proxy Layout
 
@@ -362,6 +480,7 @@ COOKIE_SECURE=true    # set this the same day nginx/TLS fronts the console
 | `server.port` | int | `8090` | `SERVER_PORT` | Application HTTP port |
 | `management.server.port` | int | `8091` | `MANAGEMENT_PORT` | Actuator/metrics port |
 | `spring.lifecycle.timeout-per-shutdown-phase` | Duration | `30s` | — | Graceful shutdown timeout |
+| `spring.task.scheduling.*` | — | Boot defaults (`pool.size=1`, `thread-name-prefix=scheduling-`) | — | Pool behind every `@Scheduled` job — the E1 pull loop, RocksDB retention cleanup and the consumer-lag monitor. Not set in `application.yml`; `ThreadPoolConfig#taskScheduler` builds the bean from Boot's `ThreadPoolTaskSchedulerBuilder` so these properties keep their documented meaning. That bean must not be deleted — the `cbRequeueTimer` `ScheduledExecutorService` makes Boot's own `taskScheduler` back off, and `@Scheduled` would silently move onto the CB timer's threads (SAFETY rule 40). Raise `pool.size` only if a new `@Scheduled` job would otherwise queue behind the 5 s pull loop. |
 | `server.compression.enabled` | boolean | `true` | — | GZIP compression for JSON/text responses. |
 | `server.tomcat.accept-count` | int | `1000` | `TOMCAT_ACCEPT_COUNT` | Accept queue size. |
 | `server.tomcat.max-connections` | int | `10000` | `TOMCAT_MAX_CONNECTIONS` | Max concurrent connections. |
@@ -401,7 +520,7 @@ Config for the `ops/` module (`ops/src/main/resources/application.yml`) — **no
 
 **AUTO_SERVER note:** both sides open the settings DB with `;AUTO_SERVER=TRUE` — gateway (`SettingsDbConfig` **and** `SettingsEnvironmentPostProcessor`, which opens the DB early at boot) and ops (`OpsDbConfig`). H2 mixed mode lets two JVMs share one DB file: the first opener becomes the server, the other connects over TCP automatically. If either side lacked the flag, the second JVM would fail to open the locked file (the gateway's PostProcessor would then silently fall back to yaml defaults). The gateway side is a HikariCP pool (`minimumIdle=1`, `maxLifetime=0`) so at least one physical connection stays open for the process lifetime — this pins the H2 server role to the gateway JVM and eliminates the server-role handoff races that made the SPA's parallel login POSTs transiently fail (gateway 500 / ops spurious 401). Ops keeps short-lived connections (it must not own the DB while the gateway restarts) and instead retries a failed auth read once (`AdminAuthDao`). All three call sites build the URL through `SettingsDbUrl.autoServerSuffix(path)` (settings-core), which also sets `h2.bindAddress=127.0.0.1`: the H2 server-role JVM writes its own address into `.lock.db` for the peer to dial, and on a **multi-NIC host** it otherwise picks a LAN IP (e.g. `192.168.x.x`) the loopback-only peer can't reach — the sidecar then times out (~12s) on every DB read and ops login silently fails (auth lookup returns empty → 401, and the slow reads blow past the rate-limiter's 60s window so lockout never triggers). Binding loopback fixes it and keeps the settings DB off external interfaces. An operator-set `h2.bindAddress` is never overridden.
 
-**Deploy note:** the systemd unit runs as user `qosid`, which needs permission to run `systemctl start/stop gateway-service` — add a polkit rule or a sudoers `NOPASSWD` entry scoped to **exactly those two commands**. If using the sudoers route, the configured commands must be prefixed with `sudo` (e.g. `OPS_GATEWAY_START_COMMAND=sudo /usr/bin/systemctl start gateway-service`), since the unit invokes `systemctl` directly. The unit expects the JAR at `/opt/services/qosid-flow/ops/target/qosid-ops.jar` (the ops pom sets `finalName=qosid-ops`). Since the Maven reactor (D), a root `mvn clean package` builds all three modules — settings-core, app (`app/target/qosid-flow-2.2.0.jar`), and ops — and CI attaches both the app and ops JARs to the GitHub Release. On first deploy the gateway must boot once before ops login works (the gateway creates the `admin_account` table).
+**Deploy note:** the systemd unit runs as user `qosid`, which needs permission to run `systemctl start/stop gateway-service` — add a polkit rule or a sudoers `NOPASSWD` entry scoped to **exactly those two commands**. If using the sudoers route, the configured commands must be prefixed with `sudo` (e.g. `OPS_GATEWAY_START_COMMAND=sudo /usr/bin/systemctl start gateway-service`), since the unit invokes `systemctl` directly. The unit expects the JAR at `/opt/services/qosid-flow/ops/target/qosid-ops.jar` (the ops pom sets `finalName=qosid-ops`). Since the Maven reactor (D), a root `mvn clean package` builds all three modules — settings-core, app (`app/target/qosid-flow-2.3.0.jar`), and ops — and CI attaches both the app and ops JARs to the GitHub Release. On first deploy the gateway must boot once before ops login works (the gateway creates the `admin_account` table).
 
 **Nginx deploy note (C-faza, v1.13.0):** ops is API-only and has no page of its own to serve — in production a single nginx origin serves the SPA statically from `frontend/dist` and reverse-proxies `/qosid/` → gateway (:8090) and `/ops/api/` → this module (:8092), with buffering/caching disabled and a long read timeout on the `/ops/api/` location so the SSE log stream (`/ops/api/logs/stream`) isn't buffered or cut off. Reference config: `deploy/nginx-qosid.conf`. Apply the same SSE-safe proxy settings to any other reverse proxy fronting ops.
 
@@ -415,8 +534,8 @@ Config for the `ops/` module (`ops/src/main/resources/application.yml`) — **no
 Recommended before exposing `/ops/api` through nginx: change the default admin password first, and put an nginx rate-limit and/or IP-allowlist on `/ops/api/login`. Since v1.14.0 the ops JVM also enforces the same application-level login rate-limit as the gateway (`LoginRateLimiter`: 5 failures / 60s per username, existing accounts only → `429 {"error":"rate-limited"}`), so the nginx layer is defense-in-depth, not the only guard.
 
 **v1.13.0 → v1.14.0 cutover checklist (Maven reactor + stop-to-edit):**
-1. `git pull` + root build (`mvn clean package -DskipTests`) — the reactor now builds `settings-core/target/qosid-settings-core-*.jar`, `app/target/qosid-flow-2.2.0.jar`, and `ops/target/qosid-ops.jar` in one pass.
-2. **`gateway-service` unit:** update `ExecStart` — the app JAR moved from `target/qosid-flow-2.2.0.jar` to `app/target/qosid-flow-2.2.0.jar`.
+1. `git pull` + root build (`mvn clean package -DskipTests`) — the reactor now builds `settings-core/target/qosid-settings-core-*.jar`, `app/target/qosid-flow-2.3.0.jar`, and `ops/target/qosid-ops.jar` in one pass.
+2. **`gateway-service` unit:** update `ExecStart` — the app JAR moved from `target/qosid-flow-2.3.0.jar` to `app/target/qosid-flow-2.3.0.jar`.
 3. **`qosid-ops` unit:** update `ExecStart` to `ops/target/qosid-ops.jar` (see `ops/qosid-ops.service`) and add `SETTINGS_ENCRYPTION_KEY` (same value as the gateway unit's) to the ops environment — without it secret settings can't be edited via stop-to-edit.
 4. `systemctl daemon-reload`, then restart both units; redeploy `frontend/dist` (nginx layout unchanged from v1.13).
 5. Behavior change to communicate: settings are now edited ONLY while the gateway is stopped (Ops page → stop → edit → start); all gateway-side settings PUTs answer `409 stop-required`; after an ops-driven start the SPA re-authenticates automatically (login-token handoff).

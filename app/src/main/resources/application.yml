@@ -158,7 +158,17 @@ gateway:
     interval-ms: ${RETRY_INTERVAL_MS:3000}
     retryable-statuses: ${RETRY_STATUSES:408,429,500,502,503,504}
     max-message-age-ms: ${RETRY_MAX_MESSAGE_AGE:300000}
-    cb-max-requeues: ${RETRY_CB_MAX_REQUEUES:50}
+    # RUNAWAY GUARD, retry siyosati EMAS (2026-07-27 dan). Kechikishli requeue bilan
+    # xabarga ~150 requeue yetadi; bu chegara faqat kechikish mantig'i buzilsa ishlaydi.
+    cb-max-requeues: ${RETRY_CB_MAX_REQUEUES:1000}
+    # CB-blocked xabar Kafka'da aylanmasdan kutadi: 2s dan boshlab, har tekshiruvda
+    # ikkilanib, 30s (bitta CB oynasi) gacha. Taslim bo'lish VAQT bo'yicha —
+    # max-message-age-ms. Batafsil: SAFETY-RULES 23.
+    cb-requeue-delay-ms: ${RETRY_CB_REQUEUE_DELAY:2000}
+    cb-requeue-max-delay-ms: ${RETRY_CB_REQUEUE_MAX_DELAY:30000}
+    # Kutayotgan xabarlar xotirada turadi — soni VA baytlari bilan chegaralangan.
+    cb-max-pending: ${RETRY_CB_MAX_PENDING:5000}
+    cb-max-pending-bytes: ${RETRY_CB_MAX_PENDING_BYTES:268435456}
 
   # --- Dynamic Concurrency ---
   concurrency:
@@ -179,6 +189,11 @@ gateway:
   # --- API Proxy ---
   api:
     base-url: ${API_BASE_URL:}
+    # Max concurrent in-flight HTTP calls per upstream host (E4, both flows). 25 at ~200ms
+    # upstream latency sustains ~125 req/s — above the ~67 req/s burst that opened
+    # cb-smartup.online on 2026-07-27 — without hammering the host with hundreds of parallel
+    # connections. A refused permit takes the CB park-and-recheck path (not DLQ). <=0 disables.
+    max-concurrent-per-host: ${API_MAX_CONCURRENT_PER_HOST:25}
 
   # --- Proxy (REST API entry point) ---
   proxy:
@@ -267,6 +282,11 @@ gateway:
     bot-token: ${TELEGRAM_BOT_TOKEN:}
     chat-id: ${TELEGRAM_CHAT_ID:0}
     message-thread-id: ${TELEGRAM_MESSAGE_THREAD_ID:}
+    # Bitta hodisa — bitta xabar. Bir xil (sabab-sinfi, host) juftligidagi DLQ
+    # ogohlantirishlari shu oynada yig'iladi: birinchisi darhol, qolganlari bitta
+    # jamlanma bo'lib chiqadi. 2026-07-27 da 212 ta alert 298 marta 429 bo'lgan edi.
+    # DB'dan boshqarilmaydi — faqat env/yaml.
+    coalesce-window-ms: ${TELEGRAM_COALESCE_WINDOW_MS:60000}
 
   # --- Loki (Errors UI log source, D2) ---
   loki:

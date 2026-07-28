@@ -46,6 +46,8 @@ In `RequestStateService`, `getAttemptCount()` and `incrementAttempt()` return `I
 
 Oracle and API flows use separate topics, consumers, and thread pools by design. `OracleResponseConsumer` saves to Biruni; `ApiResponseConsumer` does NOT. Merging them re-introduces the coupling that caused cascading failures — one flow's outage would stall the other.
 
+**One deliberate, weighed exception (v2.3.0 Phase 2): `HostConcurrencyLimiter` is a single instance shared by both flows.** Do NOT "fix" it into per-flow instances — the per-host bound protects the *upstream host*, one physical resource regardless of caller, and two per-flow limiters would let 2× the bound hit it. Its shared state cannot stall or mis-route a flow: every permit is released on every chain termination, bounded by the HTTP timeout. See ARCHITECTURE.md → E4 → Host concurrency limiter.
+
 ### 11. Never disable `@EnableRetry` or remove `@Recover` from `CallbackSender`
 
 `@EnableRetry` on `GatewayApplication` is what makes `@Retryable` active — without it, `sendCallback` silently becomes a single-attempt call (no retries, no backoff). The `@Recover` method is what stops exhausted retries from propagating out of the Kafka consumer; remove it and a bad callback URL kills message acknowledgment, which then stalls the partition.
@@ -96,26 +98,135 @@ The API proxy composes upstream URLs as `baseUrl + <stripped client URI>`. By co
 
 ### 23. Never treat `errorSource=CIRCUIT_BREAKER` as a permanent failure in `*RequestConsumer.handleFailedResponse`
 
-CB-blocked responses (HTTP 503 from `HttpRequestService.buildCircuitBreakerResponse`) are **transient back-pressure**, not external API failures. Both `OracleRequestConsumer` and `ApiRequestConsumer` must short-circuit on `"CIRCUIT_BREAKER".equals(errorSourceStr)` to **re-queue the message via `sendOracleRequest`/`sendApiRequest` without incrementing `attemptCount`**. The `processRequest` message-expiry check (`max-message-age-ms`, default 5 min) is the safety net that converts genuinely-stuck CB-blocked messages into DLQ alerts after the deadline. If you re-add CIRCUIT_BREAKER to the `isNonRetryableSource` predicate (or any equivalent), every CB-OPEN burst will produce one DLQ alert per blocked request — the v1.0.8 incident produced ~2200 Telegram alerts/day from this exact bug. OAuth2 stays non-retryable (real auth issue, immediate DLQ); only CIRCUIT_BREAKER changed.
+CB-blocked responses (HTTP 503 from `HttpRequestService.buildCircuitBreakerResponse`) are
+**transient back-pressure**, not external API failures. Both `OracleRequestConsumer` and
+`ApiRequestConsumer` must short-circuit on `"CIRCUIT_BREAKER".equals(errorSourceStr)` and hold
+the message **without incrementing `attemptCount`**. If you re-add CIRCUIT_BREAKER to the
+`isNonRetryableSource` predicate (or any equivalent), every CB-OPEN burst will produce one DLQ
+alert per blocked request — the v1.0.8 incident produced ~2200 Telegram alerts/day from this
+exact bug. OAuth2 stays non-retryable (real auth issue, immediate DLQ); only CIRCUIT_BREAKER
+changed.
 
-**v1.15.0 fix — the net was dead until 2026-07-24.** `RequestMessage.createdAt` was never
-set on any production ingress path (only in the dev-profile `TestController`), and
-`isMessageExpired` returns `false` when `createdAt` is null — so the safety net described
-above never fired once and the CB-blocked re-queue looped at Kafka round-trip speed
-(root cause of the 2026-05-18 Redpanda 57 GB disk-full outage). `createdAt` is now stamped
-at **both** ingress points — `ProxyController` (REST) and `TenantMappingService.toInternal`
-(source pull) — **never remove either one**, or this rule's backstop (and rule 24's) goes
-dead again. Second layer: `gateway.retry.cb-max-requeues` (default 50) counts the re-queues
-in Redis via `RequestStateService.incrementCbRequeue` (`request:cb-requeue:<compositeId>`,
-request-state TTL, `Integer.MAX_VALUE` fail-closed per rule 8) and past the cap the message
-takes the normal `handlePermanentFailure` → DLQ path, incrementing
-`gateway.http.circuitbreaker.requeue.exhausted`. `attemptCount` is STILL not incremented and
-CIRCUIT_BREAKER is STILL never added to `isNonRetryableSource` — the cap only bounds a
-genuinely stuck message, so the v1.0.8 alert-per-request storm cannot come back.
+**How the hold works (v2.3.0): the message waits on the circuit, it does not spin through
+Kafka.** `handleFailedResponse` asks `HttpRequestService.circuitBreakerName(message)` which
+circuit blocked it and hands the message to that flow's `CbRequeueScheduler.schedule(...)`,
+which parks it in memory and re-checks `HttpRequestService.isCircuitOpen(cbName)` after
+`cb-requeue-delay-ms` (2 s), doubling to at most `cb-requeue-max-delay-ms` (30 s, one
+`wait-duration-in-open-state`). Only when the circuit stops refusing calls is the message
+produced back to its request topic. Two consequences a future change must not undo:
+
+- **Give-up is by TIME — and the scheduler itself enforces the deadline while the message is
+  parked.** Every timer fire first asks the consumer-supplied expiry check (a closure over that
+  consumer's own `isMessageExpired`, so the registry-managed `max-message-age-ms` is read live and
+  never duplicated in the scheduler) and only then the circuit state. An expired parked message
+  therefore leaves as one DLQ record **from the park itself**, via a give-up callback the consumer
+  supplied: `Circuit breaker still open after <ageMs>ms`, `errorSource=SYSTEM`, `httpStatus=503`,
+  incrementing `...requeue.exhausted` (+ `dlq.sent`). That is the exit an operator sees in a real
+  outage. The `isMessageExpired` call at the top of the CB branch catches a message already late
+  on arrival (a slow OAuth2 fetch or long HTTP attempt ahead of the CB rejection), so it is never
+  parked at all — same reason string, same counter. The outer `processRequest` gate (`Message
+  expired after <ageMs>ms`) still exists but is now a corner case for this branch: it fires only
+  when an expired message travels through Kafka once more — a shutdown drain, or an ordinary
+  retry that raced the deadline. None of the three checks may be removed.
+- **A parked message can still overshoot its deadline by up to one re-check interval** (≤30 s at
+  the defaults): the deadline is evaluated on timer fires, not continuously. It can no longer
+  overshoot indefinitely — before Task 5c nothing checked the deadline while parked, and a circuit
+  that never flipped held the message and its uncommitted offset forever. `max-message-age-ms` is
+  a give-up deadline, not an exact bound on park duration.
+- **A count of round trips is not a proxy for elapsed time**, because the round-trip rate depends
+  on load, not on the circuit. That confusion caused a production incident: on **2026-07-27
+  14:27** a deploy restart left a pull backlog, the gateway pulled 1000 requests in 15 s,
+  resilience4j opened `cb-smartup.online` (`wait-duration-in-open-state: 30s`), and because a
+  CB-blocked message was re-queued *immediately* it came back every ~20 ms — so the count cap of
+  50 was spent in about one second and **212 live production requests** were written to the DLQ
+  with `failureReason: "Circuit breaker still open after 51 requeues"`, `httpStatus: 503`,
+  `attemptCount: 0`. The upstream never saw them. That cap had been added on 2026-07-25 for a
+  real reason — an unbounded re-queue loop filled a 57 GB Redpanda volume on 2026-05-18 and hung
+  the gateway for 34 h — but bounding *waiting* was the fix, not bounding *attempts*.
+
+`gateway.retry.cb-max-requeues` (now 1000) is therefore a **runaway guard, not a retry policy**:
+it still counts park *attempts* in Redis via `RequestStateService.incrementCbRequeue`
+(`request:cb-requeue:<compositeId>`, request-state TTL, `Integer.MAX_VALUE` fail-closed per
+rule 8), but with a 2 s floor on the wait a message cannot legitimately need more than
+`max-message-age-ms / cb-requeue-delay-ms` (~150) of them, so tripping it means the delay path
+itself is broken. Do not tune it as if it were a retry budget, and do not lower it back toward
+the round-trip regime.
+
+Five DLQ exits end (or refuse) a park, and each has its own signal. The first is the one a real
+outage produces; the other four are corner cases:
+
+| Exit | Where | `failureReason` | Metric |
+|------|-------|-----------------|--------|
+| **Aged out while parked — the normal one** | scheduler timer fire → consumer's give-up callback | `Circuit breaker still open after <ageMs>ms` (`SYSTEM`, `httpStatus=503`) | `...requeue.exhausted` (+ `dlq.sent`) |
+| Already expired on arrival (never parked) | CB branch, pre-park check | `Circuit breaker still open after <ageMs>ms` | `...requeue.exhausted` (+ `dlq.sent`) |
+| Expired message redelivered (shutdown drain, or a retry that raced the deadline) | `processRequest` top gate | `Message expired after <ageMs>ms` (`SYSTEM`, `httpStatus=0`) | `gateway.dlq.sent` and **no CB-specific counter** |
+| Runaway guard tripped (should never fire) | CB branch | `Circuit breaker requeue guard tripped after <n> requeues` | `...requeue.exhausted` (+ `dlq.sent`) |
+| Park bound full (memory pressure) | CB branch | `Circuit breaker open and requeue buffer full` | `...requeue.rejected` (+ `dlq.sent`) |
+
+Separately, an outage also produces DLQ records that never went near this branch: a call attempted
+before the circuit opened, or permitted as a HALF_OPEN probe, fails for real, increments
+`attemptCount` and after `max-attempts` takes the ordinary permanent-failure path with the
+transport error as its reason. Those are correct and expected. What must never appear is a DLQ
+record *caused by the CB block itself* — that was the 2026-07-27 failure.
+
+A fourth path exists only as belt-and-braces: if `circuitBreakerName` or `schedule` throws, the
+branch logs and DLQs rather than letting the exception reach the callback's generic `catch`,
+which would complete the record with the message neither requeued nor DLQ'd — a silent drop.
+Keep that `try`/`catch`; "unreachable" is not the same as "safe to remove".
+
+Also load-bearing, and easy to break while refactoring:
+
+- **`schedule(...)` returning `true` means the caller must NOT complete the Kafka record** — the
+  scheduler's runnable produces the requeue and completes it, in that order. See rule 40.
+- **The Redis lock is released even when parked.** A parked message is not being processed and
+  must not hold the 300 s lock TTL (rule 2) for the whole wait.
+- **One `CbRequeueScheduler` per flow** (rule 5). The two instances share only the
+  `cbRequeueTimer` threads (2 daemon threads); pending state, bounds and gauges are per-flow, so
+  no state leaks between Oracle and API. They are, honestly, coupled in scheduling *latency*: a
+  hand-back calls `KafkaTemplate.send`, which can block up to `max.block.ms` if the broker is
+  unreachable, and two such hand-backs occupy both threads. That delays the other flow's
+  re-checks; it does not lose or mis-route anything. Widen the pool before adding a third flow.
+  Those two threads carry CB hand-backs and nothing else: `@Scheduled` work (including the E1 pull
+  loop) runs on Boot's separate `scheduling-*` pool, which is only true because `ThreadPoolConfig`
+  declares `taskScheduler` explicitly — see rule 40.
+- **`HALF_OPEN` deliberately reads as "not open"** in `isCircuitOpen`, so a waiting message
+  becomes one of resilience4j's probe calls instead of sleeping through the recovery window.
+- **A timely wake-up still depends on `automatic-transition-from-open-to-half-open-enabled: true`**
+  (`resilience4j.circuitbreaker.configs.default` in `application.yml`). `isCircuitOpen` is a
+  passive read: it acquires no permission, so it never drives the OPEN→HALF_OPEN transition
+  itself. With the flag on, resilience4j flips the state on its own once
+  `wait-duration-in-open-state` elapses and the parked messages wake. Turn it off and a parked
+  backlog with **no other traffic to that host** never wakes as a *requeue* — `getState()` stays
+  OPEN until some call attempts a permission, and no call ever attempts one because every
+  candidate is parked. Since Task 5c the scheduler's own deadline check bounds the damage: those
+  messages age out into the DLQ after `max-message-age-ms` instead of sitting on uncommitted
+  offsets forever. That is a backstop, not a license — with the flag off every parked message
+  during a recoverable blip becomes a DLQ record instead of a delivered request. Never disable
+  the flag, and do not assume a passive state read can be substituted for a call attempt.
+- **Consumer lag grows while a circuit is open, and that is correct.** The parked record's offset
+  stays uncommitted on purpose (rule 39); lag is the honest signal for "we are waiting on an
+  upstream", and a crash redelivers rather than loses.
+
+**v1.15.0 fix — the time-based net was dead until 2026-07-24.** `RequestMessage.createdAt` was
+never set on any production ingress path (only in the dev-profile `TestController`), and
+`isMessageExpired` returns `false` when `createdAt` is null — so the safety net never fired once
+and the CB-blocked re-queue looped at Kafka round-trip speed (root cause of the 2026-05-18
+Redpanda 57 GB disk-full outage). `createdAt` is now stamped at **both** ingress points —
+`ProxyController` (REST) and `TenantMappingService.toInternal` (source pull) — **never remove
+either one**, or this rule's primary backstop (and rule 24's) goes dead again. With a null
+`createdAt` the park has no deadline at all: the message would wait until the runaway guard or
+the pending bound stops it, i.e. memory becomes the limit instead of time.
+
+Guards: `CbBackpressureTest` (both consumers: park instead of DLQ, expiry on arrival, give-up
+while parked with the CB reason and `...requeue.exhausted`, bound-full fallback, per-flow
+isolation), `CbRequeueSchedulerTest` (waits while open, requeues on close, gives up on expiry even
+while the circuit stays open, re-checks the deadline on every fire, both bounds, shutdown drain,
+stale-entry replacement),
+`RequestStateRequeueCountTest` (Redis counter + fail-closed).
 
 ### 24. Never call `OAuth2ProviderService.evictToken` without also setting `RequestStateService.markTokenEvicted`
 
-The 401-retry-with-fresh-token path in `OracleRequestConsumer.handleFailedResponse` and `ApiRequestConsumer.handleFailedResponse` evicts the cached OAuth2 token and re-queues the message **without incrementing `attemptCount`** — same back-pressure-style pattern as CB-blocked re-queue (Rule 23). The `markTokenEvicted` flag is the loop guard: on the second 401 for the same `compositeId`, `isTokenEvicted` returns true, the eviction branch is skipped, and the request falls through to the standard retry/permanent-failure path. Removing the flag write turns this into an infinite evict→re-mint→401→evict loop that hammers the OAuth endpoint forever (and the `processRequest` `max-message-age-ms` safety net is the only thing that would eventually stop it, ~5 min later, after the OAuth endpoint has been pounded). The flag's TTL matches request state TTL (default 72h) so it dies with the request lifecycle. `isTokenEvicted` returns `true` on Redis failure (fail-closed) — a Redis outage degrades to existing pre-v1.1.0 behavior (immediate DLQ on 401), never to a runaway loop.
+The 401-retry-with-fresh-token path in `OracleRequestConsumer.handleFailedResponse` and `ApiRequestConsumer.handleFailedResponse` evicts the cached OAuth2 token and re-queues the message **without incrementing `attemptCount`** — the same "this is not the request's fault" treatment as the CB-blocked path (Rule 23), but note the mechanics diverged in v2.3.0: the 401 leg still re-queues **immediately** (a fresh token is available at once, so there is nothing to wait for), while the CB leg parks and waits for its circuit. Do not "unify" them by routing 401s through `CbRequeueScheduler` — there is no circuit state to poll for a token problem. The `markTokenEvicted` flag is the loop guard: on the second 401 for the same `compositeId`, `isTokenEvicted` returns true, the eviction branch is skipped, and the request falls through to the standard retry/permanent-failure path. Removing the flag write turns this into an infinite evict→re-mint→401→evict loop that hammers the OAuth endpoint forever (and the `processRequest` `max-message-age-ms` safety net is the only thing that would eventually stop it, ~5 min later, after the OAuth endpoint has been pounded). The flag's TTL matches request state TTL (default 72h) so it dies with the request lifecycle. `isTokenEvicted` returns `true` on Redis failure (fail-closed) — a Redis outage degrades to existing pre-v1.1.0 behavior (immediate DLQ on 401), never to a runaway loop.
 
 ### 25. Never ack a request message when the Redis idempotency gate itself fails
 
@@ -323,6 +434,11 @@ partition is still in flight**. Consequences to preserve:
   pool rejection, submit failure. A path that returns without completing stops commits on that
   partition (processing continues; a restart then redelivers from the stuck offset, which the
   idempotency gate absorbs — at-least-once, the safe direction).
+- **The one deliberate exception is a CB-parked record**, whose completion moves to
+  `CbRequeueScheduler` and happens after the delayed requeue is produced (rules 23, 40). It is not
+  a missing completion but a transferred one: the record stays in flight for the whole wait, so
+  commits for that partition stall until it lands — which is exactly why lag grows while a circuit
+  is open.
 - **The duplicate-skip path must go through `acknowledgeInOrder(...)`, not `ack.acknowledge()`.**
   "Nothing ran, so acking is free" is exactly the reintroduction to watch for: it is free of
   *work*, not free of *ordering*.
@@ -339,6 +455,117 @@ Guards: `OrderedAckTrackerTest` (invariant, including a concurrency stress case)
 `OrderedAckConsumerTest` (both consumers, plus revocation). Response consumers are unaffected:
 they ack synchronously on the listener thread, already in order.
 
+### 40. Never complete a parked CB record outside `CbRequeueScheduler`
+
+When `handleFailedResponse` parks a CB-blocked message it returns `true`, and the callback's
+`finally` block must skip `ackTracker.complete(...)` for that record. From then on the record is
+completed by exactly one of the two callbacks the consumer handed to `schedule(...)`: the
+**requeue** runnable (produce the requeue, then complete) when the circuit lets the message back,
+or the **give-up** runnable (DLQ via the consumer's own `handlePermanentFailure` — so
+`errorSource`, the DLQ record shape and the metrics stay consistent with every other give-up —
+then complete) when the message ages out while parked. Each does its work first and completes
+**after** — completing anywhere else, or in both places, commits the offset while the work is
+still outstanding: the silent-loss shape rule 39 exists to prevent, with no DLQ record, no alert,
+no metric, and the request simply never happens.
+
+Four related invariants inside the scheduler itself:
+
+- **Exactly one outcome per parked entry.** An entry has three exits — timer requeue, timer
+  give-up, shutdown drain — and every one of them races through a conditional removal from the
+  pending map first; whichever thread wins the transition runs its runnable, and the loser walks
+  away. (The timer's two exits cannot race each other: they are exclusive branches of a single
+  fire.) Running any two would produce or DLQ the message twice *and* complete the record twice.
+  Byte accounting is adjusted only by the thread that won the transition, which is what keeps the
+  `pending.bytes` gauge from drifting away from the map.
+- **The deadline is checked before the circuit, on every fire, through the consumer's own
+  predicate.** Expiry first, so an expired message leaves even if its circuit never flips (and is
+  not produced again even if the circuit just closed — it is already too late to be worth the
+  round trip); the consumer's `isMessageExpired` closure rather than a scheduler-local
+  comparison, so the live-read `max-message-age-ms` can never drift between the two. A predicate
+  failure — expiry or circuit — always fails toward *waiting*: a wrongly-skipped give-up costs
+  one more interval, a wrongly-fired one DLQs a live message irreversibly.
+- **A stale parked entry's `Acknowledgment` must never be used.** A rebalance can redeliver a
+  record whose previous incarnation is still parked; `schedule` replaces the entry and the stale
+  runnables are deliberately abandoned (same rule as `OrderedAckTracker#register`).
+- **`shutdown()` drains rather than drops — and drains through the requeue, never the give-up.**
+  A parked message holds an uncommitted offset, so producing it during `@PreDestroy` turns a
+  would-be redelivery into a clean handover; that is true even for an entry already past its
+  deadline, which the outer `processRequest` gate DLQs on redelivery (a hand-back is reversible,
+  a DLQ decision is not). It must run while the `cbRequeueTimer` bean is still alive (the
+  consumers depend on that bean, so they are destroyed first) and after the listener containers
+  have stopped, so nothing can park during the drain. Failures there are logged and swallowed on
+  purpose: the offset is still uncommitted, and throwing would abandon the remaining parked
+  messages.
+
+**Never let the CB timer double as the application scheduler.** `cbRequeueTimer` was the context's
+first `ScheduledExecutorService` bean, and Spring Boot's auto-configured `taskScheduler` is guarded
+by `@ConditionalOnMissingBean({TaskScheduler, ScheduledExecutorService})` (bytecode-checked in
+`spring-boot-autoconfigure-3.5.16`, `TaskSchedulingConfigurations$TaskSchedulerConfiguration`).
+Introducing the timer therefore switched that bean off, and `@Scheduled` fell back to the one
+`ScheduledExecutorService` it could find: the E1 pull loop (`RequestPuller`, blocking HTTP to the
+source), the RocksDB retention job and the consumer-lag monitor all moved onto the CB timer's two
+threads. Nothing was lost by it, which is exactly why it went unnoticed — the failure mode is
+latency entanglement, and it lands in the pipeline's most sensitive stage: two hand-backs blocked on
+`KafkaTemplate.send` (up to `max.block.ms`) stall the pull loop, and a slow pull delays every CB
+re-check.
+
+Fixed 2026-07-27 by declaring `taskScheduler` explicitly in `ThreadPoolConfig`, built from Boot's
+`ThreadPoolTaskSchedulerBuilder` — that bean is unconditional, so it survives the back-off, and
+routing through it keeps every `spring.task.scheduling.*` property meaning what the Spring Boot
+reference documentation says it means rather than freezing a hard-coded pool size. Two consequences
+to preserve:
+
+- **The two beans must stay separate and differently typed.** `taskScheduler` is a
+  `ThreadPoolTaskScheduler` — a `TaskScheduler`, deliberately *not* a `ScheduledExecutorService` —
+  so its own presence cannot re-trigger the back-off, and `@Scheduled` picks it because Spring
+  resolves `TaskScheduler` before `ScheduledExecutorService`. Merging the two, or giving each flow
+  its own timer, changes nothing about the coupling.
+- **Deleting the explicit bean as "redundant with Boot's default" silently restores the defect.** No
+  metric moves, no message is lost, no test of pipeline behaviour notices; the only observable
+  difference is the thread name in the logs. `SchedulerIsolationTest` is the whole guard: it runs a
+  real `@Scheduled` method and asserts the thread is `scheduling-*` and not `cb-requeue-timer`, and
+  that the pool still honours `spring.task.scheduling.pool.size`.
+
+Guards: `SchedulerIsolationTest`, `CbBackpressureTest`, `CbRequeueSchedulerTest`,
+`OrderedAckConsumerTest`.
+
+**A second `ScheduledExecutorService` bean is allowed, but never for pipeline work.**
+`alertCoalesceTimer` (rule 41) exists precisely so a blocking Telegram call cannot occupy a CB
+requeue thread. It does not re-trigger anything — the back-off already happened at the first such
+bean and `taskScheduler` is declared explicitly — but every additional timer must justify itself
+the same way: name it, keep its own thread prefix, and never hand it work the pipeline waits on.
+`SchedulerIsolationTest` pins the full set of `ScheduledExecutorService` beans, so adding one is a
+deliberate edit, not an accident.
+
+---
+
+### 41. Never retry a Telegram 429 immediately, and never send one message per DLQ record
+
+DLQ alerting is a **channel with a rate limit**, not a log sink. On 2026-07-27 a single circuit
+window produced 212 DLQ records; each became its own `sendMessage` call, Telegram answered
+`429 retry after N` **298 times**, and 14 messages got through. The alert channel failed exactly
+when it was needed.
+
+Two invariants in `TelegramNotificationService`:
+
+- **Coalesce.** Alerts are grouped by (reason-class, host) — the reason with digit runs replaced
+  by `#`, so the same failure with different ids is one group. The first alert of a group is sent
+  immediately (the fast signal is the point of alerting); the rest of the
+  `gateway.telegram.coalesce-window-ms` window are counted and leave as one summary. The number
+  of *open* groups is itself capped (`MAX_OPEN_WINDOWS`) into a single overflow group, because
+  reasons can vary in ways digit-stripping does not normalise — without that cap a flood of
+  distinct reasons reopens the original incident.
+- **Obey `retry_after`.** On a 429 the service reads `parameters.retry_after` from Telegram's
+  body (then the `Retry-After` header, then 5 s), adds a second of slack, and sends **nothing**
+  until it passes. There is no retry — a retry is what produced the 298 failures. Held-back
+  alerts are counted and reported on the next message that does go out, so suppression is never
+  a silent drop.
+
+Neither invariant may be "simplified" into a per-record send, and no retry loop belongs on this
+path. Failing to alert is bad; making the channel unusable during an incident is worse.
+Guards: `AlertCoalescingTest`, `TelegramNotificationServiceTest`, `SchedulerIsolationTest`
+(the flush must not run on `cb-requeue-timer`).
+
 ---
 
 ## Protected Zones
@@ -347,11 +574,12 @@ These files contain production-critical logic. Before modifying any of them, run
 
 | File | Critical Logic | Risk if Broken |
 |------|---------------|----------------|
-| `OracleRequestConsumer.java`, `ApiRequestConsumer.java` | Idempotency check + distributed lock + manual ack routed through `OrderedAckTracker` (rule 39) + async HTTP delegation | Duplicate processing, message loss, thread pool exhaustion |
+| `OracleRequestConsumer.java`, `ApiRequestConsumer.java` | Idempotency check + distributed lock + manual ack routed through `OrderedAckTracker` (rule 39) + async HTTP delegation + CB-blocked park branch whose record is completed by `CbRequeueScheduler` alone (rules 23, 40) | Duplicate processing, message loss, thread pool exhaustion, DLQ floods of retryable traffic |
+| `kafka/retry/CbRequeueScheduler.java` | Delayed, circuit-state-driven hand-back of CB-blocked messages; sole owner of a parked record's completion (rules 23, 40) | Immediate re-queue burns a 30 s circuit window in ~1 s and DLQs live traffic (2026-07-27, 212 requests); a double or missing hand-back is duplicate production or silent loss |
 | `kafka/ack/OrderedAckTracker.java` | Contiguous-prefix acknowledgement — the only thing keeping committed offsets behind in-flight work while `asyncAcks` stays off (rules 32, 39) | Silent message loss on crash/rebalance: offsets committed past records that never finished |
 | `OracleResponseConsumer.java` | Retry logic + Oracle save + manual ack + RocksDB | Response data loss, Oracle inconsistency |
 | `ApiResponseConsumer.java` | RocksDB + callback trigger + manual ack | Response data loss, lost callbacks |
-| `HttpRequestService.java` | Circuit Breaker + OAuth2 token injection + per-endpoint timeouts + callbackUrl/source propagation + defensive `decompressIfNeeded` + upstream error body capture | Cascading failures, auth failures, timeout mismatches, lost callbacks, garbled `/result` bodies, dropped 5xx error payloads |
+| `HttpRequestService.java` | Circuit Breaker (plus the side-effect-free `circuitBreakerName`/`isCircuitOpen` reads the consumers park on — `registry.find`, never `circuitBreaker(name)`, which would create a phantom circuit) + OAuth2 token injection + per-endpoint timeouts + callbackUrl/source propagation + defensive `decompressIfNeeded` + upstream error body capture | Cascading failures, auth failures, timeout mismatches, lost callbacks, garbled `/result` bodies, dropped 5xx error payloads |
 | `RequestStateService.java` | Redis state CRUD + distributed lock (tryLock/releaseLock) + Integer.MAX_VALUE safety | Duplicate processing, infinite retries, state corruption |
 | `KafkaConfig.java` | Topic creation + consumer factories + MANUAL ack mode + error handlers | Message loss, consumer misconfiguration, missing topics |
 | `OAuth2TokenRedisCache.java` | Distributed token lock + stale-while-revalidate (async pre-refresh at 80% TTL via `oauth2RefreshExecutor`) + 15s wait budget + fallback on Redis failure | Token race conditions, thundering-herd 401 storms, auth failures, Redis lock leaks |

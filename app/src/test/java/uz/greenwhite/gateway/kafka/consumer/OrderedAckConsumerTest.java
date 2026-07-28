@@ -21,6 +21,7 @@ import uz.greenwhite.gateway.state.RequestStateService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ScheduledExecutorService;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -103,7 +104,8 @@ class OrderedAckConsumerTest {
         ApiRequestConsumer consumer = new ApiRequestConsumer(
                 mock(HttpRequestService.class), state(), mock(RequestProducer.class),
                 mock(RetryProperties.class), executor.asMock(), metrics(),
-                mock(KafkaProperties.class), mock(OAuth2ProviderService.class));
+                mock(KafkaProperties.class), mock(OAuth2ProviderService.class),
+                mock(ScheduledExecutorService.class));
 
         Acknowledgment inFlightAck = mock(Acknowledgment.class);
         Acknowledgment duplicateAck = mock(Acknowledgment.class);
@@ -130,7 +132,8 @@ class OrderedAckConsumerTest {
         OracleRequestConsumer consumer = new OracleRequestConsumer(
                 mock(HttpRequestService.class), state(), mock(RequestProducer.class),
                 mock(RetryProperties.class), executor.asMock(), metrics(),
-                mock(KafkaProperties.class), mock(OAuth2ProviderService.class));
+                mock(KafkaProperties.class), mock(OAuth2ProviderService.class),
+                mock(ScheduledExecutorService.class));
 
         Acknowledgment inFlightAck = mock(Acknowledgment.class);
         Acknowledgment duplicateAck = mock(Acknowledgment.class);
@@ -154,7 +157,8 @@ class OrderedAckConsumerTest {
         ApiRequestConsumer consumer = new ApiRequestConsumer(
                 mock(HttpRequestService.class), state(), mock(RequestProducer.class),
                 mock(RetryProperties.class), executor.asMock(), metrics(),
-                mock(KafkaProperties.class), mock(OAuth2ProviderService.class));
+                mock(KafkaProperties.class), mock(OAuth2ProviderService.class),
+                mock(ScheduledExecutorService.class));
 
         Acknowledgment ack = mock(Acknowledgment.class);
         consumer.consumeRequest(record(IN_FLIGHT_KEY, 0L), ack);

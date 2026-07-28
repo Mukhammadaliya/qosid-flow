@@ -1,6 +1,7 @@
 package uz.greenwhite.gateway.kafka.consumer;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 import org.springframework.kafka.support.Acknowledgment;
@@ -17,6 +18,7 @@ import uz.greenwhite.gateway.oauth2.OAuth2ProviderService;
 import uz.greenwhite.gateway.state.RequestStateService;
 
 import java.time.Duration;
+import java.util.concurrent.ScheduledExecutorService;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -42,6 +44,8 @@ class LockContentionNackTest {
         Counter counter = mock(Counter.class);
         when(metrics.getConsumerReceived()).thenReturn(counter);
         when(metrics.getConsumerLockFailed()).thenReturn(counter);
+        // Both consumers' CbRequeueScheduler registers gauges at construction time.
+        when(metrics.getRegistry()).thenReturn(new SimpleMeterRegistry());
         return metrics;
     }
 
@@ -66,7 +70,8 @@ class LockContentionNackTest {
         new ApiRequestConsumer(
                 mock(HttpRequestService.class), state, producer, mock(RetryProperties.class),
                 mock(ThreadPoolTaskExecutor.class), metricsWithCounters(),
-                mock(KafkaProperties.class), mock(OAuth2ProviderService.class))
+                mock(KafkaProperties.class), mock(OAuth2ProviderService.class),
+                mock(ScheduledExecutorService.class))
                 .consumeRequest(record(), ack);
 
         verify(ack).nack(any(Duration.class));
@@ -83,7 +88,8 @@ class LockContentionNackTest {
         new OracleRequestConsumer(
                 mock(HttpRequestService.class), state, producer, mock(RetryProperties.class),
                 mock(ThreadPoolTaskExecutor.class), metricsWithCounters(),
-                mock(KafkaProperties.class), mock(OAuth2ProviderService.class))
+                mock(KafkaProperties.class), mock(OAuth2ProviderService.class),
+                mock(ScheduledExecutorService.class))
                 .consumeRequest(record(), ack);
 
         verify(ack).nack(any(Duration.class));

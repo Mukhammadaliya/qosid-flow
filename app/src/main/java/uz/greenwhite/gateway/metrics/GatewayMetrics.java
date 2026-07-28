@@ -52,6 +52,9 @@ public class GatewayMetrics {
     private final Counter httpRetry;
     private final Counter httpCircuitBreakerOpen;
     private final Counter cbRequeueExhausted;
+    private final Counter cbRequeueDelayed;
+    private final Counter cbRequeueRejected;
+    private final Counter hostLimiterRejected;
     private final Counter poolRejection;
 
     // ==================== E5: Oracle Save ====================
@@ -62,6 +65,7 @@ public class GatewayMetrics {
 
     // ==================== DLQ ====================
     private final Counter dlqSent;
+    private final Counter alertCoalesced;
 
     // ==================== End-to-End ====================
     private final Timer requestE2eTimer;
@@ -196,7 +200,27 @@ public class GatewayMetrics {
                 .register(registry);
 
         this.cbRequeueExhausted = Counter.builder("gateway.http.circuitbreaker.requeue.exhausted")
-                .description("CB-blocked messages sent to DLQ after exceeding cb-max-requeues")
+                .description("CB-blocked messages given up to DLQ after aging past "
+                        + "max-message-age-ms while a circuit stayed open "
+                        + "(or via the cb-max-requeues runaway guard)")
+                .tag("stage", "http_request")
+                .register(registry);
+
+        this.cbRequeueDelayed = Counter.builder("gateway.http.circuitbreaker.requeue.delayed")
+                .description("CB-blocked messages parked until the circuit accepts traffic again")
+                .tag("stage", "http_request")
+                .register(registry);
+
+        this.cbRequeueRejected = Counter.builder("gateway.http.circuitbreaker.requeue.rejected")
+                .description("CB-blocked messages sent to DLQ because the pending bound was full")
+                .tag("stage", "http_request")
+                .register(registry);
+
+        this.hostLimiterRejected = Counter.builder("gateway.http.host.limiter.rejected")
+                .description("Calls deferred because the per-host concurrency bound "
+                        + "(gateway.api.max-concurrent-per-host) was reached — same "
+                        + "park-and-recheck handling as a CB rejection, but a DISTINCT cause: "
+                        + "this is our own backpressure working, not an open circuit")
                 .tag("stage", "http_request")
                 .register(registry);
 
@@ -233,6 +257,12 @@ public class GatewayMetrics {
 
         this.dlqSent = Counter.builder("gateway.dlq.sent")
                 .description("Messages sent to Dead Letter Queue")
+                .register(registry);
+
+        this.alertCoalesced = Counter.builder("gateway.notification.alert.coalesced")
+                .description("DLQ alerts that did not become their own Telegram message — folded "
+                        + "into a summary, or held back by a 429 / send failure and reported on "
+                        + "the next message that goes out")
                 .register(registry);
 
         // ==================== End-to-End ====================

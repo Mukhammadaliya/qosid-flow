@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.reactive.function.client.WebClient;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import uz.greenwhite.gateway.config.HttpProperties;
+import uz.greenwhite.gateway.metrics.GatewayMetrics;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import uz.greenwhite.gateway.model.kafka.ResponseMessage;
 import uz.greenwhite.gateway.oauth2.OAuth2ProviderService;
@@ -21,6 +22,8 @@ class HttpRequestServiceTest {
     @Mock CircuitBreakerRegistry circuitBreakerRegistry;
     @Mock OAuth2ProviderService oAuth2ProviderService;
     @Mock HttpProperties httpProperties;
+    @Mock HostConcurrencyLimiter hostLimiter;
+    @Mock GatewayMetrics metrics;
     @InjectMocks HttpRequestService service;
 
     @Test
@@ -50,7 +53,8 @@ class HttpRequestServiceTest {
 
         service.sendRequest(request).block();
 
-        org.mockito.Mockito.verifyNoInteractions(circuitBreakerRegistry, oAuth2ProviderService, webClient);
+        org.mockito.Mockito.verifyNoInteractions(
+                circuitBreakerRegistry, oAuth2ProviderService, webClient, hostLimiter, metrics);
     }
 
     // buildFullUrl: bare query params must be joined with '?' (or '&' when the URI
