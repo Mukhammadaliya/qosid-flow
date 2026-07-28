@@ -171,7 +171,7 @@ which circuit refused it and hands the message to its flow's `CbRequeueScheduler
 1. holds it in memory and, on each timer fire, checks the message's **deadline first** (the
    consumer's own `isMessageExpired`, passed in as a supplier so the live-read
    `max-message-age-ms` is never duplicated) and only then `isCircuitOpen(cbName)`, re-arming
-   after `cb-requeue-delay-ms` (2 s), doubling up to `cb-requeue-max-delay-ms` (30 s = one open
+   after `cb-requeue-delay-ms` (500 ms), doubling up to `cb-requeue-max-delay-ms` (30 s = one open
    window), with ≤250 ms jitter so a parked burst does not stampede the upstream the moment the
    circuit closes;
 2. once the circuit stops refusing calls, produces the message back to its request topic **and

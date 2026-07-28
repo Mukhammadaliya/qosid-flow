@@ -96,7 +96,7 @@ gateway:
 | `gateway.retry.interval-ms` | long | `3000` | `RETRY_INTERVAL_MS` | Interval between retries (ms) |
 | `gateway.retry.retryable-statuses` | String | `408,429,500,502,503,504` | `RETRY_STATUSES` | HTTP statuses that trigger retry |
 | `gateway.retry.max-message-age-ms` | long | `300000` | `RETRY_MAX_MESSAGE_AGE` | Max message age (ms) before expiry. Default 5 min. Measured from `createdAt`, stamped at both ingress points (`ProxyController`, `TenantMappingService.toInternal`). |
-| `gateway.retry.cb-requeue-delay-ms` | long | `2000` | `RETRY_CB_REQUEUE_DELAY` | First wait before re-checking a blocked circuit. Up to 250 ms of jitter is added so a burst parked in the same window does not stampede the upstream in lockstep when the circuit closes. |
+| `gateway.retry.cb-requeue-delay-ms` | long | `500` | `RETRY_CB_REQUEUE_DELAY` | First wait before re-checking a blocked circuit; doubles up to `cb-requeue-max-delay-ms`. Up to 250 ms of jitter is added so a burst parked in the same window does not stampede the upstream in lockstep when the circuit closes. Was `2000` until the 2026-07-28 production measurement below. |
 | `gateway.retry.cb-requeue-max-delay-ms` | long | `30000` | `RETRY_CB_REQUEUE_MAX_DELAY` | Ceiling for the doubling wait. Defaults to one `wait-duration-in-open-state` — waiting longer than the open window cannot help. |
 | `gateway.retry.cb-max-pending` | int | `5000` | `RETRY_CB_MAX_PENDING` | Max parked messages held in memory **per flow** (Oracle and API have separate budgets). Past it: DLQ, reason `Circuit breaker open and requeue buffer full`. |
 | `gateway.retry.cb-max-pending-bytes` | long | `268435456` (256 MiB) | `RETRY_CB_MAX_PENDING_BYTES` | Max total parked body size per flow. Usually **the binding bound**: a REST body may be 20 MiB (`gateway.proxy.max-body-size`), so ~13 such messages exhaust 256 MiB long before the 5000-message count. Measured as the body string's character length, so it approximates heap cost rather than accounting for it exactly. |
@@ -121,6 +121,22 @@ Tuning notes:
   outage is tolerated. Raising `cb-requeue-delay-ms` costs recovery latency (up to one delay after
   the circuit closes) but nothing else; lowering it toward the round-trip regime re-creates the
   spin.
+- **The first wait is dominated by limiter deferrals, not outages — measured 2026-07-28 in
+  production.** Most parks are `max-concurrent-per-host` deferrals, which clear in milliseconds,
+  so the first delay is pure added latency for them. Across real bursts (~330 req/s arrival, ~87 %
+  of the burst deferred):
+
+  | | `2000` ms | `500` ms |
+  |---|---|---|
+  | park → requeue, minimum | 2.061 s | **0.628 s** |
+  | park → requeue, mean (typical burst) | 14.31 s | **0.813 s** |
+  | parks per unique request (churn) | 2.71 | **2.46** |
+  | loss / backpressure DLQ | 0 / 0 | 0 / 0 |
+
+  The predicted cost of a shorter delay — the message returning before the limiter has room and
+  parking again, one extra Kafka round trip — did not appear; the churn ratio went *down*, because
+  a faster return lands more often on a freed permit. Hence the default moved to `500`. Going much
+  lower approaches the ~20 ms Kafka round-trip regime and re-creates the spin this replaced.
 - **Remove `RETRY_CB_MAX_REQUEUES` from the production `.env`** if it is still there. A stop-gap
   value (`1500`) was set before the delayed requeue shipped; keeping a hand-tuned count only hides
   a broken delay path, and the yaml default (1000) is the intended guard.
@@ -289,8 +305,9 @@ and dispatched at ~67 req/s against one host; ≥5 of any 10 sliding-window call
 opening it at all. **25 concurrent calls at a ~200 ms upstream latency sustain ~125 req/s** —
 comfortably above the ~67 req/s arrival rate (the backlog still drains fast), while never
 presenting the upstream with hundreds of simultaneous connections. A deferred call parks like a
-CB-blocked one and typically returns within one `cb-requeue-delay-ms` (2 s), because its circuit
-reads closed on the first re-check.
+CB-blocked one and typically returns within one `cb-requeue-delay-ms` (500 ms), because its
+circuit reads closed on the first re-check — measured at 0.63 s minimum / 0.81 s mean on
+production bursts (2026-07-28).
 
 ## gateway.proxy.* — REST Proxy Layout
 
@@ -520,7 +537,7 @@ Config for the `ops/` module (`ops/src/main/resources/application.yml`) — **no
 
 **AUTO_SERVER note:** both sides open the settings DB with `;AUTO_SERVER=TRUE` — gateway (`SettingsDbConfig` **and** `SettingsEnvironmentPostProcessor`, which opens the DB early at boot) and ops (`OpsDbConfig`). H2 mixed mode lets two JVMs share one DB file: the first opener becomes the server, the other connects over TCP automatically. If either side lacked the flag, the second JVM would fail to open the locked file (the gateway's PostProcessor would then silently fall back to yaml defaults). The gateway side is a HikariCP pool (`minimumIdle=1`, `maxLifetime=0`) so at least one physical connection stays open for the process lifetime — this pins the H2 server role to the gateway JVM and eliminates the server-role handoff races that made the SPA's parallel login POSTs transiently fail (gateway 500 / ops spurious 401). Ops keeps short-lived connections (it must not own the DB while the gateway restarts) and instead retries a failed auth read once (`AdminAuthDao`). All three call sites build the URL through `SettingsDbUrl.autoServerSuffix(path)` (settings-core), which also sets `h2.bindAddress=127.0.0.1`: the H2 server-role JVM writes its own address into `.lock.db` for the peer to dial, and on a **multi-NIC host** it otherwise picks a LAN IP (e.g. `192.168.x.x`) the loopback-only peer can't reach — the sidecar then times out (~12s) on every DB read and ops login silently fails (auth lookup returns empty → 401, and the slow reads blow past the rate-limiter's 60s window so lockout never triggers). Binding loopback fixes it and keeps the settings DB off external interfaces. An operator-set `h2.bindAddress` is never overridden.
 
-**Deploy note:** the systemd unit runs as user `qosid`, which needs permission to run `systemctl start/stop gateway-service` — add a polkit rule or a sudoers `NOPASSWD` entry scoped to **exactly those two commands**. If using the sudoers route, the configured commands must be prefixed with `sudo` (e.g. `OPS_GATEWAY_START_COMMAND=sudo /usr/bin/systemctl start gateway-service`), since the unit invokes `systemctl` directly. The unit expects the JAR at `/opt/services/qosid-flow/ops/target/qosid-ops.jar` (the ops pom sets `finalName=qosid-ops`). Since the Maven reactor (D), a root `mvn clean package` builds all three modules — settings-core, app (`app/target/qosid-flow-2.3.0.jar`), and ops — and CI attaches both the app and ops JARs to the GitHub Release. On first deploy the gateway must boot once before ops login works (the gateway creates the `admin_account` table).
+**Deploy note:** the systemd unit runs as user `qosid`, which needs permission to run `systemctl start/stop gateway-service` — add a polkit rule or a sudoers `NOPASSWD` entry scoped to **exactly those two commands**. If using the sudoers route, the configured commands must be prefixed with `sudo` (e.g. `OPS_GATEWAY_START_COMMAND=sudo /usr/bin/systemctl start gateway-service`), since the unit invokes `systemctl` directly. The unit expects the JAR at `/opt/services/qosid-flow/ops/target/qosid-ops.jar` (the ops pom sets `finalName=qosid-ops`). Since the Maven reactor (D), a root `mvn clean package` builds all three modules — settings-core, app (`app/target/qosid-flow-2.3.1.jar`), and ops — and CI attaches both the app and ops JARs to the GitHub Release. On first deploy the gateway must boot once before ops login works (the gateway creates the `admin_account` table).
 
 **Nginx deploy note (C-faza, v1.13.0):** ops is API-only and has no page of its own to serve — in production a single nginx origin serves the SPA statically from `frontend/dist` and reverse-proxies `/qosid/` → gateway (:8090) and `/ops/api/` → this module (:8092), with buffering/caching disabled and a long read timeout on the `/ops/api/` location so the SSE log stream (`/ops/api/logs/stream`) isn't buffered or cut off. Reference config: `deploy/nginx-qosid.conf`. Apply the same SSE-safe proxy settings to any other reverse proxy fronting ops.
 
@@ -534,8 +551,8 @@ Config for the `ops/` module (`ops/src/main/resources/application.yml`) — **no
 Recommended before exposing `/ops/api` through nginx: change the default admin password first, and put an nginx rate-limit and/or IP-allowlist on `/ops/api/login`. Since v1.14.0 the ops JVM also enforces the same application-level login rate-limit as the gateway (`LoginRateLimiter`: 5 failures / 60s per username, existing accounts only → `429 {"error":"rate-limited"}`), so the nginx layer is defense-in-depth, not the only guard.
 
 **v1.13.0 → v1.14.0 cutover checklist (Maven reactor + stop-to-edit):**
-1. `git pull` + root build (`mvn clean package -DskipTests`) — the reactor now builds `settings-core/target/qosid-settings-core-*.jar`, `app/target/qosid-flow-2.3.0.jar`, and `ops/target/qosid-ops.jar` in one pass.
-2. **`gateway-service` unit:** update `ExecStart` — the app JAR moved from `target/qosid-flow-2.3.0.jar` to `app/target/qosid-flow-2.3.0.jar`.
+1. `git pull` + root build (`mvn clean package -DskipTests`) — the reactor now builds `settings-core/target/qosid-settings-core-*.jar`, `app/target/qosid-flow-2.3.1.jar`, and `ops/target/qosid-ops.jar` in one pass.
+2. **`gateway-service` unit:** update `ExecStart` — the app JAR moved from `target/qosid-flow-2.3.1.jar` to `app/target/qosid-flow-2.3.1.jar`.
 3. **`qosid-ops` unit:** update `ExecStart` to `ops/target/qosid-ops.jar` (see `ops/qosid-ops.service`) and add `SETTINGS_ENCRYPTION_KEY` (same value as the gateway unit's) to the ops environment — without it secret settings can't be edited via stop-to-edit.
 4. `systemctl daemon-reload`, then restart both units; redeploy `frontend/dist` (nginx layout unchanged from v1.13).
 5. Behavior change to communicate: settings are now edited ONLY while the gateway is stopped (Ops page → stop → edit → start); all gateway-side settings PUTs answer `409 stop-required`; after an ops-driven start the SPA re-authenticates automatically (login-token handoff).

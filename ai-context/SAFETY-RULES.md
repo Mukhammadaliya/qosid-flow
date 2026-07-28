@@ -111,7 +111,7 @@ changed.
 Kafka.** `handleFailedResponse` asks `HttpRequestService.circuitBreakerName(message)` which
 circuit blocked it and hands the message to that flow's `CbRequeueScheduler.schedule(...)`,
 which parks it in memory and re-checks `HttpRequestService.isCircuitOpen(cbName)` after
-`cb-requeue-delay-ms` (2 s), doubling to at most `cb-requeue-max-delay-ms` (30 s, one
+`cb-requeue-delay-ms` (500 ms), doubling to at most `cb-requeue-max-delay-ms` (30 s, one
 `wait-duration-in-open-state`). Only when the circuit stops refusing calls is the message
 produced back to its request topic. Two consequences a future change must not undo:
 
@@ -147,8 +147,8 @@ produced back to its request topic. Two consequences a future change must not un
 `gateway.retry.cb-max-requeues` (now 1000) is therefore a **runaway guard, not a retry policy**:
 it still counts park *attempts* in Redis via `RequestStateService.incrementCbRequeue`
 (`request:cb-requeue:<compositeId>`, request-state TTL, `Integer.MAX_VALUE` fail-closed per
-rule 8), but with a 2 s floor on the wait a message cannot legitimately need more than
-`max-message-age-ms / cb-requeue-delay-ms` (~150) of them, so tripping it means the delay path
+rule 8), but with a 500 ms floor on the wait a message cannot legitimately need more than
+`max-message-age-ms / cb-requeue-delay-ms` (~600) of them, so tripping it means the delay path
 itself is broken. Do not tune it as if it were a retry budget, and do not lower it back toward
 the round-trip regime.
 
