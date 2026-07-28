@@ -115,10 +115,22 @@ public class KafkaConfig {
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
         props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
         props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
+        // Type-id deserialization is restricted to our own messages. "*" would let anyone who can
+        // write to an internal topic name an arbitrary class in the __TypeId__ header and have
+        // this JVM instantiate it. Spring additionally trusts java.util and java.lang always, so
+        // this list is the only thing standing between a topic writer and a gadget class.
+        // Guard: KafkaConsumerHardeningTest.
         props.put(JsonDeserializer.TRUSTED_PACKAGES, "uz.greenwhite.gateway.*");
         props.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, 1024);
         props.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, 500);
         props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 50);
+        // 20 MiB, matching the producer's max.request.size and gateway.proxy.max-body-size.
+        // These two lived in `spring.kafka.consumer.properties` until 2026-07-28 and therefore
+        // never applied to anything: declaring a ConsumerFactory bean here makes Boot's
+        // auto-configured one back off, and every @KafkaListener names a container factory built
+        // on THIS map. Consumer settings belong here, not in the yaml block.
+        props.put(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, 20 * 1024 * 1024);
+        props.put(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, 20 * 1024 * 1024);
         return new DefaultKafkaConsumerFactory<>(props);
     }
 

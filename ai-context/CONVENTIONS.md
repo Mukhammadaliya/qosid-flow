@@ -286,3 +286,5 @@ annotations on the internal model. See `ai-context/SAFETY-RULES.md` rule 30.
 | Bounding a wait by a round-trip **count** | Bound it by **time**. A count is a proxy for elapsed time that collapses under load — that is exactly how 212 live requests were DLQ'd in one second |
 | One alert per failed message | Coalesce per (reason-class, host); a flood makes the channel useless precisely when it matters (SAFETY-RULES 41) |
 | Retrying immediately on HTTP 429 | Read `retry_after` and stay silent until it passes |
+| Adding Kafka **consumer** settings to `spring.kafka.consumer.*` | That block is **inert** — `KafkaConfig` declares its own `ConsumerFactory`, so Boot's backs off. Put them in `KafkaConfig.consumerFactory()`. (The producer block *is* live.) |
+| `spring.json.trusted.packages: "*"` | Restrict to our own packages. `java.util`/`java.lang` are trusted by Spring regardless, so never "prove" the restriction with a `HashMap` type id |

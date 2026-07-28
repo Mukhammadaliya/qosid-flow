@@ -1106,9 +1106,25 @@ spring:
 
 ---
 
-### 🔴 CRITICAL-4: Kafka Deserialization Security
+### ✅ CRITICAL-4 (RESOLVED — and it was never live): Kafka Deserialization Security
 
-**Current problem:**
+> **Investigated and closed 2026-07-28.** The `"*"` below sat in `spring.kafka.consumer.properties`
+> — a block that **never applied to anything**. `KafkaConfig` declares its own `ConsumerFactory`
+> bean, which makes Spring Boot's auto-configured one back off, and all six `@KafkaListener`s name
+> a container factory built on that bean. The value that actually ran was
+> `uz.greenwhite.gateway.*`, set in code. Verified behaviourally, not by reading: a record whose
+> `__TypeId__` names `org.springframework.context.support.ClassPathXmlApplicationContext` is
+> refused with *"is not in the trusted packages"* (`KafkaConsumerHardeningTest`, which also fails
+> if anyone puts the wildcard back).
+>
+> **What the dead block did cost:** two 20 MiB fetch settings (`fetch.max.bytes`,
+> `max.partition.fetch.bytes`) were written there for large payloads and silently did nothing.
+> They now live in `KafkaConfig.consumerFactory()` with the rest, and the inert yaml block was
+> deleted so nothing can hide there again. Note Spring also trusts `java.util` and `java.lang`
+> unconditionally — a test that "proves" the restriction with a `java.util.HashMap` type id proves
+> nothing.
+
+**The configuration as it looked (inert):**
 ```yaml
 spring:
   kafka:
@@ -1171,16 +1187,16 @@ not merely planned.
 | 1 | ~~Remove `.block()` — convert to reactive chain~~ | 🔴 Critical | ✅ **Done** — consumers subscribe and complete in a callback; no `.block(` remains in `kafka/consumer/` |
 | 2 | Redis HA (Sentinel or Cluster) | 🔴 Critical | ⬜ **Open** — still single-node. Mitigated, not solved: every Redis-unavailable path fails closed via the `Integer.MAX_VALUE` net (SAFETY-RULES 8), so a Redis outage DLQs rather than loops |
 | 3 | Kafka 3-node cluster with replication | 🔴 Critical | ⬜ **Open** — single RedPanda node. Its disk filling caused the 2026-05-18 34-hour outage; the v2.3.0 park removed the requeue churn that filled it, but replication is still absent |
-| 4 | Restrict `spring.json.trusted.packages` | 🔴 Critical | ⬜ **Open** — still `"*"` in `application.yml`. Reachable only by someone who can already write to the internal topics, but it is a 30-minute fix |
+| 4 | ~~Restrict `spring.json.trusted.packages`~~ | 🔴 Critical | ✅ **Done / was never live** — the `"*"` was in an inert yaml block; the effective value has always been `uz.greenwhite.gateway.*`, now pinned by `KafkaConsumerHardeningTest`. The dead block is deleted and its two lost 20 MiB fetch settings moved into `KafkaConfig` |
 | 5 | ~~Move Telegram bot token out of version control~~ | 🟡 Medium | ✅ **Done** — DB-managed (AES-encrypted, masked on read) with env fallback. The leaked token was revoked; see `docs/SECURITY-REMEDIATION.md` |
 | 6 | ~~Rename POM artifact from `messagebroker`~~ | 🟡 Medium | ✅ **Done** — `qosid-flow`, now a 3-module reactor |
 | 7 | ~~Add unit/integration tests~~ | 🟡 Medium | ✅ **Done** — 375 tests (settings-core 30 + app 289 + ops 56) |
 | 8 | ~~Add log file rotation~~ | 🟢 Low | ✅ **Done** — `RollingFileAppender` with `maxFileSize`/`maxHistory`/`totalSizeCap` |
 | 9 | ~~Remove legacy Biruni-specific names~~ | 🟢 Low | ✅ **Done** — `SourceClient` / `JsonBodyOAuth2Client`; the `"biruni"` provider-type string stays frozen on purpose (matched against an Oracle column) |
 
-**What is actually left: 2, 3, 4 — all infrastructure or config, none of them application logic.**
-Recommended order: **4** (30 minutes, highest security impact) → **3** (replication; the one that
-has already caused a real outage) → **2**.
+**What is actually left: 2 and 3 — both infrastructure, neither of them application logic.**
+Recommended order: **3** (Kafka replication — the one that has already caused a real outage) → **2**
+(Redis HA).
 
 ---
 

@@ -21,15 +21,13 @@ spring:
 
   kafka:
     bootstrap-servers: ${gateway.kafka.bootstrap-servers}
-    consumer:
-      group-id: ${gateway.kafka.group-id}
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "*"
-        fetch.max.bytes: "20971520"
-        max.partition.fetch.bytes: "20971520"
+    # NOTE: there is deliberately no `consumer:` block here. KafkaConfig declares its own
+    # ConsumerFactory bean, so Spring Boot's auto-configured one backs off and every
+    # `spring.kafka.consumer.*` key is INERT — anything written here silently does nothing.
+    # That is how `spring.json.trusted.packages: "*"` sat here looking like an open RCE hole
+    # (the real, restricted value is set in KafkaConfig) and how two 20 MiB fetch settings were
+    # never applied. Consumer settings go in KafkaConfig.consumerFactory(). The producer block
+    # below IS live — no ProducerFactory bean is declared, so Boot's auto-config builds it.
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
