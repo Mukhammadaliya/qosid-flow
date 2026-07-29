@@ -1,5 +1,5 @@
 {
-  "app.title": "Qosid Flow",
+  "app.title": "QosID Flow",
   "nav.settings": "Sozlamalar",
   "nav.errors": "Xatolar",
   "nav.statistics": "Statistika",
@@ -122,5 +122,9 @@
   "ops.pause": "Pauza",
   "ops.logEmpty": "Hozircha log satrlari yo'q",
   "ops.unavailable": "Ops bilan aloqa yo'q yoki sessiya tugagan",
-  "ops.reloginHint": "Qayta kirsangiz Ops boshqaruvi tiklanadi"
+  "ops.reloginHint": "Qayta kirsangiz Ops boshqaruvi tiklanadi",
+  "auth.console": "Boshqaruv konsoli",
+  "auth.footNote": "Har bir so’rov — kuzatiladi, qayta uriniladi, yo‘qolmaydi",
+  "flow.inbound": "KIRUVCHI",
+  "flow.outbound": "CHIQUVCHI"
 }
