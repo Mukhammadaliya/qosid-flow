@@ -1,0 +1,177 @@
+package uz.greenwhite.gateway.oracle;
+
+import io.micrometer.core.instrument.Timer;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+import uz.greenwhite.gateway.config.KafkaProperties;
+import uz.greenwhite.gateway.config.RetryProperties;
+import uz.greenwhite.gateway.kafka.producer.RequestProducer;
+import uz.greenwhite.gateway.metrics.GatewayMetrics;
+import uz.greenwhite.gateway.model.kafka.DlqMessage;
+import uz.greenwhite.gateway.model.kafka.RequestMessage;
+import uz.greenwhite.gateway.source.RequestSourceClient;
+import uz.greenwhite.gateway.validation.RequestValidator;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+@ConditionalOnProperty(name = "gateway.polling.enabled", havingValue = "true")
+public class RequestPuller {
+
+    private final RequestProducer requestProducer;
+    private final RetryProperties retryProperties;
+    private final GatewayMetrics metrics;
+    private final KafkaProperties kafkaProperties;
+    private final RequestValidator requestValidator;
+    private final RequestSourceClient requestSourceClient;
+
+    @Scheduled(fixedDelayString = "${gateway.polling.interval-ms:5000}")
+    public void pullRequests() {
+        try {
+            List<RequestMessage> requests;
+
+            do {
+                // ===== E1: Oracle Pull with Timer =====
+                Timer.Sample pullSample = Timer.start(metrics.getRegistry());
+
+                try {
+                    requests = requestSourceClient.pullRequests();
+                } catch (Exception e) {
+                    pullSample.stop(metrics.getOraclePullTimer());
+                    metrics.getOraclePullError().increment();
+                    log.error("E1: Oracle pull failed: {}", e.getMessage(), e);
+                    return;
+                }
+
+                pullSample.stop(metrics.getOraclePullTimer());
+
+                if (requests.isEmpty()) {
+                    metrics.getOraclePullEmpty().increment();
+                } else {
+                    metrics.getOraclePullSuccess().increment(requests.size());
+                    processRequests(requests);
+                }
+
+            } while (!requests.isEmpty());
+
+        } catch (Exception e) {
+            metrics.getOraclePullError().increment();
+            log.error("E1: Error while pulling requests from Oracle: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * E1: Process all requests - continue even if some fail
+     */
+    private void processRequests(List<RequestMessage> requests) {
+        List<String> successList = new ArrayList<>();
+        List<String> failedList = new ArrayList<>();
+
+        for (RequestMessage request : requests) {
+            String compositeId = request.getCompositeId();
+
+            // Tag the origin so downstream stages can route ORACLE vs API
+            request.setSource("ORACLE");
+
+            try {
+                // Validate before sending to Kafka
+                List<String> validationErrors = requestValidator.validate(request);
+                if (!validationErrors.isEmpty()) {
+                    String errorMsg = "Validation failed: " + String.join("; ", validationErrors);
+                    log.error("Request validation failed: {} - {}", compositeId, errorMsg);
+                    sendToDlq(request, errorMsg);
+                    failedList.add(compositeId);
+                    continue;
+                }
+
+                sendToKafkaWithRetry(request);
+                successList.add(compositeId);
+            } catch (Exception e) {
+                failedList.add(compositeId);
+                log.error("Failed to process request: {} - {}", compositeId, e.getMessage());
+                sendToDlq(request, e.getMessage());
+            }
+        }
+
+        logProcessingSummary(requests.size(), successList.size(), failedList);
+    }
+
+    /**
+     * E2: Send to Kafka with retry (max 3 attempts, 3s interval)
+     */
+    private void sendToKafkaWithRetry(RequestMessage request) throws Exception {
+        String compositeId = request.getCompositeId();
+        Exception lastException = null;
+
+        for (int attempt = 1; attempt <= retryProperties.getMaxAttempts(); attempt++) {
+            try {
+                log.debug("Sending request to Kafka: {} (attempt {}/{})",
+                        compositeId, attempt, retryProperties.getMaxAttempts());
+
+                // ===== E2: Kafka Produce with Timer =====
+                Timer.Sample kafkaSample = Timer.start(metrics.getRegistry());
+
+                requestProducer.sendOracleRequest(request).get(10, TimeUnit.SECONDS);
+
+                kafkaSample.stop(metrics.getKafkaProduceTimer());
+                metrics.getKafkaProduceSuccess().increment();
+
+                log.debug("Request sent to Kafka successfully: {}", compositeId);
+                return;
+
+            } catch (Exception e) {
+                lastException = e;
+
+                // ===== Retry metric =====
+                if (attempt < retryProperties.getMaxAttempts()) {
+                    metrics.getKafkaProduceRetry().increment();
+                    log.warn("E2: Kafka send failed for {}: attempt {}/{} - {}",
+                            compositeId, attempt, retryProperties.getMaxAttempts(), e.getMessage());
+
+                    try {
+                        Thread.sleep(retryProperties.getIntervalMs());
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("Interrupted during retry wait", ie);
+                    }
+                }
+            }
+        }
+
+        throw new RuntimeException("Failed to send to Kafka after " +
+                retryProperties.getMaxAttempts() + " attempts", lastException);
+    }
+
+    /**
+     * Send failed request to DLQ for analysis
+     */
+    private void sendToDlq(RequestMessage request, String errorMessage) {
+        try {
+            DlqMessage dlqMessage = DlqMessage.from(
+                    request, errorMessage, "KAFKA", 0,
+                    retryProperties.getMaxAttempts(),
+                    kafkaProperties.getTopics().getOracleRequest()
+            );
+            requestProducer.sendToOracleDlq(dlqMessage);
+            metrics.getDlqSent().increment();
+            log.info("Request sent to DLQ: {}", request.getCompositeId());
+        } catch (Exception e) {
+            log.error("Failed to send to DLQ: {} - {}", request.getCompositeId(), e.getMessage());
+        }
+    }
+
+    private void logProcessingSummary(int total, int success, List<String> failed) {
+        if (failed.isEmpty()) {
+            log.info("Processed all {} requests successfully", total);
+        } else {
+            log.warn("Processed {}/{} requests. Failed: {}", success, total, failed);
+        }
+    }
+}

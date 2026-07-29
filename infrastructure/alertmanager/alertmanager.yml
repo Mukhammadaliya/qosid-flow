@@ -1,0 +1,22 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 10m
+  receiver: 'telegram-alerts'
+
+  routes:
+    - match:
+        severity: critical
+      group_wait: 5s
+      repeat_interval: 10m
+      receiver: 'telegram-alerts'
+
+receivers:
+  - name: 'telegram-alerts'
+    # Telegram disabled - using dummy webhook to silence
+    webhook_configs:
+      - url: 'http://127.0.0.1:5555/noop'

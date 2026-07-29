@@ -1,0 +1,234 @@
+version: '3.8'
+
+# ============================================================
+# PORT BINDING POLICY — hamma published port 127.0.0.1'ga bog'langan
+# ============================================================
+# "6379:6379" ko'rinishi Docker'da 0.0.0.0'ga bog'lanadi VA host firewall'ini (ufw/iptables
+# INPUT) chetlab o'tadi, chunki Docker DOCKER-USER/nat zanjiriga qoida yozadi. Ya'ni
+# autentifikatsiyasiz Redis, Redpanda, Grafana (admin/admin123), redis-commander va
+# redpanda-console prod serverida butun tarmoqqa ochiq bo'lardi.
+# "127.0.0.1:<port>:<port>" faqat host'ning o'zidan (yoki SSH tunnel orqali) ochadi.
+# Kontenerlar bir-biriga compose tarmog'i ichida servis nomi bilan boradi (redpanda:9092,
+# redis:6379) — bu binding ularga TEGMAYDI. Gateway JVM ham host'da ishlaydi
+# (KAFKA_BOOTSTRAP_SERVERS=localhost:19092, REDIS_HOST=localhost), demak loopback yetarli.
+# Tashqaridan kirish kerak bo'lsa: SSH tunnel yoki nginx reverse-proxy + auth.
+
+services:
+  # ==========================================
+  # REDPANDA (Kafka)
+  # ==========================================
+  redpanda:
+    image: redpandadata/redpanda:v24.1.1
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      - --smp 1
+      - --memory 1G
+      - --mode dev-container
+      - --default-log-level=info
+    ports:
+      - "127.0.0.1:18081:18081"
+      - "127.0.0.1:18082:18082"
+      - "127.0.0.1:19092:19092"
+      - "127.0.0.1:19644:9644"
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # KAFKA CONSOLE (UI)
+  # ==========================================
+  redpanda-console:
+    image: redpandadata/console:v2.4.5
+    container_name: redpanda-console
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8082:8080"
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["redpanda:9092"]
+          schemaRegistry:
+            enabled: true
+            urls: ["http://redpanda:8081"]
+        redpanda:
+          adminApi:
+            enabled: true
+            urls: ["http://redpanda:9644"]
+    entrypoint: /bin/sh
+    command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml && /app/console'
+
+  # ==========================================
+  # KAFKA TOPICS INIT
+  # ==========================================
+#  kafka-init:
+#    image: redpandadata/redpanda:v24.1.1
+#    container_name: kafka-init
+#    depends_on:
+#      redpanda:
+#        condition: service_healthy
+#    entrypoint: ["/bin/bash", "-c"]
+#    command: |
+#      "
+#      echo 'Creating Kafka topics...'
+#
+#      rpk topic create bmb.request.new --brokers redpanda:9092 --partitions 10 --replicas 1
+#      rpk topic create bmb.request.response --brokers redpanda:9092 --partitions 10 --replicas 1
+#      rpk topic create bmb.request.callback --brokers redpanda:9092 --partitions 10 --replicas 1
+#      rpk topic create bmb.request.dlq --brokers redpanda:9092 --partitions 3 --replicas 1
+#
+#      echo 'Topics created:'
+#      rpk topic list --brokers redpanda:9092
+#      "
+
+  # ==========================================
+  # REDIS
+  # ==========================================
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # REDIS COMMANDER (UI)
+  # ==========================================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8085:8081"
+    environment:
+      REDIS_HOSTS: local:redis:6379
+
+  # ============================================================
+  # REDIS EXPORTER (Prometheus Metrics)
+  # ============================================================
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.58.0
+    container_name: redis-exporter
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:9121:9121"
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    restart: unless-stopped
+
+  # ============================================================
+  # PROMETHEUS (Metrics)
+  # ============================================================
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infrastructure/prometheus/gateway-alerts.yml:/etc/prometheus/gateway-alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+
+  # ============================================================
+  # GRAFANA (Dashboards)
+  # ============================================================
+  grafana:
+    image: grafana/grafana:10.4.1
+    container_name: grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+  # ============================================================
+  # ALERTMANAGER (Notifications)
+  # ============================================================
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    container_name: alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./infrastructure/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    restart: unless-stopped
+
+  # ============================================================
+  # LOKI (Log Aggregation)
+  # ============================================================
+  loki:
+    image: grafana/loki:3.1.0
+    container_name: loki
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./docker/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+
+  # ============================================================
+  # PROMTAIL (Log Shipper)
+  # ============================================================
+  promtail:
+    image: grafana/promtail:3.1.0
+    container_name: promtail
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./docker/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      # Compose papkasiga nisbiy ./logs — lokalda repo/logs, prod'da /opt/services/qosid-flow/logs.
+      # (Avvalgi /host/qosid-logs mavhum yo'li lokalda mavjud emas edi — DLQ/JAR sahifalari bo'sh qolardi.)
+      - ./logs:/var/log/qosid:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+volumes:
+  redpanda_data:
+    name: redpanda_data
+  redis_data:
+    name: redis_data
+  prometheus_data:
+    name: prometheus_data
+  grafana_data:
+    name: grafana_data
+  loki_data:

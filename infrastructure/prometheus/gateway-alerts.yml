@@ -1,0 +1,533 @@
+groups:
+
+  # ============================================================
+  # 1. SERVICE HEALTH — All services UP/DOWN status
+  # ============================================================
+  - name: service_health_alerts
+    rules:
+
+      - alert: GatewayServiceDown
+        expr: up{job="gateway-service"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          stage: service
+        annotations:
+          summary: "🚨 Gateway Service NOT WORKING"
+          description: "Gateway Service (host.docker.internal:8091) has not responded for 30s. Polling, consumer, HTTP — everything has stopped."
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          stage: service
+        annotations:
+          summary: "🚨 Redis NOT WORKING"
+          description: "Redis server is not responding. State management, OAuth2 cache, lock — everything is down."
+
+      - alert: RedPandaDown
+        expr: up{job="redpanda"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          stage: service
+        annotations:
+          summary: "🚨 RedPanda/Kafka NOT WORKING"
+          description: "Kafka broker is not responding. Message produce/consume has stopped."
+
+  # ============================================================
+  # 2. JVM & SYSTEM RESOURCES — CPU, RAM, Memory, Threads
+  # ============================================================
+  - name: system_resource_alerts
+    rules:
+
+      - alert: HighCpuUsage
+        expr: process_cpu_usage{job="gateway-service"} > 0.8
+        for: 3m
+        labels:
+          severity: warning
+          stage: system
+        annotations:
+          summary: "⚠️ CPU usage is high"
+          description: "Gateway Service CPU: {{ $value | printf \"%.0f\" }}% (over 80% for 3 minutes)"
+
+      - alert: CriticalCpuUsage
+        expr: process_cpu_usage{job="gateway-service"} > 0.95
+        for: 1m
+        labels:
+          severity: critical
+          stage: system
+        annotations:
+          summary: "🚨 CPU CRITICALLY high"
+          description: "Gateway Service CPU: {{ $value | printf \"%.0f\" }}% — Service may hang."
+
+      - alert: HighHeapMemory
+        expr: jvm_memory_used_bytes{job="gateway-service", area="heap"} / jvm_memory_max_bytes{job="gateway-service", area="heap"} > 0.8
+        for: 3m
+        labels:
+          severity: warning
+          stage: system
+        annotations:
+          summary: "⚠️ JVM Heap memory is high"
+          description: "Heap usage: {{ $value | printf \"%.0f\" }}% (of max). Risk of OutOfMemory."
+
+      - alert: CriticalHeapMemory
+        expr: jvm_memory_used_bytes{job="gateway-service", area="heap"} / jvm_memory_max_bytes{job="gateway-service", area="heap"} > 0.95
+        for: 1m
+        labels:
+          severity: critical
+          stage: system
+        annotations:
+          summary: "🚨 JVM Heap CRITICAL — OutOfMemory imminent"
+          description: "Heap: {{ $value | printf \"%.0f\" }}% full. Application may crash."
+
+      - alert: HighGcPause
+        expr: rate(jvm_gc_pause_seconds_sum{job="gateway-service"}[5m]) > 0.5
+        for: 3m
+        labels:
+          severity: warning
+          stage: system
+        annotations:
+          summary: "⚠️ GC pause time is high"
+          description: "Garbage Collection is taking too much time: {{ $value | printf \"%.2f\" }}s/sec. Memory pressure exists."
+
+      - alert: HighThreadCount
+        expr: jvm_threads_live_threads{job="gateway-service"} > 200
+        for: 3m
+        labels:
+          severity: warning
+          stage: system
+        annotations:
+          summary: "⚠️ Thread count is high"
+          description: "Live threads: {{ $value | printf \"%.0f\" }}. May be a thread leak."
+
+  # ============================================================
+  # 3. E1: ORACLE PULL — Polling and auth errors
+  # ============================================================
+  - name: oracle_pull_alerts
+    rules:
+
+      - alert: OraclePullDown
+        expr: increase(gateway_oracle_pull_total{result="error"}[5m]) > 0 and increase(gateway_oracle_pull_total{result="success"}[5m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+          stage: oracle_pull
+        annotations:
+          summary: "🚨 Oracle Pull completely not working"
+          description: "No requests have been pulled from Oracle for 5 minutes. May be auth error, connection refused or Oracle is down."
+
+      - alert: OraclePullErrors
+        expr: rate(gateway_oracle_pull_total{result="error"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          stage: oracle_pull
+        annotations:
+          summary: "⚠️ Oracle Pull errors"
+          description: "Oracle pull error rate: {{ $value | printf \"%.2f\" }}/sec. May be auth, connection or network error."
+
+      - alert: OraclePullSlow
+        expr: histogram_quantile(0.95, rate(gateway_oracle_pull_duration_seconds_bucket[5m])) > 5
+        for: 3m
+        labels:
+          severity: warning
+          stage: oracle_pull
+        annotations:
+          summary: "⚠️ Oracle Pull is slow"
+          description: "Oracle pull p95 latency: {{ $value | printf \"%.2f\" }}s. Oracle or network is slow."
+
+  # ============================================================
+  # 4. E2: KAFKA PRODUCE — Sending requests to topic
+  # ============================================================
+  - name: kafka_produce_alerts
+    rules:
+
+      - alert: KafkaProduceErrors
+        expr: rate(gateway_kafka_produce_total{result="error"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          stage: kafka_produce
+        annotations:
+          summary: "⚠️ Kafka produce errors"
+          description: "Error rate when sending requests to Kafka topic: {{ $value | printf \"%.2f\" }}/sec. Kafka connection or serialization error."
+
+      - alert: KafkaProduceHighRetry
+        expr: rate(gateway_kafka_produce_retry_total[5m]) > 0.5
+        for: 3m
+        labels:
+          severity: warning
+          stage: kafka_produce
+        annotations:
+          summary: "⚠️ Kafka produce retry high"
+          description: "Kafka produce retry rate: {{ $value | printf \"%.2f\" }}/sec. Kafka broker is unstable."
+
+      - alert: KafkaProduceSlow
+        expr: histogram_quantile(0.95, rate(gateway_kafka_produce_duration_seconds_bucket[5m])) > 3
+        for: 3m
+        labels:
+          severity: warning
+          stage: kafka_produce
+        annotations:
+          summary: "⚠️ Kafka produce is slow"
+          description: "Kafka produce p95: {{ $value | printf \"%.2f\" }}s. Broker load may be high."
+
+  # ============================================================
+  # 5. E3: CONSUMER — Request consume and Redis state
+  # ============================================================
+  - name: consumer_alerts
+    rules:
+
+      - alert: ConsumerNotReceiving
+        expr: rate(gateway_consumer_received_total[5m]) == 0 and gateway_kafka_consumer_lag > 0
+        for: 5m
+        labels:
+          severity: critical
+          stage: consumer_process
+        annotations:
+          summary: "🚨 Consumer not receiving messages"
+          description: "Lag exists ({{ $value | printf \"%.0f\" }}) but consumer is not consuming anything. Consumer has hung or crashed."
+
+      - alert: ConsumerHighDuplicateSkip
+        expr: rate(gateway_consumer_skipped_total{reason="duplicate"}[5m]) > 1
+        for: 3m
+        labels:
+          severity: warning
+          stage: consumer_process
+        annotations:
+          summary: "⚠️ Duplicate skip is high"
+          description: "Duplicate skip rate: {{ $value | printf \"%.2f\" }}/sec. Redis state or Kafka rebalance issue."
+
+      - alert: ConsumerHighLockFail
+        expr: rate(gateway_consumer_skipped_total{reason="lock_failed"}[5m]) > 0.5
+        for: 3m
+        labels:
+          severity: warning
+          stage: consumer_process
+        annotations:
+          summary: "⚠️ Redis lock errors are high"
+          description: "Lock fail rate: {{ $value | printf \"%.2f\" }}/sec. Redis connection or lock contention issue."
+
+      - alert: KafkaConsumerHighLag
+        expr: gateway_kafka_consumer_lag > 500
+        for: 5m
+        labels:
+          severity: warning
+          stage: consumer_process
+        annotations:
+          summary: "⚠️ Kafka consumer lag is high"
+          description: "{{ $labels.listener }} lag: {{ $value | printf \"%.0f\" }} messages. Consumer is falling behind."
+
+      - alert: KafkaConsumerCriticalLag
+        expr: gateway_kafka_consumer_lag > 2000
+        for: 3m
+        labels:
+          severity: critical
+          stage: consumer_process
+        annotations:
+          summary: "🚨 Kafka consumer lag CRITICAL"
+          description: "{{ $labels.listener }} lag: {{ $value | printf \"%.0f\" }}. Need to scale up or resolve issue."
+
+  # ============================================================
+  # 6. E4: HTTP REQUEST — All HTTP errors
+  # ============================================================
+  - name: http_request_alerts
+    rules:
+
+      - alert: HttpHighErrorRate
+        expr: >
+          (
+            rate(gateway_http_request_total{result=~"error_4xx|error_5xx|timeout"}[5m])
+          ) / (
+            rate(gateway_http_request_total{result="success"}[5m]) + 0.001
+          ) > 0.3
+        for: 3m
+        labels:
+          severity: warning
+          stage: http_request
+        annotations:
+          summary: "⚠️ HTTP error rate exceeded 30%"
+          description: "Over 30% of requests to external API are returning errors."
+
+      - alert: Http4xxClientErrors
+        expr: rate(gateway_http_request_total{result="error_4xx"}[5m]) > 0.2
+        for: 3m
+        labels:
+          severity: warning
+          stage: http_request
+        annotations:
+          summary: "⚠️ HTTP 4xx client errors"
+          description: "4xx error rate: {{ $value | printf \"%.2f\" }}/sec. Auth (401/403), not found (404), or bad request (400)."
+
+      - alert: Http5xxServerErrors
+        expr: rate(gateway_http_request_total{result="error_5xx"}[5m]) > 0.2
+        for: 2m
+        labels:
+          severity: critical
+          stage: http_request
+        annotations:
+          summary: "🚨 HTTP 5xx server errors"
+          description: "5xx error rate: {{ $value | printf \"%.2f\" }}/sec. External API server is returning errors (500/502/503)."
+
+      - alert: HttpTimeoutSpike
+        expr: rate(gateway_http_request_total{result="timeout"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          stage: http_request
+        annotations:
+          summary: "⚠️ HTTP timeout spike"
+          description: "Timeout rate: {{ $value | printf \"%.2f\" }}/sec. External API not responding or network is slow."
+
+      - alert: HttpSlowResponse
+        expr: histogram_quantile(0.95, rate(gateway_http_request_duration_seconds_bucket[5m])) > 10
+        for: 3m
+        labels:
+          severity: warning
+          stage: http_request
+        annotations:
+          summary: "⚠️ HTTP response is slow"
+          description: "HTTP p95 latency: {{ $value | printf \"%.2f\" }}s. External API is responding slowly."
+
+      - alert: HttpRetryHigh
+        expr: rate(gateway_http_request_retry_total[5m]) > 0.5
+        for: 3m
+        labels:
+          severity: warning
+          stage: http_request
+        annotations:
+          summary: "⚠️ HTTP retry is high"
+          description: "HTTP retry rate: {{ $value | printf \"%.2f\" }}/sec. External API is unstable."
+
+      - alert: CircuitBreakerOpen
+        expr: increase(gateway_http_circuitbreaker_rejected_total[5m]) > 0
+        for: 30s
+        labels:
+          severity: critical
+          stage: http_request
+        annotations:
+          summary: "🚨 Circuit Breaker OPENED"
+          description: "Requests to external API are being rejected by Circuit Breaker. API may not be working."
+
+      # v2.3.0 backpressure. Parked messages are the EARLY signal an outage is being absorbed:
+      # they hold uncommitted offsets and are given up (DLQ) once max-message-age-ms passes.
+      # A short plateau during a circuit window is normal — 5 minutes of it means the upstream
+      # is not coming back and the deadline is about to expire.
+      - alert: CbParkedMessagesPlateau
+        expr: gateway_http_circuitbreaker_requeue_pending > 0
+        for: 5m
+        labels:
+          severity: warning
+          stage: http_request
+        annotations:
+          summary: "⏸ Messages parked on an open circuit for 5m+"
+          description: "{{ $value }} message(s) parked on flow {{ $labels.flow }}. They are waiting, not lost — but they DLQ once retry.max-message-age-ms passes. Check the upstream now."
+
+      # The pending bound is full: messages are going straight to DLQ without ever being tried.
+      # This is the one CB-backpressure state that loses service immediately.
+      - alert: CbRequeueBufferFull
+        expr: increase(gateway_http_circuitbreaker_requeue_rejected_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          stage: http_request
+        annotations:
+          summary: "🚨 CB requeue buffer full — messages going straight to DLQ"
+          description: "The park buffer hit cb-max-pending / cb-max-pending-bytes. Requests are being DLQ'd untried. Raise the bound or fix the upstream."
+
+  # ============================================================
+  # 7. E5: ORACLE SAVE — Response saving
+  # ============================================================
+  - name: oracle_save_alerts
+    rules:
+
+      - alert: OracleSaveErrors
+        expr: rate(gateway_oracle_save_total{result="error"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          stage: oracle_save
+        annotations:
+          summary: "🚨 Oracle save errors"
+          description: "Error rate when saving responses to Oracle: {{ $value | printf \"%.2f\" }}/sec. Oracle connection, auth or data error."
+
+      - alert: OracleSaveRetryHigh
+        expr: rate(gateway_oracle_save_retry_total[5m]) > 0.3
+        for: 3m
+        labels:
+          severity: warning
+          stage: oracle_save
+        annotations:
+          summary: "⚠️ Oracle save retry high"
+          description: "Oracle save retry rate: {{ $value | printf \"%.2f\" }}/sec. Oracle connection is unstable."
+
+      - alert: OracleSaveSlow
+        expr: histogram_quantile(0.95, rate(gateway_oracle_save_duration_seconds_bucket[5m])) > 5
+        for: 3m
+        labels:
+          severity: warning
+          stage: oracle_save
+        annotations:
+          summary: "⚠️ Oracle save is slow"
+          description: "Oracle save p95: {{ $value | printf \"%.2f\" }}s. Oracle server or network is slow."
+
+  # ============================================================
+  # 8. DLQ — Dead Letter Queue
+  # ============================================================
+  - name: dlq_alerts
+    rules:
+
+      - alert: DlqMessagesDetected
+        expr: increase(gateway_dlq_sent_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          stage: dlq
+        annotations:
+          summary: "⚠️ Messages sent to DLQ"
+          description: "{{ $value | printf \"%.0f\" }} messages sent to DLQ in the last 5 minutes. All retries failed."
+
+      - alert: DlqSpike
+        expr: increase(gateway_dlq_sent_total[5m]) > 10
+        for: 1m
+        labels:
+          severity: critical
+          stage: dlq
+        annotations:
+          summary: "🚨 DLQ SPIKE — massive failure"
+          description: "{{ $value | printf \"%.0f\" }} messages sent to DLQ in 5 minutes. Serious system issue."
+
+  # ============================================================
+  # 9. CONCURRENCY & THREAD POOL
+  # ============================================================
+  - name: concurrency_alerts
+    rules:
+
+      - alert: HttpPoolExhausted
+        expr: gateway_http_pool_queue > 20
+        for: 2m
+        labels:
+          severity: warning
+          stage: concurrency
+        annotations:
+          summary: "⚠️ HTTP thread pool queue filling up"
+          description: "Queue size: {{ $value | printf \"%.0f\" }}. Thread pool insufficient, requests are waiting."
+
+      - alert: HttpPoolFullyActive
+        expr: gateway_http_pool_active / gateway_http_pool_size > 0.9
+        for: 3m
+        labels:
+          severity: warning
+          stage: concurrency
+        annotations:
+          summary: "⚠️ HTTP thread pool 90%+ busy"
+          description: "Active: {{ $value | printf \"%.0f\" }}% busy. Thread pool near maximum."
+
+      - alert: HighRetryRate
+        expr: >
+          (
+            rate(gateway_kafka_produce_retry_total[5m])
+            + rate(gateway_http_request_retry_total[5m])
+            + rate(gateway_oracle_save_retry_total[5m])
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          stage: all
+        annotations:
+          summary: "⚠️ Overall retry rate is high"
+          description: "Total retry: {{ $value | printf \"%.2f\" }}/sec. System instability exists."
+
+  # ============================================================
+  # 10. REDIS HEALTH — Memory, connections, performance
+  # ============================================================
+  - name: redis_health_alerts
+    rules:
+
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+        for: 3m
+        labels:
+          severity: warning
+          stage: redis
+        annotations:
+          summary: "⚠️ Redis memory exceeded 80%"
+          description: "Redis memory: {{ $value | printf \"%.0f\" }}% used. Eviction may start."
+
+      - alert: RedisCriticalMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.95
+        for: 1m
+        labels:
+          severity: critical
+          stage: redis
+        annotations:
+          summary: "🚨 Redis memory CRITICAL"
+          description: "Redis memory 95%+ full. Risk of key eviction and data loss."
+
+      - alert: RedisHighEviction
+        expr: rate(redis_evicted_keys_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          stage: redis
+        annotations:
+          summary: "⚠️ Redis key eviction is high"
+          description: "Eviction rate: {{ $value | printf \"%.1f\" }} keys/sec. Memory insufficient, state may be lost."
+
+      - alert: RedisConnectionRejected
+        expr: rate(redis_rejected_connections_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          stage: redis
+        annotations:
+          summary: "⚠️ Redis rejecting connections"
+          description: "Redis is rejecting new connections. Max connection limit reached."
+
+      - alert: RedisLowHitRate
+        expr: redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total + 0.001) < 0.5
+        for: 5m
+        labels:
+          severity: warning
+          stage: redis
+        annotations:
+          summary: "⚠️ Redis cache hit rate is low"
+          description: "Hit rate: {{ $value | printf \"%.0f\" }}%. OAuth2 token or state cache working inefficiently."
+
+  # ============================================================
+  # 11. REDPANDA/KAFKA HEALTH
+  # ============================================================
+  - name: redpanda_health_alerts
+    rules:
+
+      - alert: KafkaRequestErrors
+        expr: sum(rate(redpanda_kafka_request_errors_total[5m])) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          stage: kafka
+        annotations:
+          summary: "⚠️ Kafka request errors"
+          description: "Kafka error rate: {{ $value | printf \"%.2f\" }}/sec. Issue in produce or consume."
+
+      - alert: KafkaProduceLatencyHigh
+        expr: histogram_quantile(0.95, rate(redpanda_kafka_request_produce_latency_seconds_bucket[5m])) > 1
+        for: 3m
+        labels:
+          severity: warning
+          stage: kafka
+        annotations:
+          summary: "⚠️ Kafka produce latency is high"
+          description: "Produce p95: {{ $value | printf \"%.2f\" }}s. Broker load is high."
+
+      - alert: KafkaStorageGrowing
+        expr: predict_linear(sum by (redpanda_topic) (redpanda_kafka_partition_log_size_bytes{redpanda_topic=~"bmb.request.*"})[1h:5m], 86400) > 5368709120
+        for: 10m
+        labels:
+          severity: warning
+          stage: kafka
+        annotations:
+          summary: "⚠️ Kafka storage growing rapidly"
+          description: "At current rate will exceed 5GB in 24 hours. Check retention policy."
