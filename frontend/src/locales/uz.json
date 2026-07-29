@@ -126,5 +126,10 @@
   "auth.console": "Boshqaruv konsoli",
   "auth.footNote": "Har bir so’rov — kuzatiladi, qayta uriniladi, yo‘qolmaydi",
   "flow.inbound": "KIRUVCHI",
-  "flow.outbound": "CHIQUVCHI"
+  "flow.outbound": "CHIQUVCHI",
+  "flow.circuit": "Himoya",
+  "flow.inflight": "Uchmoqda",
+  "flow.parked": "Kutmoqda",
+  "flow.delivered": "Yetkazildi",
+  "flow.lost": "Yo'qoldi"
 }

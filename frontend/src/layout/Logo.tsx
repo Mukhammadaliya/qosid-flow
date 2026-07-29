@@ -1,7 +1,14 @@
-// QosID Flow mark: a Q drawn as a delivery ring. The ring is the request in flight
-// (signal blue); the gap and the tail are where it leaves the system, delivered (flow
-// green). It reads as a letter at 20px and as a flow diagram at 200px — the name and the
-// mechanic are the same idea.
+// QosID Flow mark: a gateway wall (signal blue) with a delivered request breaking out
+// through its lower-right edge (flow green). That break sits exactly where a Q's tail
+// sits, so the mark carries both readings at once — the letter and the mechanic.
+//
+// An earlier version drew the wall as a circle with a diagonal stem; at a glance it read
+// as the Mars/Venus glyph. A rounded SQUARE with a HORIZONTAL tail kills that reading,
+// which is why the geometry below is not negotiable at the shape level.
+//
+// Geometry is defined on a 32-unit grid and scaled, so the SVG here and the favicon in
+// public/favicon.svg stay identical. Verified legible down to 24px; at 16px the wall
+// still reads and the tail becomes a dot.
 
 type Props = {
   /** Mark height in px. The wordmark scales with it. */
@@ -22,17 +29,10 @@ export function LogoMark({ size = 28 }: { size?: number }) {
       aria-label="QosID Flow"
       style={{ display: 'block', flexShrink: 0 }}
     >
-      {/* delivery ring — open at the lower right, where the request exits */}
-      <path
-        d="M15.74 23.85 A 10 10 0 1 1 23.85 15.74"
-        fill="none"
-        stroke="#0095D9"
-        strokeWidth="4.6"
-        strokeLinecap="round"
-      />
-      {/* the tail: the Q descender, and the delivered request leaving the ring */}
-      <path d="M17.2 17.2 L24 24" stroke="#2EC27E" strokeWidth="4.6" strokeLinecap="round" />
-      <path d="M29.6 29.6 L22.4 28.2 L28.2 22.4 Z" fill="#2EC27E" />
+      {/* the gateway wall */}
+      <rect x="3" y="3" width="24" height="26" rx="7.5" fill="none" stroke="#0095D9" strokeWidth="4.2" />
+      {/* the delivered request, breaking through — and the Q's tail */}
+      <rect x="19" y="18.6" width="12" height="5.4" rx="2.7" fill="#2EC27E" />
     </svg>
   );
 }
