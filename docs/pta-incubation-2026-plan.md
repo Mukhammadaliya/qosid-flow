@@ -47,35 +47,140 @@ QosID Flow: texnologiya prodda pishgan, biznes noldan — bu inkubatsiyaning ta'
 
 ---
 
-## 1b. Ikki yo'nalishli shlyuz — pozitsiyaning asosi
+## 1b. Ikki yo'nalishli shlyuz — to'liq tavsif
 
-QosID Flow main app'ning oldida **ikkala yo'nalishda** turadi. Bu pitch'dagi eng keng qamrovli
-gap va u kod bilan tasdiqlangan — ikkala oqim ham prodda ishlayapti.
+Bu pitch'ning eng keng qamrovli gapi va u kod bilan tasdiqlangan: ikkala oqim ham prodda
+ishlayapti, ikkalasi ham bitta quvurdan o'tadi va bir xil kafolat oladi.
 
-**Chiquvchi (ORACLE oqimi, E1–E5):** main app → QosID Flow → tashqi API'lar
-Manbadan so'rovlar tortiladi, Kafka orqali yuk taqsimlanadi, tashqi API'ga retry + circuit
-breaker + OAuth2 bilan yetkaziladi, javob manbaga qaytariladi.
+```
+KIRUVCHI    tashqi mijozlar ──▶ QosID Flow ──▶ main app
+                                navbat · retry · back-pressure · auth
 
-**Kiruvchi (REST oqimi):** tashqi mijozlar → `/qosid/api/v1/queue/**` → main app
-Prodda `API_BASE_URL` aynan main app'ga qaratilgan.
+CHIQUVCHI   main app ─────────▶ QosID Flow ──▶ tashqi API'lar
+                                retry · circuit breaker · OAuth2
+```
 
-Kiruvchi yo'nalish nima beradi:
+---
 
-- **Main app burst'dan himoyalanadi** — so'rov Kafka'da navbatga tushadi, main app o'z tezligida yeydi
-- **Main app o'chiq bo'lsa ham so'rov yo'qolmaydi** — navbatda kutadi, tiklanganda yetkaziladi
-- **Circuit breaker va per-host chegara** main app'ni bosib qolishdan saqlaydi
-- **Mijoz timeout o'rniga `202` + kuzatuv havolasini oladi** — uzun so'rovlar ulanishni band qilmaydi
-- **Auth darvozasi** — ulanadigan `AuthorizationProvider`
-- **Fayl yuklash** — S3 va zaxira yo'li bilan
-- Kiruvchi trafik ham xuddi shu observability ostida: statistika, xatolar, DLQ, alert
+### KIRUVCHI yo'nalish — main app'ni himoyalash
 
-**Bozor uchun ahamiyati:** bu bizni bitta emas, **ikkita** toifa kesishmasiga qo'yadi —
-integratsiya middleware (Confluent tomoni) **va** API-shlyuz (Kong tomoni). TAM hisobida
-ikkala segment ham hisobga olinadi.
+Tashqi mijozlar `/qosid/api/v1/queue/**` ga yozadi; prodda `API_BASE_URL` main app'ga
+qaratilgan. So'rov quyidagi qadamlardan o'tadi, va **har bir qadam aniq bir nosozlikni yopadi**:
+
+**1. Auth darvozasi** (`AuthorizationProvider`)
+Ulanadigan interfeys — standart holatda ochiq, lekin har qanday autentifikatsiya sxemasi
+qo'shiladi. Main app o'z auth logikasini o'zgartirmasdan oldida darvoza oladi.
+
+**2. Tana hajmi chegarasi** — `Content-Length` bo'yicha **darhol**
+Prodda sinovdan o'tgan: 21 MB tana **413** oldi va faqat 1.77 MB yuklangandan keyin rad etildi,
+ya'ni chegara buferlashdan **oldin** ishlaydi. Bu main app'ga ham, bizga ham xotira hujumidan
+himoya.
+
+**3. Callback URL validatsiyasi**
+`X-Callback-Url` sarlavhasi tekshiriladi — mijoz bizni ichki manzillarga so'rov yuborishga
+majburlay olmaydi (SSRF himoyasi).
+
+**4. Fayl yuklash** — `BiruniUpload: param|alone`
+Multipart tahlil qilinadi, fayllar S3'ga yuklanadi (3 marta urinish), SHA-256 bo'yicha
+dublikatlar yo'qotiladi. **S3 ishlamasa** — avtomatik zaxira yo'l: fayl main app'ga multipart
+sifatida uzatiladi va DB'ga saqlanadi. Ya'ni fayl oqimi S3 nosozligida ham to'xtamaydi.
+
+**5. Kafka'ga qo'yish — va faqat shundan keyin javob**
+Bu eng muhim nozik nuqta: `202 ACCEPTED` javobi **so'rov Kafka'ga haqiqatan yozilgandan keyin**
+qaytariladi (`sendApiRequest(...).get(10s)`). Ya'ni «qabul qildik» degani «urinib ko'ramiz» emas,
+**«bardoshli navbatga yozildi»** degani. Agar Kafka javob bermasa, mijoz xato oladi va so'rovni
+o'zi qayta yuborishi mumkin — jim yo'qolish yo'q.
+
+**6. Mijozga `202` + kuzatuv havolasi**
+Mijoz ulanishni ushlab turmaydi. Natijani `GET /requests/{id}/status` va `/result` orqali oladi,
+yoki `X-Callback-Url` bergan bo'lsa — tayyor bo'lganda o'zi chaqiriladi.
+
+**7. Yetkazish** — main app'ga, retry + circuit breaker + per-host chegara bilan
+
+**Natijada kiruvchi tomonda yopiladigan nosozliklar:**
+
+| Nosozlik | Ilgari nima bo'lardi | QosID Flow bilan |
+|---|---|---|
+| Mijozlardan burst keldi | main app bo'g'iladi, timeout'lar | Kafka'da navbat, main app o'z tezligida yeydi |
+| Main app o'chiq / restartda | so'rovlar yo'qoladi, 502 | navbatda kutadi, ko'tarilganda yetkaziladi |
+| Main app sekinlashdi | ulanishlar band bo'ladi, kaskad | per-host chegara + CB, so'rov park qilinadi |
+| Uzoq davom etadigan so'rov | mijoz timeout oladi | darhol `202`, natija keyin |
+| Katta fayl / xotira hujumi | JVM xotirasi yeyiladi | `Content-Length` darvozasi, 413 |
+| Xato qayerda ekani noma'lum | log qidiriladi | statistika, xatolar moduli, DLQ, alert |
+
+---
+
+### CHIQUVCHI yo'nalish — tashqi API'larga yetkazish
+
+Main app tashqi API'larga o'zi bormaydi — so'rovni manba tizimida qoldiradi, QosID Flow uni
+tortib oladi va yetkazadi.
+
+**1. E1 — tortish**, har 5 soniyada, to'plam bo'yicha (`@Scheduled`)
+Main app HTTP chaqiruvini kutib turmaydi: u yozadi va o'z ishini davom ettiradi.
+
+**2. Tenant chegarasini tarjima qilish**
+Ichki model va tashqi tizim maydon nomlari `TenantMappingService` orqali aynan ikki chegarada
+almashtiriladi — kod ichida bitta model, simda esa tashqi tizim kutgan nomlar.
+
+**3. Har so'rov uchun OAuth2**
+Token provayderi manba tizimidan **so'rov bo'yicha** olinadi, Redis'da keshlanadi, muddati
+tugashidan oldin fonda yangilanadi. `401` kelsa — kesh tozalanadi va bir marta qayta urinadi
+(urinish hisobini oshirmasdan).
+
+**4. Yetkazish** — per-host parallellik chegarasi → circuit breaker → HTTP
+
+**5. E5 — javobni manbaga qaytarish**, chegaralangan qayta urinish bilan; muvaffaqiyatsiz
+bo'lsa DLQ va alert. Javob tanasi 7 kun RocksDB'da arxivlanadi.
+
+**Natijada chiquvchi tomonda yopiladigan nosozliklar:**
+
+| Nosozlik | Ilgari nima bo'lardi | QosID Flow bilan |
+|---|---|---|
+| Tashqi API yiqildi | skript bloklanadi, kaskad | CB ochiladi, xabar park qilinadi, tiklanganda ketadi |
+| Tashqi API sekin | main app thread'lari band | asinxron, main app kutmaydi |
+| Token muddati tugadi / «osilib qoldi» | 401 to'lqini, alert bo'roni | kesh tozalanadi, bir marta qayta urinish |
+| Bizning burst API'ni bosdi | API rate-limit qiladi, CB ochiladi | per-host chegara — CB umuman ochilmaydi |
+| Javob yo'qoldi | qayta so'rash imkoni yo'q | 7 kunlik arxiv, id bo'yicha olinadi |
+| Yetkazib bo'lmadi | jim yo'qoladi | DLQ + birlashtirilgan alert |
+
+---
+
+### Ikkala yo'nalish umumiy oladigan kafolatlar
+
+Bular quvurning o'zida, ya'ni yo'nalishga bog'liq emas:
+
+- **Qo'lda ack, tartib bilan** — offset ish tugagandan keyin, tartibli prefiks bo'yicha commit
+  qilinadi. Crash yo'qotish emas, qayta yetkazish beradi
+- **Idempotentlik** — holat tekshiruvi + taqsimlangan qulf; qayta yetkazish dublikat yaratmaydi
+- **Vaqt bo'yicha taslim** — retry hisobi emas, xabar muddati hal qiladi
+- **Chegaralangan xotira** — park qilingan to'plam soni ham, baytlari ham cheklangan
+- **To'liq observability** — Prometheus statistikasi, Loki xatolari, DLQ, Telegram alert,
+  ixtiyoriy AI xato-analizi
+- **Ikki oqim ajratilgan** — alohida konsumer, topik va thread pool; bir tomondagi nosozlik
+  ikkinchisini to'xtatmaydi
+
+---
+
+### Nega raqobatchilar buni bitta mahsulotda bermaydi
+
+| Toifa | Kim | Nimani qiladi | Nimani qilmaydi |
+|---|---|---|---|
+| API-shlyuz | Kong, Apigee, nginx | Kiruvchi: auth, rate-limit, marshrutlash | **Sinxron** — main app o'chiq bo'lsa so'rov yo'qoladi; navbat yo'q |
+| Integratsiya / iPaaS | Confluent, MuleSoft | Chiquvchi: asinxron yetkazish, retry | Kiruvchi HTTP darvozasi emas |
+| In-house skript | har bir jamoa o'zi | Ishlaydi... yiqilguncha | Retry, CB, observability, arxiv |
+
+Ya'ni odatda **ikkita mahsulot, ikkita litsenziya, ikkita operatsion yuk** kerak bo'ladi. QosID
+Flow ikkalasini bitta quvurda beradi — chunki ikkala yo'nalish ham aslida bitta masala:
+**so'rovni ishonchli yetkazish**, faqat strelka yo'nalishi boshqa.
+
+**Bozor uchun ahamiyati:** TAM hisobi ikkita segment kesishmasidan olinadi — integratsiya
+middleware **va** API-shlyuz. Bu bozorni kengaytiradi va per-konnektor narxlashni (4-model)
+ikkala tomonga ham qo'llash imkonini beradi: kiruvchi kanal ham, chiquvchi integratsiya ham
+narxlanadigan birlik.
 
 **Pitch jumlasi:**
 > «QosID Flow main app'ning oldida ikkala yo'nalishda turadi: unga kelayotgan so'rovlarni ham,
-> undan chiqayotgan so'rovlarni ham boshqaradi.»
+> undan chiqayotgan so'rovlarni ham boshqaradi. Odatda buning uchun ikkita mahsulot kerak.»
 
 ---
 
