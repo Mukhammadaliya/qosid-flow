@@ -28,16 +28,49 @@ OUTBOUND   main app ──────────▶ QosID Flow ──▶ exter
                                 retry · circuit breaker · OAuth2
 ```
 
-Both directions run through the same pipeline, so both get the same guarantees.
+Both directions run through the same pipeline, so both get the same guarantees. Usually this
+takes two separate products.
 
-**Inbound** protects the main app from traffic it cannot absorb. Requests are queued in Kafka
-instead of hitting the app directly; a burst becomes a queue, not an outage. The client gets an
-immediate `202` with a polling URL rather than holding a connection open. If the main app is down,
-nothing is lost — the requests wait and are delivered when it recovers.
+### Inbound — protecting the main app from its callers
 
-**Outbound** protects delivery to third parties. Retries with a bounded policy, a per-host circuit
-breaker, OAuth2 token management with caching and refresh, and a dead-letter queue with alerting
-for anything that genuinely cannot be delivered.
+A request from an external client is authorised, size-checked, queued and only then delivered.
+
+- **Auth gate.** A pluggable `AuthorizationProvider` sits in front, so the main app gains a
+  gateway without changing its own authentication.
+- **Size limit enforced on `Content-Length`, before buffering.** A 21 MB body is rejected with
+  `413` after ~1.7 MB has been read — not after the whole thing is in memory.
+- **`202` means *durably queued*, not *we'll try*.** The response is returned only after Kafka has
+  acknowledged the record. If the queue is unreachable the client gets an error and can re-send —
+  nothing disappears silently.
+- **The client never holds a connection open.** It receives a polling URL, or supplies
+  `X-Callback-Url` and gets called back when the result is ready.
+- **A burst becomes a queue, not an outage.** The main app consumes at its own rate; if it is
+  down or restarting, requests wait and are delivered on recovery.
+- **File uploads survive storage failure.** Multipart uploads go to S3-compatible storage with
+  SHA-256 de-duplication and three attempts; if that fails, the files are forwarded to the
+  application instead, so the flow does not stop.
+
+### Outbound — protecting delivery to third parties
+
+The main app does not call external APIs itself. It records the request; the gateway picks it up
+and owns delivery.
+
+- **Bounded retry with a per-host circuit breaker**, so one failing upstream cannot cascade.
+- **A per-host concurrency limit**, so our own burst does not trip that circuit in the first place.
+- **OAuth2 per request** — the provider is resolved per request, tokens are cached in Redis and
+  refreshed ahead of expiry; a `401` evicts the cached token and retries once without spending a
+  retry attempt.
+- **Responses are archived for 7 days** and retrievable by request id, then written back to the
+  source system with bounded retries.
+- **Anything undeliverable lands in a dead-letter queue with an alert** — never a silent drop.
+
+### Why one product and not two
+
+An API gateway (Kong, Apigee) handles inbound traffic but synchronously — if the application
+behind it is down, the request is lost. An integration platform (Confluent, MuleSoft) handles
+asynchronous outbound delivery but is not an HTTP front door. Both directions are the same
+problem — *deliver this request reliably* — with the arrow pointing a different way, so QosID Flow
+solves them with one pipeline.
 
 ---
 
