@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../auth/AuthContext';
 import { Logo } from './Logo';
+import { LanguageSwitcher } from './LanguageSwitcher';
 
 const { Header, Sider, Content } = Layout;
 
@@ -56,9 +57,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
           />
           <Logo />
         </Space>
-        <Dropdown menu={userMenu}>
-          <Space style={{ cursor: 'pointer' }}><UserOutlined /> {user} <DownOutlined /></Space>
-        </Dropdown>
+        <Space size={16}>
+          <LanguageSwitcher />
+          <Dropdown menu={userMenu}>
+            <Space style={{ cursor: 'pointer' }}><UserOutlined /> {user} <DownOutlined /></Space>
+          </Dropdown>
+        </Space>
       </Header>
       {!gatewayUp && gatewayAuthExpired && (
         <Alert

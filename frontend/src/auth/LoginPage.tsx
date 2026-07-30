@@ -1,8 +1,12 @@
 import { useState } from 'react';
-import { Card, Form, Input, Button, Alert, Typography } from 'antd';
+import { Form, Input, Button, Alert } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthContext';
+import { Logo } from '../layout/Logo';
+import { LanguageSwitcher } from '../layout/LanguageSwitcher';
+import { PipelineStage } from './PipelineStage';
+import './LoginPage.css';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -24,20 +28,44 @@ export function LoginPage() {
   };
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', marginTop: '15vh' }}>
-      <Card style={{ width: 360 }}>
-        <Typography.Title level={3} style={{ textAlign: 'center' }}>{t('app.title')}</Typography.Title>
-        {error && <Alert type="error" message={t(error === 'down' ? 'auth.allDown' : 'auth.loginFailed')} style={{ marginBottom: 16 }} />}
-        <Form layout="vertical" onFinish={onFinish}>
+    <div className="qf-login">
+      <PipelineStage />
+
+      {/* Before sign-in there is no header, so the language choice lives here — an
+          operator who cannot read the form cannot get past it. */}
+      <div className="qf-lang">
+        <LanguageSwitcher />
+      </div>
+
+      <div className="qf-card">
+        <div className="qf-card__head">
+          <Logo size={30} />
+        </div>
+        <p className="qf-card__sub">{t('auth.console')}</p>
+
+        {error && (
+          <Alert
+            type="error"
+            showIcon
+            message={t(error === 'down' ? 'auth.allDown' : 'auth.loginFailed')}
+            style={{ marginBottom: 18 }}
+          />
+        )}
+
+        <Form layout="vertical" onFinish={onFinish} requiredMark={false}>
           <Form.Item name="username" label={t('auth.username')} rules={[{ required: true }]}>
-            <Input autoFocus />
+            <Input autoFocus size="large" autoComplete="username" />
           </Form.Item>
           <Form.Item name="password" label={t('auth.password')} rules={[{ required: true }]}>
-            <Input.Password />
+            <Input.Password size="large" autoComplete="current-password" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block loading={busy}>{t('auth.login')}</Button>
+          <Button type="primary" htmlType="submit" block size="large" loading={busy}>
+            {t('auth.login')}
+          </Button>
         </Form>
-      </Card>
+      </div>
+
+      <div className="qf-foot">{t('auth.footNote')}</div>
     </div>
   );
 }
