@@ -72,6 +72,41 @@ asynchronous outbound delivery but is not an HTTP front door. Both directions ar
 problem — *deliver this request reliably* — with the arrow pointing a different way, so QosID Flow
 solves them with one pipeline.
 
+### Why not a workflow engine (n8n, Airflow)?
+
+Mostly you can build this in one. That is the honest answer, and it is worth being precise about
+what is and is not already there:
+
+- **Per-destination concurrency limits** — Airflow has this natively (Pools). Genuine strength.
+- **Circuit breaker per host** — neither has it; you write it in a function node or custom
+  operator plus external state.
+- **OAuth2 token lifecycle** — both have credential systems that will do.
+- **A record of every outbound call** — n8n keeps execution history, Airflow logs; retrieving one
+  by *business* request id is your own work.
+- **Exactly-once external effect** — neither gives it to you. A retry that re-runs a node can
+  charge a card twice unless you build the idempotency key yourself.
+
+So the difference is not capability. It is three other things:
+
+**Shape.** Airflow is a batch scheduler whose unit is a DAG run; delivering tens of thousands of
+individual low-latency business requests a day is not its shape. n8n is closer — event-driven,
+queue mode — but its unit is a workflow execution, and at that volume the execution store becomes
+the problem you manage.
+
+**Assembled versus assemblable.** Everything above *can* be built. Then you own it: the breaker,
+the idempotency key, the contiguous-prefix offset commit, the bounded parked queue, the alert
+coalescing. You will find the bugs in production — as we did on 27 July. This is the same argument
+as using a database instead of writing a B-tree.
+
+**The inbound direction.** Neither is a transparent HTTP front door for your main application: the
+client's method, path and headers forwarded unchanged, a `202` with a polling URL returned
+immediately, and a burst absorbed as a queue. A webhook trigger is a different thing.
+
+**Where a workflow engine is the better answer:** many different SaaS systems to connect, modest
+volume, logic that changes often. QosID Flow is for the narrow case — one core system, high
+volume, requests that carry money or a legal obligation, where neither loss nor duplication is
+acceptable.
+
 ---
 
 ## Production evidence
