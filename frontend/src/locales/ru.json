@@ -57,7 +57,7 @@
   "sourceAuth.oauth2CacheTtl": "TTL кеша (секунды)",
   "sourceAuth.oauth2ClientType": "Формат запроса токена",
   "sourceAuth.clientTypeStandard": "standard — RFC 6749 (form-urlencoded)",
-  "sourceAuth.clientTypeBiruni": "biruni — JSON-тело (Smartup/Biruni)",
+  "sourceAuth.clientTypeBiruni": "biruni — JSON-тело (Biruni)",
   "tenant.sampleJson": "Пример JSON из Biruni-pull",
   "tenant.resolvedTenant": "Определённый tenantId",
   "tenant.resolvedExtra": "Определённый extraTenantId",

@@ -57,7 +57,7 @@
   "sourceAuth.oauth2CacheTtl": "Cache TTL (seconds)",
   "sourceAuth.oauth2ClientType": "Token request format",
   "sourceAuth.clientTypeStandard": "standard — RFC 6749 (form-urlencoded)",
-  "sourceAuth.clientTypeBiruni": "biruni — JSON body (Smartup/Biruni)",
+  "sourceAuth.clientTypeBiruni": "biruni — JSON body (Biruni)",
   "tenant.sampleJson": "Sample Biruni pull JSON",
   "tenant.resolvedTenant": "Resolved tenantId",
   "tenant.resolvedExtra": "Resolved extraTenantId",

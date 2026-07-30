@@ -3,7 +3,7 @@ import { Card, Row, Col, Statistic, Alert, Space, Select, Switch } from 'antd';
 import { Line, Column, Funnel } from '@ant-design/plots';
 import { useTranslation } from 'react-i18next';
 import { queryStats, StatsResult, StatSeries } from '../../api/stats';
-import { SMARTUP_COLORS } from './statChartTheme';
+import { BRAND_COLORS } from './statChartTheme';
 
 const RANGES: Record<string, number> = { '15m': 900_000, '1h': 3_600_000, '6h': 21_600_000, '24h': 86_400_000 };
 
@@ -79,25 +79,25 @@ export function StatisticsPage() {
         <Col span={12}>
           <Card title={t('stats.throughputChart')} style={{ marginBottom: 16 }}>
             <Line data={toChartData(throughput.series)} xField="time" yField="value" seriesField="series"
-              colorField="series" scale={{ color: { range: SMARTUP_COLORS } }} axis={TIME_AXIS} height={240} />
+              colorField="series" scale={{ color: { range: BRAND_COLORS } }} axis={TIME_AXIS} height={240} />
           </Card>
         </Col>
         <Col span={12}>
           <Card title={t('stats.funnelChart')} style={{ marginBottom: 16 }}>
             <Funnel data={funnelData} xField="stage" yField="count" height={240}
-              scale={{ color: { range: SMARTUP_COLORS } }} />
+              scale={{ color: { range: BRAND_COLORS } }} />
           </Card>
         </Col>
         <Col span={12}>
           <Card title={t('stats.errorsChart')}>
             <Column data={toChartData(errors.series)} xField="time" yField="value" stack colorField="series"
-              scale={{ color: { range: SMARTUP_COLORS } }} axis={TIME_AXIS} height={240} />
+              scale={{ color: { range: BRAND_COLORS } }} axis={TIME_AXIS} height={240} />
           </Card>
         </Col>
         <Col span={12}>
           <Card title={t('stats.latencyChart')}>
             <Line data={toChartData(latency.series)} xField="time" yField="value" seriesField="series"
-              colorField="series" scale={{ color: { range: SMARTUP_COLORS } }} axis={TIME_AXIS} height={240} />
+              colorField="series" scale={{ color: { range: BRAND_COLORS } }} axis={TIME_AXIS} height={240} />
           </Card>
         </Col>
       </Row>

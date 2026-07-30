@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { smartupTheme } from './theme';
+import { qosidTheme } from './theme';
 
-describe('smartupTheme', () => {
-  it('uses the Smartup brand primary and success colors', () => {
-    expect(smartupTheme.token?.colorPrimary).toBe('#0095D9');
-    expect(smartupTheme.token?.colorSuccess).toBe('#2EC27E');
+describe('qosidTheme', () => {
+  it('uses the brand primary and success colors', () => {
+    expect(qosidTheme.token?.colorPrimary).toBe('#0095D9');
+    expect(qosidTheme.token?.colorSuccess).toBe('#2EC27E');
   });
 });
