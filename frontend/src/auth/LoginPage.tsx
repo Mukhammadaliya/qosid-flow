@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthContext';
 import { Logo } from '../layout/Logo';
+import { LanguageSwitcher } from '../layout/LanguageSwitcher';
 import { PipelineStage } from './PipelineStage';
 import './LoginPage.css';
 
@@ -29,6 +30,12 @@ export function LoginPage() {
   return (
     <div className="qf-login">
       <PipelineStage />
+
+      {/* Before sign-in there is no header, so the language choice lives here — an
+          operator who cannot read the form cannot get past it. */}
+      <div className="qf-lang">
+        <LanguageSwitcher />
+      </div>
 
       <div className="qf-card">
         <div className="qf-card__head">

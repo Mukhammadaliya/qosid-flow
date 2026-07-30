@@ -76,6 +76,27 @@
 }
 .qf-telemetry__row--loss .qf-telemetry__v { color: rgba(255, 255, 255, 0.95); }
 
+/* ---- language switch ------------------------------------------------------ */
+
+.qf-lang {
+  position: absolute;
+  top: 26px;
+  right: 30px;
+  z-index: 5;
+}
+/* Ant's segmented control is built for light surfaces; this is the dark-stage skin. */
+.qf-lang .ant-segmented {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.55);
+}
+.qf-lang .ant-segmented-item-selected {
+  background: #0095d9;
+  color: #fff;
+}
+.qf-lang .ant-segmented-item:hover:not(.ant-segmented-item-selected) {
+  color: rgba(255, 255, 255, 0.85);
+}
+
 /* ---- lane tags ------------------------------------------------------------ */
 
 .qf-lane-tag {
