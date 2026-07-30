@@ -247,6 +247,52 @@ Savolni kutmasdan o'zimiz ko'taramiz. **Slayd sarlavhasi: «Nima bor va nima yo'
 
 ---
 
+## 4b. «Nega n8n yoki Airflow emas?» — tayyor javob
+
+Bu savol albatta beriladi. Eng katta xato — «ularda bunday qilib bo'lmaydi» deyish: texnik
+hakam birinchi savolda ushlab oladi. Nuqta bo'yicha halol holat:
+
+- **Per-host parallellik chegarasi** — Airflow'da **native bor** (Pools). Bu ularning haqiqiy
+  kuchi, inkor qilinmaydi.
+- **Circuit breaker** — ikkalasida ham yo'q, lekin Function node / custom operator + Redis bilan
+  **yozsa bo'ladi**.
+- **OAuth2 hayot-sikli** — ikkalasida ham credential tizimi bor, yetarli.
+- **Chaqiruvlar arxivi** — n8n execution history saqlaydi, Airflow loglaydi; biznes-id bo'yicha
+  izlash o'zingizniki.
+- **Idempotentlik / bir marta bajarilish** — **ikkalasida ham yo'q**, o'zingiz yozasiz.
+
+Ya'ni ro'yxatda texnik jihatdan imkonsiz deyiladigan narsa deyarli yo'q. Farq boshqa joyda —
+uchta nuqtada:
+
+**1. Muammoning shakliga moslik.** Airflow — jadval bo'yicha ishlaydigan paket rejalashtiruvchi;
+uning birligi DAG yurishi. Kuniga 50 ming alohida biznes-so'rovni past kechikish bilan yetkazish
+uning shakli emas. n8n yaqinroq (event-driven, webhook, queue rejimi), lekin uning birligi —
+workflow bajarilishi, va bu hajmda execution bazasining o'zi muammoga aylanadi.
+
+**2. Yig'ilgan va isbotlangan tizim, konstruktor emas.** Pitch'dagi asosiy jumla:
+
+> «Buni n8n'da yozsa bo'ladi. Lekin o'shanda circuit breaker'ni, idempotentlik kalitini, tartibli
+> offset commit'ni, park qilingan navbatni va alert birlashtirishni **siz yozasiz** — function
+> node'lar ichida, taqsimlangan tizimlar kodini. Va xatolarni prodda topasiz. Biz 27-iyulda aynan
+> shunday topdik.»
+
+Bu «B-daraxt yozish o'rniga Postgres ishlating» bilan bir xil argument.
+
+**3. Kiruvchi yo'nalish.** Na n8n, na Airflow — asosiy ilova oldida turadigan shaffof HTTP
+darvozasi emas. Webhook boshqa narsa: biz mijozning metodi, yo'li va sarlavhalarini
+o'zgartirmasdan uzatamiz, `202` + kuzatuv havolasi qaytaramiz va burst'ni navbatga olamiz.
+
+**Va bitta halol chegara — buni o'zingiz ayting:**
+
+> Ko'pchilik kompaniya uchun n8n to'g'ri javob: o'nlab turli SaaS'ni ulash kerak, hajm kichik.
+> Bizning o'rnimiz tor va aniq — **bitta asosiy tizim, yuqori hajm, so'rovlar orqasida pul yoki
+> huquqiy majburiyat turadi, yo'qotish ham takrorlash ham qabul qilinmaydi.**
+
+Torlik zaiflik emas, pozitsiya. «Biz hammaga kerakmiz» degandan ko'ra «mana shu holatda yagona
+to'g'ri javobmiz» degan ishonarliroq.
+
+---
+
 ## 5. Jamoa — tarkib va formada yozilishi
 
 **Tarkib:** 1 PO · 3 dev · 1 BA
@@ -331,9 +377,11 @@ shunchaki refaktoring emas — «boshqa mijozga o'rnatsa bo'ladi» degan biznes 
 7. **Biznes-model** — 5 modelli jadval, top-3 ajratilgan
 8. **Bozor** — O'zbekiston enterprise + davlat. **Ikki segment kesishmasi:** integratsiya
    middleware va API-shlyuz (1b-bo'lim). TAM/SAM/SOM *(hali hisoblanmagan)*
-9. **Raqobat** — global: Confluent/MuleSoft (chiquvchi, async) va Kong/Apigee (kiruvchi, API
-   shlyuz). Ular qimmat, mahalliy support yo'q, data-rezidensiya muammosi bor va **odatda
-   bittasini** qiladi. Biz ikkalasini bitta mahsulotda beramiz. Asl raqib esa — in-house skript
+9. **Raqobat** — uch qatlam. *API-shlyuz* (Kong, Apigee): kiruvchi, lekin **sinxron** — ilova
+   o'chiq bo'lsa so'rov yo'qoladi. *iPaaS/integratsiya* (Confluent, MuleSoft): chiquvchi, lekin
+   HTTP darvozasi emas. *Ish-oqim dvigatellari* (n8n, Airflow): eng ko'p beriladigan savol —
+   javob 4b-bo'limda, va u «ularda bo'lmaydi» emas, «u yerda buni **siz yozasiz**» degan javob.
+   Asl raqib esa hamon — in-house skript
 10. **Go-to-market** — Smartup/Biruni ekotizimi → IT Park rezidentlari va ERP-integratorlar →
     managed cloud
 11. **Jamoa** — 5 kishi, rollari 5-bo'limdagidek
