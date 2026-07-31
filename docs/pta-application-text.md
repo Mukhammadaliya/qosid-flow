@@ -53,8 +53,20 @@ aniqlashni so'raymiz.
 
 ## Bir jumlalik ta'rif (muqova, logotip ostiga, taqdimot sarlavhasiga)
 
-> Korxona integratsiyalari uchun Kafka-asosidagi platforma: har bir so'rov ishonchli
-> yetkaziladi, kuzatiladi va yo'qolmaydi.
+> Korxona tizimlari o'rtasidagi har bir so'rovni ishonchli yetkazadigan platforma.
+> Yukni vaqt bo'yicha taqsimlaydi: yo'qolmaydi, takrorlanmaydi, ko'rinib turadi.
+
+Uch tilda (slayd va ariza uchun bir xil bo'lishi kerak):
+
+- **RU** — Платформа, которая надёжно доставляет каждый запрос между корпоративными
+  системами и распределяет нагрузку во времени. Ничего не теряется, не дублируется, всё видно.
+- **EN** — A platform that reliably delivers every request between enterprise systems and
+  spreads load over time. Nothing lost, nothing duplicated, everything visible.
+
+**Nega «yukni vaqt bo'yicha taqsimlaydi», «load balancing» emas:** biz yukni serverlar
+o'rtasida emas, vaqt bo'yicha muvozanatlaymiz — burst navbatga aylanadi. «Load balancing»
+desangiz, texnik hakam darhol «demak nginx o'rnini bosasizmi?» deb so'raydi va suhbat
+noto'g'ri taqqoslashga ketadi.
 
 ---
 
