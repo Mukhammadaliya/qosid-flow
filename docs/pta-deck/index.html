@@ -203,24 +203,91 @@ h2 { font-size: clamp(26px, 3.5vw, 56px); font-weight: 750; letter-spacing: -.02
 }
 .punch em { font-style: normal; color: var(--green); }
 
-/* the bidirectional diagram */
-.flow { margin: 5vh 0 2vh; display: grid; gap: 3.4vh; }
-.flow__row { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 1.4vw; }
-.node {
-  border: 1px solid rgba(255,255,255,.16); border-radius: 10px; padding: 1.8vh 1.2vw;
-  text-align: center; font-size: clamp(12px,1.15vw,17px); color: var(--muted-2);
+/* the bidirectional diagram — ONE gateway, two lanes crossing it.
+   The earlier version drew two separate "QosID Flow" boxes, which quietly claimed
+   there are two gateways. There is one, and both directions run through it; the
+   layout now says that. Packets travel the lanes and flip colour at the crossing,
+   the same language the title slide and the product's own login screen use. */
+.gateway { position: relative; height: 34vh; min-height: 190px; margin: 4.5vh 0 1.5vh; }
+
+.gw-lane { position: absolute; left: 0; right: 0; height: 30px; }
+.gw-lane--in  { top: 24%; }
+.gw-lane--out { top: 64%; }
+.gw-lane::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.1) 10%,
+              rgba(255,255,255,.1) 90%, transparent);
 }
-.node--gate {
-  border-color: rgba(46,194,126,.5); color: #fff; font-weight: 680;
-  background: rgba(46,194,126,.08);
+.gw-pkt {
+  position: absolute; top: 0; height: 30px; line-height: 28px; padding: 0 13px;
+  border-radius: 15px; border: 1px solid rgba(0,149,217,.34); background: rgba(0,149,217,.12);
+  color: #62c6f0; font-family: var(--mono); font-size: clamp(9.5px,.95vw,12px);
+  white-space: nowrap; opacity: 0;
 }
-.node--app { border-color: rgba(255,255,255,.3); color: #fff; font-weight: 620; }
-.dir { font-family: var(--mono); font-size: clamp(16px,1.7vw,26px); }
-.dir--in  { color: var(--blue); }
-.dir--out { color: var(--green); }
-.flow__label {
-  font-family: var(--mono); font-size: clamp(9px,.9vw,11.5px);
-  letter-spacing: .22em; text-transform: uppercase; color: var(--muted); margin-bottom: -1.6vh;
+.gw-lane--in  .gw-pkt { animation: gw-in 11s linear infinite; }
+.gw-lane--out .gw-pkt { animation: gw-out 11s linear infinite; }
+@keyframes gw-in {
+  0%   { transform: translateX(2%);  opacity: 0; }
+  10%  { opacity: 1; }
+  49%  { border-color: rgba(0,149,217,.34);  background: rgba(0,149,217,.12);  color: #62c6f0; }
+  51%  { border-color: rgba(46,194,126,.4);  background: rgba(46,194,126,.13); color: #62d9a2; }
+  90%  { opacity: 1; }
+  100% { transform: translateX(96%); opacity: 0; }
+}
+@keyframes gw-out {
+  0%   { transform: translateX(96%); opacity: 0; }
+  10%  { opacity: 1; }
+  49%  { border-color: rgba(0,149,217,.34);  background: rgba(0,149,217,.12);  color: #62c6f0; }
+  51%  { border-color: rgba(46,194,126,.4);  background: rgba(46,194,126,.13); color: #62d9a2; }
+  90%  { opacity: 1; }
+  100% { transform: translateX(2%);  opacity: 0; }
+}
+
+/* Boxes sit above the lanes and are opaque, so a packet slides out of one and
+   disappears into the next rather than floating over them. */
+.gw-grid {
+  position: relative; z-index: 2; height: 100%;
+  display: grid; grid-template-columns: 1fr auto 1fr; grid-template-rows: 1fr 1fr;
+  column-gap: 2.4vw; row-gap: 1.4vh; align-items: center;
+}
+.gw-box {
+  background: rgba(9,19,29,.97); border: 1px solid rgba(255,255,255,.17); border-radius: 11px;
+  padding: 1.7vh 1.1vw; text-align: center;
+  font-size: clamp(11.5px,1.1vw,17px); color: var(--muted-2); line-height: 1.25;
+}
+.gw-box--app {
+  grid-column: 3; grid-row: 1 / span 2; align-self: stretch;
+  display: grid; place-items: center;
+  border-color: rgba(255,255,255,.34); color: #fff; font-weight: 640;
+}
+.gw-gate {
+  grid-column: 2; grid-row: 1 / span 2; align-self: stretch;
+  display: grid; place-items: center; gap: .8vh; padding: 1.6vh 1.5vw;
+  background: rgba(9,19,29,.97);
+  border: 1px solid rgba(46,194,126,.55); border-radius: 13px;
+  box-shadow: 0 0 0 6px rgba(46,194,126,.05);
+}
+.gw-gate__n { font-weight: 720; font-size: clamp(13px,1.35vw,21px); letter-spacing: -.02em; }
+.gw-gate__s {
+  font-family: var(--mono); font-size: clamp(8.5px,.82vw,10.5px);
+  letter-spacing: .14em; text-transform: uppercase; color: var(--muted); text-align: center;
+}
+.gw-tag {
+  position: absolute; z-index: 3;
+  font-family: var(--mono); font-size: clamp(8.5px,.85vw,11px);
+  letter-spacing: .22em; text-transform: uppercase; color: var(--muted);
+}
+.gw-tag--in  { top: calc(24% - 20px); left: 2px; }
+.gw-tag--out { top: calc(64% - 20px); right: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .gw-pkt { animation: none; opacity: 1; }
+  .gw-lane--in  .gw-pkt:nth-of-type(1) { transform: translateX(22%); }
+  .gw-lane--in  .gw-pkt:nth-of-type(2) { transform: translateX(62%);
+    border-color: rgba(46,194,126,.4); background: rgba(46,194,126,.13); color: #62d9a2; }
+  .gw-lane--out .gw-pkt:nth-of-type(1) { transform: translateX(66%); }
+  .gw-lane--out .gw-pkt:nth-of-type(2) { transform: translateX(24%);
+    border-color: rgba(46,194,126,.4); background: rgba(46,194,126,.13); color: #62d9a2; }
 }
 
 /* business model rows */
@@ -350,26 +417,21 @@ h2 { font-size: clamp(26px, 3.5vw, 56px); font-weight: 750; letter-spacing: -.02
   <section class="slide">
     <p class="eyebrow"><span data-lang="uz">Yechim</span><span data-lang="ru">Решение</span><span data-lang="en">The solution</span></p>
     <h2><span data-lang="uz">Asosiy ilovaning oldida — ikkala yo‘nalishda</span><span data-lang="ru">Перед основным приложением — в обе стороны</span><span data-lang="en">In front of the main application — in both directions</span></h2>
-    <div class="flow">
-      <div>
-        <div class="flow__label"><span data-lang="uz">Kiruvchi</span><span data-lang="ru">Входящие</span><span data-lang="en">Inbound</span></div>
-        <div class="flow__row">
-          <div class="node"><span data-lang="uz">Tashqi mijozlar</span><span data-lang="ru">Внешние клиенты</span><span data-lang="en">External clients</span></div>
-          <div class="dir dir--in">──▶</div>
-          <div class="node node--gate">QosID Flow</div>
-          <div class="dir dir--in">──▶</div>
-          <div class="node node--app"><span data-lang="uz">Asosiy ilova</span><span data-lang="ru">Основное приложение</span><span data-lang="en">Main application</span></div>
+    <div class="gateway">
+      <div class="gw-tag gw-tag--in"><span data-lang="uz">Kiruvchi</span><span data-lang="ru">Входящие</span><span data-lang="en">Inbound</span></div>
+      <div class="gw-tag gw-tag--out"><span data-lang="uz">Chiquvchi</span><span data-lang="ru">Исходящие</span><span data-lang="en">Outbound</span></div>
+
+      <div class="gw-lane gw-lane--in"><span class="gw-pkt" style="animation-delay:-0.5s">order_export</span><span class="gw-pkt" style="animation-delay:-4.2s">payment</span><span class="gw-pkt" style="animation-delay:-7.9s">stock_sync</span></div>
+      <div class="gw-lane gw-lane--out"><span class="gw-pkt" style="animation-delay:-2.3s">invoice</span><span class="gw-pkt" style="animation-delay:-6.8s">report</span></div>
+
+      <div class="gw-grid">
+        <div class="gw-box"><span data-lang="uz">Tashqi mijozlar</span><span data-lang="ru">Внешние клиенты</span><span data-lang="en">External clients</span></div>
+        <div class="gw-box"><span data-lang="uz">Tashqi API‘lar</span><span data-lang="ru">Внешние API</span><span data-lang="en">External APIs</span></div>
+        <div class="gw-gate">
+          <div class="gw-gate__n">QosID Flow</div>
+          <div class="gw-gate__s"><span data-lang="uz">navbat · qayta urinish · himoya</span><span data-lang="ru">очередь · повторы · защита</span><span data-lang="en">queue · retry · protection</span></div>
         </div>
-      </div>
-      <div>
-        <div class="flow__label"><span data-lang="uz">Chiquvchi</span><span data-lang="ru">Исходящие</span><span data-lang="en">Outbound</span></div>
-        <div class="flow__row">
-          <div class="node node--app"><span data-lang="uz">Asosiy ilova</span><span data-lang="ru">Основное приложение</span><span data-lang="en">Main application</span></div>
-          <div class="dir dir--out">──▶</div>
-          <div class="node node--gate">QosID Flow</div>
-          <div class="dir dir--out">──▶</div>
-          <div class="node"><span data-lang="uz">Tashqi API‘lar</span><span data-lang="ru">Внешние API</span><span data-lang="en">External APIs</span></div>
-        </div>
+        <div class="gw-box gw-box--app"><span data-lang="uz">Asosiy ilova</span><span data-lang="ru">Основное приложение</span><span data-lang="en">Main application</span></div>
       </div>
     </div>
     <p class="punch"><span data-lang="uz">Ikkala oqim bitta quvurdan o‘tadi: navbat, qayta urinish, himoya va to‘liq kuzatuv. <em>Odatda buning uchun ikkita mahsulot kerak.</em></span><span data-lang="ru">Оба потока идут по одному конвейеру: очередь, повторы, защита и полная наблюдаемость. <em>Обычно для этого нужны два продукта.</em></span><span data-lang="en">Both directions run through one pipeline: queue, retry, protection and full observability. <em>Usually this takes two products.</em></span></p>
