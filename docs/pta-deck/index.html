@@ -290,6 +290,22 @@ h2 { font-size: clamp(26px, 3.5vw, 56px); font-weight: 750; letter-spacing: -.02
     border-color: rgba(46,194,126,.4); background: rgba(46,194,126,.13); color: #62d9a2; }
 }
 
+
+/* Actor icons: one muted tone, thin strokes. The gate is the only coloured
+   element in the diagram, so the eye lands there first. */
+.gw-ic {
+  width: clamp(26px, 2.6vw, 40px); height: auto; display: block; margin: 0 auto .9vh;
+  fill: none; stroke: rgba(255,255,255,.46); stroke-width: 1.6;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.gw-ic .f { fill: rgba(255,255,255,.46); stroke: none; }
+.gw-mark { width: clamp(26px, 2.7vw, 42px); height: auto; display: block; }
+.gw-g {
+  width: 1.15em; height: 1.15em; vertical-align: -.22em; margin-right: .45em;
+  fill: none; stroke: currentColor; stroke-width: 1.4;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
 /* business model rows */
 .models { display: grid; gap: 1.3vh; margin-top: 3.4vh; }
 .model {
@@ -421,17 +437,17 @@ h2 { font-size: clamp(26px, 3.5vw, 56px); font-weight: 750; letter-spacing: -.02
       <div class="gw-tag gw-tag--in"><span data-lang="uz">Kiruvchi</span><span data-lang="ru">Входящие</span><span data-lang="en">Inbound</span></div>
       <div class="gw-tag gw-tag--out"><span data-lang="uz">Chiquvchi</span><span data-lang="ru">Исходящие</span><span data-lang="en">Outbound</span></div>
 
-      <div class="gw-lane gw-lane--in"><span class="gw-pkt" style="animation-delay:-0.5s">order_export</span><span class="gw-pkt" style="animation-delay:-4.2s">payment</span><span class="gw-pkt" style="animation-delay:-7.9s">stock_sync</span></div>
-      <div class="gw-lane gw-lane--out"><span class="gw-pkt" style="animation-delay:-2.3s">invoice</span><span class="gw-pkt" style="animation-delay:-6.8s">report</span></div>
+      <div class="gw-lane gw-lane--in"><span class="gw-pkt" style="animation-delay:-0.5s"><svg class="gw-g" viewBox="0 0 14 15" aria-hidden="true"><path d="M2.5 4.5h9l-.9 8H3.4z"/><path d="M4.7 4.5a2.3 2.3 0 0 1 4.6 0"/></svg>order_export</span><span class="gw-pkt" style="animation-delay:-4.2s"><svg class="gw-g" viewBox="0 0 14 15" aria-hidden="true"><rect x="1.5" y="3.5" width="11" height="8" rx="1.6"/><path d="M1.5 6.4h11"/></svg>payment</span><span class="gw-pkt" style="animation-delay:-7.9s"><svg class="gw-g" viewBox="0 0 14 15" aria-hidden="true"><rect x="2" y="3.5" width="10" height="9" rx="1.4"/><path d="M2 6.6h10M7 3.5v3.1"/></svg>stock_sync</span></div>
+      <div class="gw-lane gw-lane--out"><span class="gw-pkt" style="animation-delay:-2.3s"><svg class="gw-g" viewBox="0 0 14 15" aria-hidden="true"><path d="M3 2.5h5.6L11 5v7.5H3z"/><path d="M5 8h4M5 10.2h4"/></svg>invoice</span><span class="gw-pkt" style="animation-delay:-6.8s"><svg class="gw-g" viewBox="0 0 14 15" aria-hidden="true"><path d="M3.4 12.5V8.6M7 12.5V5.4M10.6 12.5V3"/></svg>report</span></div>
 
       <div class="gw-grid">
-        <div class="gw-box"><span data-lang="uz">Tashqi mijozlar</span><span data-lang="ru">Внешние клиенты</span><span data-lang="en">External clients</span></div>
-        <div class="gw-box"><span data-lang="uz">Tashqi API‘lar</span><span data-lang="ru">Внешние API</span><span data-lang="en">External APIs</span></div>
+        <div class="gw-box"><svg class="gw-ic" viewBox="0 0 40 32" aria-hidden="true"><rect x="1.2" y="4" width="16" height="12" rx="2.2"/><rect x="22" y="1.5" width="16" height="12" rx="2.2"/><rect x="11" y="18.5" width="16" height="12" rx="2.2"/></svg><span data-lang="uz">Tashqi mijozlar</span><span data-lang="ru">Внешние клиенты</span><span data-lang="en">External clients</span></div>
+        <div class="gw-box"><svg class="gw-ic" viewBox="0 0 40 32" aria-hidden="true"><path d="M10.5 24.5a6.6 6.6 0 0 1-.6-13.2 9 9 0 0 1 17.3-1.5 5.9 5.9 0 0 1 1.4 14.7z"/><path d="M17 15.5l-3 4 3 4M23.5 15.5l3 4-3 4"/></svg><span data-lang="uz">Tashqi API‘lar</span><span data-lang="ru">Внешние API</span><span data-lang="en">External APIs</span></div>
         <div class="gw-gate">
-          <div class="gw-gate__n">QosID Flow</div>
+          <svg class="gw-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="3" width="24" height="26" rx="7.5" fill="none" stroke="#0095D9" stroke-width="4.2"/><rect x="19" y="18.6" width="12" height="5.4" rx="2.7" fill="#2EC27E"/></svg><div class="gw-gate__n">QosID Flow</div>
           <div class="gw-gate__s"><span data-lang="uz">navbat · qayta urinish · himoya</span><span data-lang="ru">очередь · повторы · защита</span><span data-lang="en">queue · retry · protection</span></div>
         </div>
-        <div class="gw-box gw-box--app"><span data-lang="uz">Asosiy ilova</span><span data-lang="ru">Основное приложение</span><span data-lang="en">Main application</span></div>
+        <div class="gw-box gw-box--app"><div><svg class="gw-ic" viewBox="0 0 34 32" aria-hidden="true"><rect x="1.5" y="2.5" width="31" height="27" rx="3.2"/><path d="M1.5 10.5h31"/><circle cx="6.4" cy="6.5" r="1.15" class="f"/><path d="M7 16.5h20M7 22h13"/></svg><span data-lang="uz">Asosiy ilova</span><span data-lang="ru">Основное приложение</span><span data-lang="en">Main application</span></div></div>
       </div>
     </div>
     <p class="punch"><span data-lang="uz">Ikkala oqim bitta quvurdan o‘tadi: navbat, qayta urinish, himoya va to‘liq kuzatuv. <em>Odatda buning uchun ikkita mahsulot kerak.</em></span><span data-lang="ru">Оба потока идут по одному конвейеру: очередь, повторы, защита и полная наблюдаемость. <em>Обычно для этого нужны два продукта.</em></span><span data-lang="en">Both directions run through one pipeline: queue, retry, protection and full observability. <em>Usually this takes two products.</em></span></p>
