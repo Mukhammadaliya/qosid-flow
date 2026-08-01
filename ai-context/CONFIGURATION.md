@@ -100,7 +100,7 @@ gateway:
 | `gateway.retry.cb-requeue-max-delay-ms` | long | `30000` | `RETRY_CB_REQUEUE_MAX_DELAY` | Ceiling for the doubling wait. Defaults to one `wait-duration-in-open-state` — waiting longer than the open window cannot help. |
 | `gateway.retry.cb-max-pending` | int | `5000` | `RETRY_CB_MAX_PENDING` | Max parked messages held in memory **per flow** (Oracle and API have separate budgets). Past it: DLQ, reason `Circuit breaker open and requeue buffer full`. |
 | `gateway.retry.cb-max-pending-bytes` | long | `268435456` (256 MiB) | `RETRY_CB_MAX_PENDING_BYTES` | Max total parked body size per flow. Usually **the binding bound**: a REST body may be 20 MiB (`gateway.proxy.max-body-size`), so ~13 such messages exhaust 256 MiB long before the 5000-message count. Measured as the body string's character length, so it approximates heap cost rather than accounting for it exactly. |
-| `gateway.retry.cb-max-requeues` | int | `1000` | `RETRY_CB_MAX_REQUEUES` | **Runaway guard, not a retry policy.** Counts park *attempts* per request (Redis counter `request:cb-requeue:<compositeId>`, incremented before the park is attempted and never rolled back if the bound refuses it or the fallback catch fires); tripping it means the delay path is broken, since a 2 s floor caps a legitimate message at ~150. Was `50` until 2026-07-27, when it DLQ'd 212 live requests in one circuit window. `attemptCount` is still untouched — see SAFETY-RULES rule 23. |
+| `gateway.retry.cb-max-requeues` | int | `1000` | `RETRY_CB_MAX_REQUEUES` | **Runaway guard, not a retry policy.** Counts park *attempts* per request (Redis counter `request:cb-requeue:<compositeId>`, incremented before the park is attempted and never rolled back if the bound refuses it or the fallback catch fires); tripping it means the delay path is broken, since a 2 s floor caps a legitimate message at ~150. Was `50` until 2026-07-27, when it DLQ'd 241 live requests in one circuit window. `attemptCount` is still untouched — see SAFETY-RULES rule 23. |
 
 ### CB back-pressure: why these numbers (v2.3.0)
 
@@ -108,7 +108,7 @@ A CB-blocked message is **parked in memory** until its circuit accepts traffic a
 back to its request topic (`CbRequeueScheduler`). Before v2.3.0 it was re-queued immediately, so it
 returned every ~20 ms for the whole 30 s open window — ~1500 pointless Kafka round trips per
 message, and the count cap that bounded that loop was spent in about one second, turning retryable
-traffic into DLQ records (2026-07-27: 212 live production requests). With the delay, one 30 s
+traffic into DLQ records (2026-07-27: 241 live production requests inside one minute). With the delay, one 30 s
 window costs a message **4 timer wake-ups** (2 s → 4 s → 8 s → 16 s) and **one** Kafka round trip;
 across the full 5 min `max-message-age-ms` budget it is ~13 wake-ups, because the wait is capped at
 30 s. Where a message waits changed too: it now occupies gateway heap (bounded by the two

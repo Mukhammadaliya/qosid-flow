@@ -102,10 +102,10 @@ Keyin Ops sahifasi — jonli log oqimi ko'rsatiladi.
 **Ekranda:** to'rtta yirik raqam, ketma-ket chiqadi
 
 ```
-50 700   so'rov / kun
-99.994 % muvaffaqiyat
-330      so'rov / soniya — cho'qqi, yo'qotishsiz
-379      avtomatik test
+60 600   so'rov / kun
+99.68  % muvaffaqiyat
+918      so'rov / soniya — cho'qqi, yo'qotishsiz
+527      avtomatik test
 ```
 
 **Ovoz:**
@@ -120,7 +120,7 @@ Keyin Ops sahifasi — jonli log oqimi ko'rsatiladi.
 
 ### 2:05–2:35 — Hodisa va undan chiqqan xulosa
 
-**Ekranda:** oddiy grafik — 27-iyul: DLQ 212 ga sakraydi. Keyin 28-iyul: burst 5× baland,
+**Ekranda:** oddiy grafik — 27-iyul: DLQ bir daqiqada 241 ga sakraydi. Keyin 28-iyul: burst 5× baland,
 DLQ nol. Ikkita ustun yonma-yon.
 
 **Ovoz:**

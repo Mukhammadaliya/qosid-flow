@@ -17,10 +17,17 @@ import java.util.Map;
  * (browser never sends PromQL), runs instant (/query) or range (/query_range) calls,
  * and normalizes into a StatsResult. Prometheus unreachable / bad preset degrade to
  * an empty result + error string (never 500).
+ *
+ * <p>Presets carry tokens this service expands: {@code ${window}} (instant — the full
+ * selected span) and {@code ${step}} / {@code ${histWindow}} (range — rate windows that
+ * scale with the resolution, so a 7d or 30d chart samples a representative window).
  */
 @Slf4j
 @Service
 public class StatsQueryService {
+
+    /** Prometheus refuses a range query that would yield more than this many points per series. */
+    private static final int MAX_RANGE_POINTS = 11_000;
 
     private final RestClient prometheusRestClient;
     private final PrometheusResponseParser parser;
@@ -59,14 +66,25 @@ public class StatsQueryService {
                 }
                 return new StatsResult(List.of(), kpis, null);
             } else {
+                // A fixed step blows past MAX_RANGE_POINTS on the long ranges (30s over 7d is
+                // 20160 points), which fails the whole panel with a 400. Raise the step instead.
+                int effectiveStep = Math.max(step, (int) Math.ceil(windowSec / (double) MAX_RANGE_POINTS));
+                // Rate windows scale with the step. Sampling a 1m rate every 34 minutes — what a
+                // 7d view would do — reports one minute in every thirty-four and calls it a trend.
+                // The floors keep the short ranges byte-identical to the old fixed [1m] / [5m].
+                String rateWindow = Math.max(effectiveStep, 60) + "s";
+                String histWindow = Math.max(effectiveStep, 300) + "s";
                 List<StatSeries> series = new ArrayList<>();
                 for (Map.Entry<String, String> e : preset.queries().entrySet()) {
+                    String promql = e.getValue()
+                            .replace("${step}", rateWindow)
+                            .replace("${histWindow}", histWindow);
                     String uri = UriComponentsBuilder.fromUriString(baseUrl() + "/api/v1/query_range")
                             .queryParam("query", "{promql}")
                             .queryParam("start", start / 1000L)
                             .queryParam("end", end / 1000L)
-                            .queryParam("step", step)
-                            .build(e.getValue()).toString();
+                            .queryParam("step", effectiveStep)
+                            .build(promql).toString();
                     series.add(new StatSeries(e.getKey(), parser.parseRange(get(uri))));
                 }
                 return new StatsResult(series, Map.of(), null);

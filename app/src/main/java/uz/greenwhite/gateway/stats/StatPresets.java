@@ -5,8 +5,11 @@ import java.util.Map;
 
 /**
  * Fixed PromQL for each dashboard preset. The browser sends only a preset name;
- * no user input is ever interpolated into a query. Instant presets may contain the
- * service-computed ${window} token (see StatsQueryService) for increase() windows.
+ * no user input is ever interpolated into a query. Presets carry service-computed
+ * tokens (see StatsQueryService): instant presets use ${window} for increase()
+ * windows; range presets use ${step} (counter rates) and ${histWindow} (histogram
+ * rates) so the rate window tracks the chart resolution instead of staying at a
+ * fixed 1m/5m that a 7d or 30d view would sample almost nothing of.
  * Metric names verified live from /actuator/prometheus.
  */
 public final class StatPresets {
@@ -24,8 +27,11 @@ public final class StatPresets {
     static {
         PRESETS.put("kpi", new StatPreset(StatPreset.Kind.INSTANT, q(
             "throughput", "sum(rate(gateway_kafka_produce_total{result=\"success\"}[5m]))",
-            "successRate", "sum(rate(gateway_http_request_total{result=\"success\"}[5m])) / sum(rate(gateway_http_request_total[5m])) * 100",
-            "errorRate", "sum(rate(gateway_http_request_total{result=~\"error_4xx|error_5xx|timeout\"}[5m])) / sum(rate(gateway_http_request_total[5m])) * 100",
+            // The denominator counts requests that reached an upstream. result="deferred" is
+            // back-pressure the gateway applied to itself — the call was never made and the
+            // message is re-queued — so including it would report our own throttling as failure.
+            "successRate", "sum(rate(gateway_http_request_total{result=\"success\"}[5m])) / sum(rate(gateway_http_request_total{result!=\"deferred\"}[5m])) * 100",
+            "errorRate", "sum(rate(gateway_http_request_total{result=~\"error_4xx|error_5xx|timeout\"}[5m])) / sum(rate(gateway_http_request_total{result!=\"deferred\"}[5m])) * 100",
             "dlq", "sum(increase(gateway_dlq_sent_total[${window}]))",
             "e2eP95", "histogram_quantile(0.95, sum(rate(gateway_request_e2e_duration_seconds_bucket[5m])) by (le)) * 1000"
         )));
@@ -37,19 +43,19 @@ public final class StatPresets {
             "save", "sum(increase(gateway_oracle_save_total{result=\"success\"}[${window}]))"
         )));
         PRESETS.put("throughput", new StatPreset(StatPreset.Kind.RANGE, q(
-            "produced", "sum(rate(gateway_kafka_produce_total{result=\"success\"}[1m]))",
-            "httpSuccess", "sum(rate(gateway_http_request_total{result=\"success\"}[1m]))",
-            "errors", "sum(rate(gateway_http_request_total{result=~\"error_4xx|error_5xx|timeout\"}[1m]))"
+            "produced", "sum(rate(gateway_kafka_produce_total{result=\"success\"}[${step}]))",
+            "httpSuccess", "sum(rate(gateway_http_request_total{result=\"success\"}[${step}]))",
+            "errors", "sum(rate(gateway_http_request_total{result=~\"error_4xx|error_5xx|timeout\"}[${step}]))"
         )));
         PRESETS.put("errors", new StatPreset(StatPreset.Kind.RANGE, q(
-            "4xx", "sum(rate(gateway_http_request_total{result=\"error_4xx\"}[1m]))",
-            "5xx", "sum(rate(gateway_http_request_total{result=\"error_5xx\"}[1m]))",
-            "timeout", "sum(rate(gateway_http_request_total{result=\"timeout\"}[1m]))",
-            "dlq", "sum(rate(gateway_dlq_sent_total[1m]))"
+            "4xx", "sum(rate(gateway_http_request_total{result=\"error_4xx\"}[${step}]))",
+            "5xx", "sum(rate(gateway_http_request_total{result=\"error_5xx\"}[${step}]))",
+            "timeout", "sum(rate(gateway_http_request_total{result=\"timeout\"}[${step}]))",
+            "dlq", "sum(rate(gateway_dlq_sent_total[${step}]))"
         )));
         PRESETS.put("latency", new StatPreset(StatPreset.Kind.RANGE, q(
-            "e2eP95", "histogram_quantile(0.95, sum(rate(gateway_request_e2e_duration_seconds_bucket[5m])) by (le)) * 1000",
-            "httpP95", "histogram_quantile(0.95, sum(rate(gateway_http_request_duration_seconds_bucket[5m])) by (le)) * 1000"
+            "e2eP95", "histogram_quantile(0.95, sum(rate(gateway_request_e2e_duration_seconds_bucket[${histWindow}])) by (le)) * 1000",
+            "httpP95", "histogram_quantile(0.95, sum(rate(gateway_http_request_duration_seconds_bucket[${histWindow}])) by (le)) * 1000"
         )));
     }
 

@@ -188,11 +188,11 @@ narxlanadigan birlik.
 
 ### Kuchli tomonlar
 
-- **Ishlaydigan mahsulot, slayd emas** — prodda ~50.7k so'rov/kun, 99.994% muvaffaqiyat
-- **O'lchangan ishonchlilik** — yuk testi: ~330 so'rov/s, 0 yo'qotish, CB ochilmadi
-- **Muhandislik jarayoni** — 13 082 satr kod, 379 test, 41 xavfsizlik qoidasi
+- **Ishlaydigan mahsulot, slayd emas** — prodda ~60.6k so'rov/kun, 99.68% muvaffaqiyat
+- **O'lchangan ishonchlilik** — o'lchangan cho'qqi: 918 so'rov/s, 0 yo'qotish, CB ochilmadi
+- **Muhandislik jarayoni** — 15 900 satr kod, 527 test, 41 xavfsizlik qoidasi
 - **Yetuklik tarixi** — 326 commit, 2026-fevraldan beri, v1.0 → v2.3.1
-- **Real avariya → yechim → o'lchov** — 27-iyul: 212 jonli so'rov DLQ'ga tushdi → 3 fazali
+- **Real avariya → yechim → o'lchov** — 27-iyul: bir daqiqada 241 jonli so'rov DLQ'ga tushdi → 3 fazali
   tuzatish → 28-iyul: 5 barobar zich burst 0 yo'qotish bilan
 - **Nomlangan pilot** — Smartup24, ruxsat bilan
 - **Ijro qobiliyati** — yuridik shaxs + IT Park shartnomasi + to'liq jamoa
@@ -230,9 +230,9 @@ Aniq foiz aytilmaydi — bu soxta aniqlik bo'lardi.
 Savolni kutmasdan o'zimiz ko'taramiz. **Slayd sarlavhasi: «Nima bor va nima yo'q»**
 
 **Bizda bor:**
-- Prodda ishlaydigan tizim, ~50.7k so'rov/kun
-- 99.994% muvaffaqiyat, 0 yo'qotish (o'lchangan)
-- 379 test, 41 xavfsizlik qoidasi
+- Prodda ishlaydigan tizim, ~60.6k so'rov/kun
+- 99.68% muvaffaqiyat, 0 yo'qotish (o'lchangan)
+- 527 test, 41 xavfsizlik qoidasi
 - Yuridik shaxs + IT Park shartnomasi
 - 5 kishilik jamoa
 
@@ -373,7 +373,7 @@ shunchaki refaktoring emas — «boshqa mijozga o'rnatsa bo'ladi» degan biznes 
    → natija. Xabar yo'qolmaydi. Diagramma ikki strelka bilan chiziladi — 1b-bo'limga qarang
 4. **Mahsulot** — arxitektura diagrammasi + skrinshotlar (Statistics, Errors, Ops konsoli)
 5. **⭐ Nima bor va nima yo'q** — 4-bo'limdagi slayd
-6. **⭐ Traksiya** — 50.7k so'rov/kun, 99.994%, 0 yo'qotish; avariya → tuzatish → 5× zich burst
+6. **⭐ Traksiya** — 60.6k so'rov/kun, 99.68%, 0 yo'qotish; avariya → tuzatish → 5× zich burst
 7. **Biznes-model** — 5 modelli jadval, top-3 ajratilgan
 8. **Bozor** — O'zbekiston enterprise + davlat. **Ikki segment kesishmasi:** integratsiya
    middleware va API-shlyuz (1b-bo'lim). TAM/SAM/SOM *(hali hisoblanmagan)*

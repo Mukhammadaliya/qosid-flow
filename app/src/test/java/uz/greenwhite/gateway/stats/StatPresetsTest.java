@@ -32,6 +32,26 @@ class StatPresetsTest {
     }
 
     @Test
+    void rangePresetsUseScalingWindowsAndInstantPresetsDoNot() {
+        // Range presets must not hard-code a rate window: at 7d/30d resolution a fixed
+        // [1m] samples a sliver of each step and the chart reports noise as trend.
+        for (String name : new String[]{"throughput", "errors"}) {
+            StatPresets.get(name).queries().forEach((series, promql) -> {
+                assertThat(promql).as("%s/%s scales its rate window", name, series).contains("[${step}]");
+                assertThat(promql).as("%s/%s has no fixed window", name, series).doesNotContain("[1m]");
+            });
+        }
+        StatPresets.get("latency").queries().forEach((series, promql) -> {
+            assertThat(promql).as("latency/%s scales its histogram window", series).contains("[${histWindow}]");
+            assertThat(promql).as("latency/%s has no fixed window", series).doesNotContain("[5m]");
+        });
+        // Instant KPIs read "now" and are independent of the selected span, apart from
+        // dlq which counts over it — those windows stay as they are.
+        StatPresets.get("kpi").queries().forEach((series, promql) ->
+            assertThat(promql).as("kpi/%s is not step-scaled", series).doesNotContain("${step}"));
+    }
+
+    @Test
     void unknownPresetReturnsNull() {
         assertThat(StatPresets.get("bogus")).isNull();
     }
@@ -45,8 +65,27 @@ class StatPresetsTest {
         assertThat(p.queries().get("successRate")).doesNotContain("clamp_min");
         assertThat(p.queries().get("errorRate")).doesNotContain("clamp_min");
         assertThat(p.queries().get("successRate"))
-            .contains("/ sum(rate(gateway_http_request_total[5m])) * 100");
+            .contains("/ sum(rate(gateway_http_request_total{result!=\"deferred\"}[5m])) * 100");
         assertThat(p.queries().get("errorRate"))
-            .contains("/ sum(rate(gateway_http_request_total[5m])) * 100");
+            .contains("/ sum(rate(gateway_http_request_total{result!=\"deferred\"}[5m])) * 100");
+    }
+
+    @Test
+    void rateDenominatorsExcludeBackPressureDeferrals() {
+        // A deferred request never reached an upstream — the circuit was open or the host
+        // permit was refused, and the message went back on the queue. Counting it in the
+        // denominator reports the gateway throttling itself as an upstream failure: on
+        // production 2026-08-01 that read as 26.8% success for a pipeline running at 99.68%.
+        StatPreset kpi = StatPresets.get("kpi");
+        for (String key : new String[]{"successRate", "errorRate"}) {
+            assertThat(kpi.queries().get(key))
+                .as("kpi/%s excludes deferrals from the denominator", key)
+                .contains("{result!=\"deferred\"}");
+        }
+        // The numerators must NOT pick deferrals up either, by name or by regex.
+        assertThat(kpi.queries().get("successRate")).contains("{result=\"success\"}");
+        assertThat(kpi.queries().get("errorRate")).doesNotContain("deferred|");
+        StatPresets.get("errors").queries().forEach((series, promql) ->
+            assertThat(promql).as("errors/%s is not a deferral count", series).doesNotContain("deferred"));
     }
 }

@@ -211,7 +211,12 @@ public class OracleRequestConsumer implements ConsumerSeekAware {
                                     handleSuccess(key, message, response);
                                 } else {
                                     int httpStatus = response != null ? response.getHttpStatus() : 0;
-                                    metrics.recordHttpResult(httpStatus);
+                                    // A CB-shaped 503 is back-pressure, not an upstream answer: the call
+                                    // was never made and handleFailedResponse below parks it for retry.
+                                    // It gets its own result bucket so it cannot distort the error rate.
+                                    boolean deferred = response != null
+                                            && "CIRCUIT_BREAKER".equals(response.getErrorSource());
+                                    metrics.recordHttpResult(httpStatus, deferred);
                                     parked = handleFailedResponse(key, message, response, partition, offset);
                                 }
                             } catch (Exception e) {

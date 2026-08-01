@@ -298,13 +298,17 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
 /* screenshot slots */
 .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.6vw; margin-top: 3.6vh; }
 .shot {
-  aspect-ratio: 16/10; border-radius: 10px; border: 1px dashed rgba(255,255,255,.2);
+  aspect-ratio: 16/9; border-radius: 10px; border: 1px dashed rgba(255,255,255,.2);
   display: grid; place-items: center; text-align: center;
   font-family: var(--mono); font-size: clamp(9.5px,.92vw,12px); letter-spacing: .14em;
   text-transform: uppercase; color: rgba(255,255,255,.28);
   background: rgba(255,255,255,.02); overflow: hidden;
 }
-.shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* A filled slot is no longer a placeholder: solid hairline, and the crop keeps the top
+   of each capture — the KPI row, the first DLQ rows, the status bar — since that is
+   where each screen states what it is. */
+.shot--filled { border-style: solid; border-color: rgba(255,255,255,.13); background: #fff; }
+.shot img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
 .shot__cap { margin-top: 1.2vh; font-family: var(--mono); font-size: clamp(9.5px,.9vw,12px); letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
 
 @media print {
@@ -391,40 +395,22 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
   </section>
 
   <!-- ================= 4. Product =================
-       Screenshots: drop PNGs beside this file and replace the placeholder text with
-       <img src="stats.png" alt="">. The slots are 16:10 so the console's own
-       proportions survive. -->
+       Captures live in img/. They are real production screens, so they carry real
+       tenant ids, request ids and the upstream hostname — redact before this deck
+       leaves the team, and never publish img/ to the open repository. -->
   <section class="slide">
     <p class="eyebrow"><span data-lang="uz">Mahsulot</span><span data-lang="ru">Продукт</span><span data-lang="en">The product</span></p>
     <h2><span data-lang="uz">Boshqaruv konsoli — quvur ko‘rinib turadi</span><span data-lang="ru">Консоль управления — конвейер виден целиком</span><span data-lang="en">A console where the pipeline is visible</span></h2>
     <div class="shots">
-      <div><div class="shot">STATISTICS</div><div class="shot__cap"><span data-lang="uz">Jonli statistika, o‘tkazuvchanlik, p95</span><span data-lang="ru">Живая статистика, пропускная способность, p95</span><span data-lang="en">Live statistics, throughput, p95</span></div></div>
-      <div><div class="shot">ERRORS</div><div class="shot__cap"><span data-lang="uz">Xatolarni qidirish, DLQ, AI-tahlil</span><span data-lang="ru">Поиск ошибок, DLQ, AI-анализ</span><span data-lang="en">Error search, DLQ, AI analysis</span></div></div>
-      <div><div class="shot">OPS</div><div class="shot__cap"><span data-lang="uz">To‘xtatish/ishga tushirish, jonli jurnal</span><span data-lang="ru">Остановка/запуск, живой журнал</span><span data-lang="en">Stop/start, live log</span></div></div>
+      <div><div class="shot shot--filled"><img src="img/01-statistics.jpg" alt="QosID Flow — statistics dashboard"></div><div class="shot__cap"><span data-lang="uz">Jonli statistika, o‘tkazuvchanlik, p95</span><span data-lang="ru">Живая статистика, пропускная способность, p95</span><span data-lang="en">Live statistics, throughput, p95</span></div></div>
+      <div><div class="shot shot--filled"><img src="img/02-errors.jpg" alt="QosID Flow — DLQ error console"></div><div class="shot__cap"><span data-lang="uz">DLQ, Telegram ogohlantirish, AI-tahlil</span><span data-lang="ru">DLQ, оповещения в Telegram, AI-анализ</span><span data-lang="en">DLQ, Telegram alerts, AI analysis</span></div></div>
+      <div><div class="shot shot--filled"><img src="img/03-ops.jpg" alt="QosID Flow — ops console with live log"></div><div class="shot__cap"><span data-lang="uz">To‘xtatish/ishga tushirish, jonli jurnal</span><span data-lang="ru">Остановка/запуск, живой журнал</span><span data-lang="en">Stop/start, live log</span></div></div>
     </div>
     <p class="punch" style="font-size:clamp(13px,1.3vw,20px);font-weight:500;color:var(--muted-2)"><span data-lang="uz">Sozlamalar faqat tizim to‘xtaganda tahrirlanadi — noto‘g‘ri sozlama jonli trafikni ura olmaydi.</span><span data-lang="ru">Настройки меняются только при остановленном шлюзе — ошибочная настройка не заденет живой трафик.</span><span data-lang="en">Settings are editable only while the gateway is stopped — a bad setting cannot reach live traffic.</span></p>
     <div class="num">04</div>
   </section>
 
-  <!-- ================= 5. Have / need ================= -->
-  <section class="slide">
-    <p class="eyebrow"><span data-lang="uz">Nega bizga inkubatsiya kerak</span><span data-lang="ru">Зачем нам инкубация</span><span data-lang="en">Why we need incubation</span></p>
-    <h2><span data-lang="uz">Nima bor va nima yo‘q</span><span data-lang="ru">Что есть и чего нет</span><span data-lang="en">What we have and what we do not</span></h2>
-    <div class="cols2">
-      <div class="hn hn--have">
-        <div class="hn__h"><span data-lang="uz">Bizda bor</span><span data-lang="ru">У нас есть</span><span data-lang="en">We have</span></div>
-        <ul><li><span data-lang="uz">Prodda ishlaydigan tizim, ~50 700 so‘rov/kun</span><span data-lang="ru">Работающая в проде система, ~50 700 запросов/день</span><span data-lang="en">A system in production, ~50,700 requests/day</span></li><li><span data-lang="uz">99.994% muvaffaqiyat, o‘lchangan</span><span data-lang="ru">99,994% успешности, измерено</span><span data-lang="en">99.994% success, measured</span></li><li><span data-lang="uz">379 test, 41 xavfsizlik qoidasi</span><span data-lang="ru">379 тестов, 41 правило безопасности</span><span data-lang="en">379 tests, 41 safety rules</span></li><li><span data-lang="uz">Yuridik shaxs va IT Park shartnomasi</span><span data-lang="ru">Юрлицо и договор с IT Park</span><span data-lang="en">A legal entity and an IT Park contract</span></li><li><span data-lang="uz">5 kishilik jamoa</span><span data-lang="ru">Команда из 5 человек</span><span data-lang="en">A team of five</span></li></ul>
-      </div>
-      <div class="hn hn--need">
-        <div class="hn__h"><span data-lang="uz">Bizda yo‘q</span><span data-lang="ru">У нас нет</span><span data-lang="en">We do not have</span></div>
-        <ul><li><span data-lang="uz">Asosiy kompaniyadan tashqarida mijoz</span><span data-lang="ru">Клиента вне основной компании</span><span data-lang="en">A customer outside the parent company</span></li><li><span data-lang="uz">Narx modeli</span><span data-lang="ru">Модели ценообразования</span><span data-lang="en">A pricing model</span></li><li><span data-lang="uz">Sotuv kanali</span><span data-lang="ru">Канала продаж</span><span data-lang="en">A sales channel</span></li><li><span data-lang="uz">Bozor validatsiyasi</span><span data-lang="ru">Валидации рынка</span><span data-lang="en">Market validation</span></li></ul>
-      </div>
-    </div>
-    <p class="punch"><span data-lang="uz">Biz dasturdan mahsulot qurishni emas, <em>uni kim sotib olishini aniqlashni</em> so‘raymiz.</span><span data-lang="ru">Мы просим у программы не построить продукт, а <em>выяснить, кто его купит</em>.</span><span data-lang="en">We are not asking the programme to build the product. We are asking it to find out <em>who will buy it</em>.</span></p>
-    <div class="num">05</div>
-  </section>
-
-  <!-- ================= 6. Traction ================= -->
+  <!-- ================= 5. Traction ================= -->
   <section class="slide">
     <p class="eyebrow">
       <span data-lang="uz">Prototip emas — ishlab chiqarishda</span>
@@ -438,27 +424,34 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
       <span data-lang="en">Under live load since April 2026</span>
     </h2>
 
+    <!-- Every figure here was re-measured on 2026-08-01 from the production server's own
+         rotated logs (25–31 July, seven complete days), not from a dashboard:
+           422 776 completed + 1 358 DLQ = 424 134 requests  ->  60 591/day, 99.68% success
+           peak second: 918 completions (28.07), 380 on an ordinary day (31.07)
+           incident 27.07 14:27 UTC: 241 DLQ in one minute
+         Success is defined the strict way — a request that ended in the DLQ counts as failed,
+         even though most were later retried through. -->
     <div class="figures">
       <div class="fig">
-        <div class="fig__n">50 700</div>
+        <div class="fig__n">60 600</div>
         <div class="fig__k">
           <span data-lang="uz">so‘rov / kun</span><span data-lang="ru">запросов / день</span><span data-lang="en">requests / day</span>
         </div>
       </div>
       <div class="fig fig--good">
-        <div class="fig__n">99.994<span style="font-size:.5em">%</span></div>
+        <div class="fig__n">99.68<span style="font-size:.5em">%</span></div>
         <div class="fig__k">
           <span data-lang="uz">muvaffaqiyat</span><span data-lang="ru">успешность</span><span data-lang="en">success rate</span>
         </div>
       </div>
       <div class="fig">
-        <div class="fig__n">330<span style="font-size:.42em">/s</span></div>
+        <div class="fig__n">918<span style="font-size:.42em">/s</span></div>
         <div class="fig__k">
           <span data-lang="uz">cho‘qqi, yo‘qotishsiz</span><span data-lang="ru">пик, без потерь</span><span data-lang="en">peak, zero loss</span>
         </div>
       </div>
       <div class="fig">
-        <div class="fig__n">379</div>
+        <div class="fig__n">527</div>
         <div class="fig__k">
           <span data-lang="uz">avtomatik test</span><span data-lang="ru">автотестов</span><span data-lang="en">automated tests</span>
         </div>
@@ -469,9 +462,9 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
       <div class="card card--bad">
         <div class="card__d">27.07.2026</div>
         <div class="card__h">
-          <span data-lang="uz">212 jonli so‘rov xato navbatiga tushdi</span>
-          <span data-lang="ru">212 живых запросов ушли в очередь ошибок</span>
-          <span data-lang="en">212 live requests fell into the error queue</span>
+          <span data-lang="uz">Bir daqiqada 241 jonli so‘rov xato navbatiga tushdi</span>
+          <span data-lang="ru">За одну минуту 241 живой запрос ушёл в очередь ошибок</span>
+          <span data-lang="en">241 live requests fell into the error queue in one minute</span>
         </div>
         <p class="card__p">
           <span data-lang="uz">O‘ttiz soniyalik uzilish. Sababini topdik, uchta o‘zgarish kiritdik va o‘lchadik.</span>
@@ -496,6 +489,24 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
         </p>
       </div>
     </div>
+    <div class="num">05</div>
+  </section>
+
+  <!-- ================= 6. Have / need ================= -->
+  <section class="slide">
+    <p class="eyebrow"><span data-lang="uz">Nega bizga inkubatsiya kerak</span><span data-lang="ru">Зачем нам инкубация</span><span data-lang="en">Why we need incubation</span></p>
+    <h2><span data-lang="uz">Nima bor va nima yo‘q</span><span data-lang="ru">Что есть и чего нет</span><span data-lang="en">What we have and what we do not</span></h2>
+    <div class="cols2">
+      <div class="hn hn--have">
+        <div class="hn__h"><span data-lang="uz">Bizda bor</span><span data-lang="ru">У нас есть</span><span data-lang="en">We have</span></div>
+        <ul><li><span data-lang="uz">Ishlab chiqarishda ishlaydigan tizim — yuqorida o‘lchangan</span><span data-lang="ru">Система в проде — измерено выше</span><span data-lang="en">A system running in production — measured on the previous slide</span></li><li><span data-lang="uz">41 xavfsizlik qoidasi, har biri test bilan mahkamlangan</span><span data-lang="ru">41 правило безопасности, каждое закреплено тестом</span><span data-lang="en">41 safety rules, every one pinned by a test</span></li><li><span data-lang="uz">Uch tilli boshqaruv konsoli — o‘zbek, rus, ingliz</span><span data-lang="ru">Консоль на трёх языках — узбекский, русский, английский</span><span data-lang="en">A console in three languages — Uzbek, Russian, English</span></li></ul>
+      </div>
+      <div class="hn hn--need">
+        <div class="hn__h"><span data-lang="uz">Bizda yo‘q</span><span data-lang="ru">У нас нет</span><span data-lang="en">We do not have</span></div>
+        <ul><li><span data-lang="uz">Asosiy kompaniyadan tashqarida mijoz</span><span data-lang="ru">Клиента вне основной компании</span><span data-lang="en">A customer outside the parent company</span></li><li><span data-lang="uz">Narx modeli</span><span data-lang="ru">Модели ценообразования</span><span data-lang="en">A pricing model</span></li><li><span data-lang="uz">Sotuv kanali</span><span data-lang="ru">Канала продаж</span><span data-lang="en">A sales channel</span></li><li><span data-lang="uz">Bozor validatsiyasi</span><span data-lang="ru">Валидации рынка</span><span data-lang="en">Market validation</span></li></ul>
+      </div>
+    </div>
+    <p class="punch"><span data-lang="uz">Biz dasturdan mahsulot qurishni emas, <em>uni kim sotib olishini aniqlashni</em> so‘raymiz.</span><span data-lang="ru">Мы просим у программы не построить продукт, а <em>выяснить, кто его купит</em>.</span><span data-lang="en">We are not asking the programme to build the product. We are asking it to find out <em>who will buy it</em>.</span></p>
     <div class="num">06</div>
   </section>
 

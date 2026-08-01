@@ -24,9 +24,9 @@ yuboriladi. Javob tanasi 7 kun arxivda saqlanadi va so'rov raqami bo'yicha olina
 Odatda buning uchun ikkita alohida mahsulot kerak bo'ladi: kiruvchi tomon uchun API-shlyuz,
 chiquvchi tomon uchun integratsiya platformasi.
 
-**Holati.** Bu prototip emas. Tizim 2026-yil apreldan beri ishlab chiqarishda: kuniga ~50 700
-so'rov, 99.994% muvaffaqiyat. Cho'qqi yuklamada soniyasiga ~330 so'rov bitta ham yo'qotishsiz
-qayta ishlangan. 379 avtomatik test, 41 hujjatlashtirilgan xavfsizlik qoidasi. Boshqaruv
+**Holati.** Bu prototip emas. Tizim 2026-yil apreldan beri ishlab chiqarishda: kuniga ~60 600
+so'rov, 99.68% muvaffaqiyat. Cho'qqi yuklamada soniyasiga 918 so'rov bitta ham yo'qotishsiz
+qayta ishlangan. 527 avtomatik test, 41 hujjatlashtirilgan xavfsizlik qoidasi. Boshqaruv
 konsoli: jonli statistika, xatolar tahlili, sozlamalar va operator paneli.
 
 **Nima uchun inkubatsiya.** Bizda texnologiya tayyor, biznes esa noldan: asosiy kompaniyadan
@@ -43,8 +43,8 @@ integratsiya platformasi. Asosiy ilovaning oldida ikkala yo'nalishda turadi: ung
 so'rovlarni ham, undan tashqi API'larga chiqayotganini ham boshqaradi. So'rov navbatga yoziladi,
 qayta uriniladi, circuit breaker bilan himoyalanadi va yo'qolmaydi.
 
-2026-yil apreldan beri ishlab chiqarishda: kuniga ~50 700 so'rov, 99.994% muvaffaqiyat, cho'qqida
-soniyasiga 330 so'rov yo'qotishsiz. 379 test.
+2026-yil apreldan beri ishlab chiqarishda: kuniga ~60 600 so'rov, 99.68% muvaffaqiyat, cho'qqida
+soniyasiga 918 so'rov yo'qotishsiz. 527 test.
 
 Texnologiya tayyor, biznes noldan — inkubatsiyadan mahsulot qurishni emas, uni kim sotib olishini
 aniqlashni so'raymiz.
@@ -94,6 +94,9 @@ o'ylaydi. Yuqoridagi ro'yxat esa jamoaning validatsiya qila olishini ko'rsatadi.
 - **Kategoriya:** Korporativ yechimlar *(muqobil: Chuqur texnologiyalar)*
 - **Moliyalashtirish bosqichi:** Pre-seed — investitsiya jalb qilinmagan
 - **Faoliyat hududi:** Toshkent
+- **Yuridik holat:** Yuridik shaxs ro'yxatdan o'tgan, IT Park bilan shartnoma mavjud
+  *(taqdimot slaydidan olib tashlandi — bu ariza mezoni, pitch da'vosi emas; slaydda
+  o'rniga muhandislik tayyorligi turadi)*
 - **GitHub:** `github.com/Mukhammadaliya/qosid-flow`
 - **MVP havolasi:** *(demo instans tayyor bo'lgach)*
 - **Video:** *(yozib olingach — ssenariy `docs/pta-video-script.md` da)*
