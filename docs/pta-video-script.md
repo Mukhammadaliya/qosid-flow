@@ -42,7 +42,7 @@ bo'sh chiqadi. Ikki yo'l bor:
 | 2:38–2:52 | 11 | Slayd: bor / yo'q | ~28 |
 | 2:52–3:00 | 12 | Slayd: yakun | ~15 |
 
-**Jami ~360 so'z.** Sekin gapirilganda ~2:52 — zaxira bor.
+**371 so'z** (o'lchangan, taxmin emas). Sekin gapirilganda ~2:57 — chegara ichida.
 
 ---
 
