@@ -695,6 +695,13 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
     document.querySelectorAll('.chrome button').forEach(b =>
       b.setAttribute('aria-pressed', String(b.textContent.trim() === l)));
   }
+  // ?lang=ru / ?lang=en — bir faylni uch tilda eksport qilish uchun. Tugmalar bilan
+  // bir xil yo'ldan o'tadi, shuning uchun aria-pressed ham to'g'ri qoladi.
+  {
+    const q = new URLSearchParams(location.search).get('lang');
+    if (['uz', 'ru', 'en'].includes(q)) setLang(q);
+  }
+
   addEventListener('keydown', e => {
     if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); show(i + 1); }
     if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); show(i - 1); }
