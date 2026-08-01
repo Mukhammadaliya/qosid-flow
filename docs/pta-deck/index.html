@@ -368,10 +368,21 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
 .shot img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
 .shot__cap { margin-top: 1.2vh; font-family: var(--mono); font-size: clamp(9.5px,.9vw,12px); letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
 
+@page { size: 1600px 900px; margin: 0; }
 @media print {
   html, body { height: auto; overflow: visible; }
-  .chrome, .hint, .stage { display: none !important; }
+  /* .deck is position:fixed for the on-screen viewer; a fixed ancestor prints once and
+     never paginates, which is why the export used to come out as a single page. */
+  .deck { position: static !important; display: block !important; place-items: initial; }
+  .slide { width: 1600px; }
+  .chrome, .hint { display: none !important; }
   .slide { display: grid !important; position: relative; page-break-after: always; height: 100vh; animation: none; }
+  /* The entrance choreography must not be caught mid-flight by the print snapshot:
+     an element still at its animation-delay would land on the page invisible. Only the
+     animated entrance elements are reset, so nothing else has its opacity forced. */
+  .slide .eyebrow, .slide h2, .slide .punch, .slide .seq > *, .slide .led {
+    animation: none !important; opacity: 1 !important; transform: none !important;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .pkt { animation: none; opacity: 1; }
