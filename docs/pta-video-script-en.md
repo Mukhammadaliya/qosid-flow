@@ -2,32 +2,26 @@
 
 **For:** President Tech Award, incubation track — "link to project video"
 **Runtime:** 2:50–3:00. Do not go over three minutes.
-**Format:** screen recording + voiceover. No face required; nice to have in the last shot.
+**Format:** **a recording of the animated deck + voiceover.** No live system on screen.
 
-This is the English cut of `pta-video-script.md`. It is an adaptation, not a translation —
-English carries the same content in fewer, shorter sentences, so the beats land differently
-even though the timings and the slide order match.
+This is the English cut of `pta-video-script.md`. An adaptation, not a translation — English
+carries the same content in more, shorter words, so it is read faster; the timings and the
+slide order match.
 
 > **If the figures change, change them in all three scripts.** They are spoken as words, so
 > a search-and-replace over the deck will not find them. The five that appear below:
 > **60 600** requests/day · **99.68 %** · **918** req/s peak · **241** DLQ in one minute ·
 > **41** safety rules.
 
-**Structure:** the script follows the deck's twelve slides, so a judge who watches the video
-and then opens the PDF travels the same road twice. But **do not read the slides**: on
-slides 3, 4 and 5 the screen shows the running system, not the deck.
+**Structure:** the script follows the deck's twelve slides, and the deck is all that is on
+screen. The slides are animated: the headline settles, blocks arrive in sequence, packets
+cross the gate on slide 3, the figures count up on slide 5, the rows strike through on
+slide 12. **The voice does not read the slide** — the screen shows, the voice says what the
+screen does not. That is the trap in this format: repeat what is written and the video adds
+nothing.
 
----
-
-## Before you record
-
-Slide 4 needs a live demo, and the local instance has no traffic — the Statistics page will
-be empty. Two options:
-
-1. **Generate synthetic load locally** (recommended) — a real interface behaving for real,
-   with no customer data. A video lives at a public link and cannot be taken back.
-2. Tunnel to production — real numbers, but tenant ids, request ids and upstream hostnames
-   on screen. **Not recommended.**
+**Pace to the animation.** Each slide takes about 0.6 s to arrive — start the line after
+that, or the first words land on an empty screen.
 
 ---
 
@@ -37,18 +31,21 @@ be empty. Two options:
 |---|---|---|---|
 | 0:00–0:14 | 01 | Slide: title, packets flowing | ~30 |
 | 0:14–0:30 | 02 | Slide: four failures | ~35 |
-| 0:30–0:50 | 03 | **Live:** topology animation | ~42 |
-| 0:50–1:22 | 04 | **Live system:** request → console | ~66 |
-| 1:22–1:50 | 05 | **Live:** statistics, then slide | ~58 |
-| 1:50–2:00 | 06 | Slide: business model | ~21 |
-| 2:00–2:09 | 07 | Slide: market | ~19 |
-| 2:09–2:21 | 08 | Slide: competition | ~25 |
-| 2:21–2:30 | 09 | Slide: channels | ~19 |
-| 2:30–2:38 | 10 | Slide: team | ~15 |
-| 2:38–2:52 | 11 | Slide: have / don't have | ~29 |
-| 2:52–3:00 | 12 | Slide: the close | ~16 |
+| 0:30–0:54 | 03 | Topology, packets crossing the gate | ~55 |
+| 0:54–1:16 | 04 | Three console screens | ~48 |
+| 1:16–1:44 | 05 | Figures count up, then the incident | ~62 |
+| 1:44–1:54 | 06 | Business model | ~21 |
+| 1:54–2:03 | 07 | Market | ~19 |
+| 2:03–2:15 | 08 | Competition | ~25 |
+| 2:15–2:24 | 09 | Channels | ~19 |
+| 2:24–2:32 | 10 | Team | ~15 |
+| 2:32–2:48 | 11 | Have / don't have columns | ~32 |
+| 2:48–3:00 | 12 | The close, rows striking through | ~22 |
 
-**447 words** (counted). At 2.5 words a second, about 2:59.
+**472 words.** Between 2:55 (2.7 words a second) and 3:17 (2.4) depending on pace — time your
+first read-through. The four marked lines are 29 words, about 12 seconds: drop them if you run long.
+Time your first read-through; if it runs long, drop the four lines marked *(drop this if you run long)*
+and you are at 3:05.
 English runs dense — slow down rather than adding words, and let the figures sit on screen.
 
 ---
@@ -71,13 +68,12 @@ English runs dense — slow down rather than adding words, and let the figures s
 **On screen:** the four failures arrive one by one. Hold a beat on each.
 
 > Integrations are usually hand-written scripts.
-> A thousand requests at once and the server gives way. The API slows down and the
-> script blocks. Something fails and the error is swallowed.
-> And nobody re-sends what was lost.
+> A thousand requests at once and the server gives way. The API slows and the script
+> blocks. Something fails, the error is swallowed, and nobody re-sends what was lost.
 
 ---
 
-### 0:30–0:50 · Slide 03 — The solution
+### 0:30–0:54 · Slide 03 — The solution
 
 **On screen:** the topology. **Follow one packet with the cursor** as it crosses the gate
 and turns from blue to green — these are the clearest five seconds in the video.
@@ -85,39 +81,31 @@ and turns from blue to green — these are the clearest five seconds in the vide
 > QosID Flow stands in front of your main application, in both directions — the requests
 > coming in, and the ones going out to third-party APIs.
 > One pipeline for both: queued, retried, never lost.
-> Normally this takes two separate products.
+>
+> One detail matters. The client is told "accepted" only **after** the request is durably
+> queued. So it does not mean "we'll try" — it means "it is safe with us".
+> Normally this takes two separate products.  *(drop this if you run long)*
 
 ---
 
-### 0:50–1:22 · Slide 04 — The product *(the heart of the video)*
+### 0:54–1:16 · Slide 04 — The product
 
-Three short shots. The live system, not the slide.
+**On screen:** three captures of the console. Point at each with the cursor and rest there
+for two or three seconds — give the judge time to read it.
 
-**A · 0:50–1:06 — Send a request**
-**On screen:** a terminal. One `POST`. The answer: `202 ACCEPTED` and a polling URL. **Zoom in.**
-
-> I'll send a request. The answer is immediate: two-oh-two, and a link to poll.
-> Notice **when** it is returned — after the request is durably queued.
-> So "accepted" doesn't mean "we'll try". It means "it is safe with us".
-
-**B · 1:06–1:14 — Errors**
-**On screen:** the Errors page. Open one entry so the detail shows.
-
-> A request that cannot be delivered is never dropped — it lands in a dead-letter queue,
-> Telegram gets an alert, and the reason is right here.
-
-**C · 1:14–1:22 — Operator console**
-**On screen:** the Ops page, live log streaming.
-
+> And all of it is visible. First, live statistics: throughput, success rate, latency.
+> Second, errors. A request that cannot be delivered is never dropped — it lands in a
+> dead-letter queue, Telegram gets an alert, and AI explains the reason.
+> Third, the operator console: stop, start, live log.
 > And settings can only be changed while the system is stopped — a bad setting can never
 > reach live traffic.
 
 ---
 
-### 1:22–1:50 · Slide 05 — Not a prototype
+### 1:16–1:44 · Slide 05 — Not a prototype
 
-**On screen:** the live Statistics page for five seconds, then cut to the slide and let the
-figures count up. **Keep numbers on screen for at least three seconds.**
+**On screen:** four figures count up from zero (~0.9 s). **Wait for the count to finish** —
+saying a number while it is still climbing sounds muddled.
 
 > Not a prototype. In production since April: sixty thousand six hundred requests a day,
 > ninety-nine point six eight percent success, measured peak nine hundred and eighteen
@@ -130,42 +118,42 @@ figures count up. **Keep numbers on screen for at least three seconds.**
 
 ---
 
-### 1:50–2:00 · Slide 06 — Business model
+### 1:44–1:54 · Slide 06 — Business model
 
-> Five revenue streams; three in focus today: implementation services, per-connector
-> pricing, managed cloud.
+> Five revenue streams, three in focus: implementation services, per-connector pricing,
+> managed cloud.
 
 ---
 
-### 2:00–2:09 · Slide 07 — Market
+### 1:54–2:03 · Slide 07 — Market
 
 > We sit where two segments overlap: integration platforms and API gateways.
-> The beachhead is Uzbek enterprise and government.
+> The beachhead is Uzbek enterprise and government integration.  *(drop this if you run long)*
 
 ---
 
-### 2:09–2:21 · Slide 08 — Competition
+### 2:03–2:15 · Slide 08 — Competition
 
 > API gateways take inbound traffic, but synchronously — if the app is down, the request
-> is lost. Integration platforms handle outbound, but are not an HTTP front door.
-> Workflow engines were never built for this volume.
+> is lost. Integration platforms handle outbound, but are no HTTP front door.
+> Workflow engines were never built for this volume.  *(drop this if you run long)*
 
 ---
 
-### 2:21–2:30 · Slide 09 — Go to market
+### 2:15–2:24 · Slide 09 — Go to market
 
-> Three channels, lowest friction first: pilot-ecosystem customers, then IT Park residents
-> and ERP integrators, then managed cloud.
+> Three channels, lowest friction first: pilot-ecosystem customers, IT Park residents and
+> ERP integrators, then managed cloud.
 
 ---
 
-### 2:30–2:38 · Slide 10 — Team
+### 2:24–2:32 · Slide 10 — Team
 
 > Five of us. Three build. Two go and test the market.
 
 ---
 
-### 2:38–2:52 · Slide 11 — What we have, what we don't
+### 2:32–2:48 · Slide 11 — What we have, what we don't
 
 **On screen:** two columns. **Hold on the right-hand one** — it is the most honest frame in
 the video, and it is the reason we are applying.
@@ -177,12 +165,13 @@ the video, and it is the reason we are applying.
 
 ---
 
-### 2:52–3:00 · Slide 12 — The close
+### 2:48–3:00 · Slide 12 — The close
 
 **On screen:** the closing slide, four rows striking through. Logo and links in the last two
 seconds.
 
-> In three months that column empties.
+> In three months that column empties: a first paying pilot, a confirmed price, a first
+> partnership through IT Park, twenty customer interviews.  *(drop this if you run long)*
 > The system already delivers sixty thousand requests a day. What's left is knowing who to
 > deliver the product to.
 > QosID Flow. Thank you.
@@ -191,11 +180,15 @@ seconds.
 
 ## Recording notes
 
-**Screen**
-- 1920×1080, browser fullscreen (`f` puts the deck in fullscreen)
-- Turn off notifications; close spare tabs; use a clean browser profile
-- Zoom the console pages to 125–150 % — a judge may watch on a phone
-- Move the cursor slowly; rest on anything that matters for a second or two
+**Deck**
+- `f` for fullscreen; arrow keys move between slides
+- Language: `1` `2` `3`, or `?lang=uz|ru|en`. Open the right one **before** you record
+- 1920×1080, notifications off, spare tabs closed
+
+**Work with the animation**
+- Each slide takes ~0.6 s to arrive — start the line after that
+- On slide 5 the figures count for 0.9 s — wait for them
+- Slides 3 and 12 move continuously; don't rush, the frame carries itself
 
 **Voice**
 - Record it **separately** from the screen. A fumbled line then costs one take, not the
@@ -210,7 +203,7 @@ seconds.
 - Export MP4, H.264, 1080p, 30 fps
 
 **Don't**
-- Read the slides — the most common mistake in this format
+- Read the slides — don't repeat what is written, add to it
 - Explain the architecture; that is what the repository is for
 - Say "we are the best" — the numbers already said it
 - Run over. Re-cut even at 3:01

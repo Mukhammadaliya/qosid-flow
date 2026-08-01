@@ -1,48 +1,48 @@
 # QosID Flow — 3 daqiqalik video ssenariysi
 
 **Maqsad:** President Tech Award, Inkubatsiya treki, «Loyiha videosiga havola» maydoni
-**Xronometraj:** 2:55–3:00 (chegara — 3 daqiqa, oshib ketmasin)
-**Til:** o'zbek. Rus/ingliz versiyasi uchun matn tarjima qilinadi, tuzilma o'zgarmaydi
-**Format:** ekran yozuvi + ovoz. Yuz shart emas; oxirgi kadrda bo'lsa yaxshi
+**Xronometraj:** 2:50–3:00 (chegara — 3 daqiqa, oshib ketmasin)
+**Til:** o'zbek. Rus va ingliz versiyalari: `pta-video-script-ru.md`, `pta-video-script-en.md`
+**Format:** **animatsion deck yozuvi + ovoz.** Jonli tizim ko'rsatilmaydi
 
-**Tuzilma:** ssenariy **deckning 12 slaydi bo'yicha** boradi. Shunday qilinganining sababi —
-hakam avval videoni, keyin PDF'ni (yoki teskarisi) ko'radi; ikkalasi bir xil yo'ldan borsa,
-ikkinchisi birinchisini mustahkamlaydi. Lekin **slayd o'qilmaydi**: 3, 4 va 5-slaydlarda
-ekranda slayd emas, jonli tizim turadi. Slayd — skelet, jonli tizim — go'sht.
+> **Raqamlar o'zgarsa — uchala ssenariyda ham o'zgartiring.** Ular ovozda so'z bilan
+> aytiladi, ya'ni deck bo'yicha raqamli qidiruv ularni topmaydi. Quyida uchraydigan beshtasi:
+> **60 600** so'rov/kun · **99.68 %** · cho'qqi **918** so'rov/s · bir daqiqada **241** DLQ ·
+> **41** xavfsizlik qoidasi.
 
----
+**Tuzilma:** ssenariy deckning 12 slaydi bo'yicha boradi, ekranda ham faqat deck turadi.
+Slaydlar animatsiyali: sarlavha joylashadi, bloklar ketma-ket keladi, 3-slaydda paketlar
+shlyuzdan o'tadi, 5-slaydda raqamlar sanab chiqadi, 12-slaydda satrlar chizib tashlanadi.
+**Ovoz slaydni o'qib bermaydi** — ekran ko'rsatadi, ovoz esa ekranda yozilmagan narsani
+aytadi. Bu format eng ko'p buziladigan joy: yozilganini takrorlasangiz, video ortiqcha
+bo'lib qoladi.
 
-## Yozishdan oldin: bitta to'siq
-
-4-slayd jonli demo talab qiladi, lokal instansda esa trafik yo'q — Statistika sahifasi
-bo'sh chiqadi. Ikki yo'l bor:
-
-1. **Lokalda sun'iy yuk yaratish** (tavsiya etiladi) — ekranda haqiqiy interfeys, haqiqiy
-   xatti-harakat, lekin mijoz ma'lumoti yo'q. Video ochiq havolada turadi, prod
-   skrinshotidan farqli o'laroq uni orqaga qaytarib bo'lmaydi.
-2. Prod'ga tunnel — haqiqiy raqamlar, lekin ekranda tenant nomerlari, so'rov id'lari va
-   host nomlari ko'rinadi. **Tavsiya qilinmaydi.**
+**Tempni animatsiyaga moslang.** Slaydga o'tganda kirish ~0.6 soniya davom etadi — gapni
+shundan keyin boshlang, aks holda birinchi so'zlar bo'sh ekranga tushadi.
 
 ---
 
-## Xronometraj jadvali
+## Xronometraj
 
-| vaqt | slayd | ekranda | ovoz (so'z) |
+| vaqt | slayd | ekranda | so'z |
 |---|---|---|---|
-| 0:00–0:14 | 01 | Slayd: sarlavha, paketlar oqadi | ~29 |
-| 0:14–0:30 | 02 | Slayd: to'rtta muammo | ~34 |
-| 0:30–0:50 | 03 | **Jonli:** topologiya animatsiyasi | ~40 |
-| 0:50–1:22 | 04 | **Jonli tizim:** so'rov → konsol | ~64 |
-| 1:22–1:50 | 05 | **Jonli:** statistika, keyin slayd | ~56 |
-| 1:50–2:00 | 06 | Slayd: biznes-model | ~20 |
-| 2:00–2:09 | 07 | Slayd: bozor | ~18 |
-| 2:09–2:21 | 08 | Slayd: raqobat | ~24 |
-| 2:21–2:30 | 09 | Slayd: kanallar | ~18 |
-| 2:30–2:38 | 10 | Slayd: jamoa | ~16 |
-| 2:38–2:52 | 11 | Slayd: bor / yo'q | ~28 |
-| 2:52–3:00 | 12 | Slayd: yakun | ~15 |
+| 0:00–0:14 | 01 | Sarlavha, paketlar oqadi | ~30 |
+| 0:14–0:30 | 02 | To'rtta muammo navbat bilan | ~34 |
+| 0:30–0:54 | 03 | Topologiya, paketlar shlyuzdan o'tadi | ~52 |
+| 0:54–1:16 | 04 | Konsolning uchta ekrani | ~44 |
+| 1:16–1:44 | 05 | Raqamlar sanaydi, keyin hodisa | ~58 |
+| 1:44–1:54 | 06 | Biznes-model | ~20 |
+| 1:54–2:03 | 07 | Bozor | ~18 |
+| 2:03–2:15 | 08 | Raqobat | ~24 |
+| 2:15–2:24 | 09 | Kanallar | ~18 |
+| 2:24–2:32 | 10 | Jamoa | ~15 |
+| 2:32–2:48 | 11 | Bor / yo'q ustunlari | ~30 |
+| 2:48–3:00 | 12 | Yakun, satrlar chizib tashlanadi | ~20 |
 
-**371 so'z** (o'lchangan, taxmin emas). Sekin gapirilganda ~2:57 — chegara ichida.
+**389 so'z.** Tezlikka qarab 2:46 (2.35 so'z/s) dan 3:05 (2.1) gacha — birinchi o'qishni
+sekundomer bilan o'lchang. Belgilangan to'rt satr 28 so'z, ya'ni ~13 soniya: uzun chiqsa o'shalarni tashlang.
+Birinchi o'qishni sekundomer bilan o'lchang; uzun chiqsa, *(uzun chiqsa — tashlab yuboring)*
+belgisi qo'yilgan to‘rt satrni olib tashlang — shunda 2:52 qoladi.
 
 ---
 
@@ -50,7 +50,8 @@ bo'sh chiqadi. Ikki yo'l bor:
 
 ### 0:00–0:14 · Slayd 01 — Ilgak
 
-**Ekranda:** sarlavha slaydi. Paketlar shlyuz orqali oqib turadi. Kursorsiz, tinch.
+**Ekranda:** sarlavha slaydi, paketlar shlyuz orqali oqib turadi. Kursorni umuman
+harakatlantirmang — birinchi kadr tinch bo'lsin.
 
 > Korxona tizimlari bir-biri bilan doim gaplashadi. O'sha suhbat uzilganda — buyurtma
 > yo'qoladi, to'lov o'tmaydi, hisobot kelmaydi.
@@ -61,57 +62,51 @@ bo'sh chiqadi. Ikki yo'l bor:
 
 ### 0:14–0:30 · Slayd 02 — Muammo
 
-**Ekranda:** to'rtta muammo navbat bilan chiqadi. Har biri chiqqanda 1 soniya to'xtang.
+**Ekranda:** to'rtta muammo navbat bilan chiqadi. Gapingizni animatsiyaga moslang — har
+band ekranga chiqqanda o'sha haqida gapiring.
 
 > Integratsiyalar odatda qo'lda yozilgan skriptlar bilan qilinadi.
-> Birdaniga ming so'rov kelsa — server ko'tara olmaydi.
-> Tashqi API sekinlashsa — skript bloklanadi.
-> Xato bo'lsa — jim yutiladi.
-> Tizim tiklanganda esa yo'qolganini hech kim qaytarmaydi.
+> Ming so'rov birdaniga kelsa — server ko'tara olmaydi. Tashqi API sekinlashsa — skript
+> bloklanadi. Xato bo'lsa — jim yutiladi.
+> Va yo'qolganini hech kim qaytarmaydi.
 
 ---
 
-### 0:30–0:50 · Slayd 03 — Yechim
+### 0:30–0:54 · Slayd 03 — Yechim
 
-**Ekranda:** topologiya diagrammasi. Paketlar shlyuzdan o'tib, rangi ko'kdan yashilga
-o'zgarishini **kursor bilan kuzatib boring** — bu videoning eng tushunarli 5 soniyasi.
+**Ekranda:** topologiya. Paketlar shlyuzdan o'tib rangi ko'kdan yashilga o'zgaradi, shlyuz
+konturi sekin nafas oladi. **Kursor bilan bitta paketni kuzatib boring** — bu videoning eng
+tushunarli besh soniyasi.
 
-> QosID Flow asosiy ilovangizning oldida ikkala yo'nalishda turadi.
-> Unga kelayotgan so'rovlarni ham boshqaradi, undan tashqi API'larga chiqayotganini ham.
+> QosID Flow asosiy ilovangizning oldida ikkala yo'nalishda turadi: unga kelayotgan
+> so'rovlarni ham, undan tashqi API'larga chiqayotganini ham.
 > Ikkala oqim bitta quvurdan o'tadi: navbatga yoziladi, qayta uriniladi — va yo'qolmaydi.
-> Odatda buning uchun ikkita alohida mahsulot kerak bo'ladi.
+>
+> Bitta tafsilot muhim. Mijozga «qabul qildik» javobi so'rov navbatga **yozilgandan keyin**
+> qaytariladi. Ya'ni bu «urinib ko'ramiz» emas, «saqlab qo'ydik» degani.
+> Odatda buning uchun ikkita alohida mahsulot kerak bo'ladi.  *(uzun chiqsa — tashlab yuboring)*
 
 ---
 
-### 0:50–1:22 · Slayd 04 — Mahsulot *(videoning yuragi)*
+### 0:54–1:16 · Slayd 04 — Mahsulot
 
-Uch qisqa kadr. Slayd o'rniga **jonli tizim**.
+**Ekranda:** konsolning uchta ekrani. Har biriga kursor bilan ishora qiling va rasm
+ustida 2–3 soniya turing — hakam ko'rishga ulgursin.
 
-**A · 0:50–1:06 — So'rov yuborish**
-**Ekranda:** terminal. Bitta `POST`. Javob — `202 ACCEPTED` va kuzatuv havolasi. **Zoom.**
-
-> So'rov yuboraman. Javob darhol keladi: ikki yuz ikki va kuzatuv havolasi.
-> Diqqat qiling — bu javob so'rov navbatga yozilgandan **keyin** qaytariladi.
-> Ya'ni «qabul qildik» degani «urinib ko'ramiz» emas, «saqlab qo'ydik» degani.
-
-**B · 1:06–1:14 — Xatolar**
-**Ekranda:** Xatolar sahifasi. Bitta yozuvni oching, tafsiloti ko'rinsin.
-
-> Yetkazib bo'lmagan so'rov yo'qolmaydi: alohida navbatga tushadi, Telegramga xabar
-> keladi va sababi shu yerda turadi.
-
-**C · 1:14–1:22 — Operator paneli**
-**Ekranda:** Ops sahifasi, jonli log oqimi.
-
+> Bularning hammasi ko'rinib turadi. Birinchisi — jonli statistika: o'tkazuvchanlik,
+> muvaffaqiyat, kechikish.
+> Ikkinchisi — xatolar. Yetkazib bo'lmagan so'rov yo'qolmaydi: alohida navbatga tushadi,
+> Telegramga xabar keladi, sababini AI tahlil qilib beradi.
+> Uchinchisi — operator paneli: to'xtatish, ishga tushirish, jonli jurnal.
 > Sozlamalar esa faqat tizim to'xtaganda tahrirlanadi — noto'g'ri sozlama jonli trafikni
 > ura olmaydi.
 
 ---
 
-### 1:22–1:50 · Slayd 05 — Prototip emas
+### 1:16–1:44 · Slayd 05 — Prototip emas
 
-**Ekranda:** avval jonli Statistika sahifasi (5 soniya), keyin slaydga o'ting — raqamlar
-sanab chiqadi. **Raqamlar ekranda kamida 3 soniya tursin.**
+**Ekranda:** to'rtta raqam noldan o'z qiymatiga sanab chiqadi (~0.9 soniya). **Sanoq
+tugagunicha kutib turing** — raqam o'sayotganda uni aytish chalkash eshitiladi.
 
 > Bu prototip emas. Aprel oyidan beri ishlab chiqarishda: kuniga oltmish ming olti yuz
 > so'rov, to'qson to'qqiz nuqta oltmish sakkiz foiz muvaffaqiyat.
@@ -123,44 +118,45 @@ sanab chiqadi. **Raqamlar ekranda kamida 3 soniya tursin.**
 
 ---
 
-### 1:50–2:00 · Slayd 06 — Biznes-model
+### 1:44–1:54 · Slayd 06 — Biznes-model
 
 > Beshta daromad oqimi bor, bugungi fokus uchtasi: joriy etish xizmatlari, har bir
 > konnektor uchun to'lov, va boshqariladigan bulut.
 
 ---
 
-### 2:00–2:09 · Slayd 07 — Bozor
+### 1:54–2:03 · Slayd 07 — Bozor
 
 > Biz ikki segment kesishmasida turamiz: integratsiya platformalari va API-shlyuzlar.
-> Boshlang'ich plasdarm — O'zbekiston korxona va davlat integratsiyalari.
+> Plasdarm — O'zbekiston korxona va davlat integratsiyalari.  *(uzun chiqsa — tashlab yuboring)*
 
 ---
 
-### 2:09–2:21 · Slayd 08 — Raqobat
+### 2:03–2:15 · Slayd 08 — Raqobat
 
 > API-shlyuzlar kiruvchi trafikni oladi, lekin sinxron — ilova o'chiq bo'lsa so'rov yo'qoladi.
 > Integratsiya platformalari chiquvchini uddalaydi, lekin HTTP darvozasi emas.
-> Ish-oqim dvigatellari bu hajmga mo'ljallanmagan.
+> Ish-oqim dvigatellari bu hajmga mo'ljallanmagan.  *(uzun chiqsa — tashlab yuboring)*
 
 ---
 
-### 2:21–2:30 · Slayd 09 — Bozorga chiqish
+### 2:15–2:24 · Slayd 09 — Bozorga chiqish
 
-> Uch kanal, eng past ishqalanishdan boshlaymiz: avval pilot ekotizimi mijozlari,
-> keyin IT Park rezidentlari va ERP-integratorlar, so'ngra boshqariladigan bulut.
+> Uch kanal, eng past ishqalanishdan: pilot ekotizimi mijozlari, IT Park rezidentlari va
+> ERP-integratorlar, keyin boshqariladigan bulut.
 
 ---
 
-### 2:30–2:38 · Slayd 10 — Jamoa
+### 2:24–2:32 · Slayd 10 — Jamoa
 
 > Besh kishimiz: uchtasi quradi, ikkitasi bozorni tekshiradi.
 
 ---
 
-### 2:38–2:52 · Slayd 11 — Nima bor, nima yo'q
+### 2:32–2:48 · Slayd 11 — Nima bor, nima yo'q
 
-**Ekranda:** ikki ustun. O'ng ustunda to'xtang — bu videoning eng halol kadri.
+**Ekranda:** ikki ustun. **O'ng ustunda to'xtang** — bu videoning eng halol kadri va,
+aslida, arizaning sababi.
 
 > Bizda ishlab chiqarishda ishlaydigan tizim bor, qirq bitta xavfsizlik qoidasi bor,
 > uch tilli boshqaruv konsoli bor.
@@ -171,11 +167,13 @@ sanab chiqadi. **Raqamlar ekranda kamida 3 soniya tursin.**
 
 ---
 
-### 2:52–3:00 · Slayd 12 — Yakun
+### 2:48–3:00 · Slayd 12 — Yakun
 
-**Ekranda:** yopuvchi slayd, to'rtta satr chiziladi. Oxirgi 2 soniyada logotip va havolalar.
+**Ekranda:** to'rtta satr navbat bilan chizib tashlanadi, o'ngda yashil javob paydo bo'ladi.
+Oxirgi ikki soniyada logotip va havolalar.
 
-> Uch oydan keyin o'sha ustun bo'shaydi.
+> Uch oydan keyin o'sha ustun bo'shaydi: birinchi pullik pilot, tasdiqlangan narx,
+> IT Park orqali hamkorlik, yigirma korxona bilan suhbat.  *(uzun chiqsa — tashlab yuboring)*
 > Tizim har kuni oltmish ming so'rovni yetkazadi. Qolgani — mahsulotning o'zini kimga
 > yetkazishni bilish.
 > QosID Flow. Rahmat.
@@ -184,18 +182,21 @@ sanab chiqadi. **Raqamlar ekranda kamida 3 soniya tursin.**
 
 ## Yozib olish bo'yicha amaliy maslahatlar
 
-**Ekran**
-- 1920×1080, brauzer to'liq ekranda (`f` tugmasi deckni to'liq ekranga oladi)
-- Bildirishnomalarni o'chiring: Windows → *Focus assist* / *Diqqatni jamlash*
-- Keraksiz tablar yopilsin, brauzer profili toza bo'lsin (parol taklifi chiqmasin)
-- Konsol sahifalarida shriftni 125–150% ga kattalashtiring — hakam telefonda ko'rishi mumkin
-- Kursorni sekin harakatlantiring; muhim joyda 1–2 soniya to'xtang
+**Deck**
+- `f` — to'liq ekran; o'ng/chap o'q bilan slayd almashtiriladi
+- Til: `1` `2` `3` tugmalari yoki `?lang=uz|ru|en`. To'g'ri tilni **yozishdan oldin** oching
+- 1920×1080, bildirishnomalar o'chirilgan, boshqa tablar yopiq
+
+**Animatsiyani hisobga oling**
+- Slaydga o'tganda kirish ~0.6 soniya — gapni shundan keyin boshlang
+- 5-slaydda raqamlar 0.9 soniya sanaydi — tugashini kuting
+- 3 va 12-slaydlarda harakat uzluksiz; shoshilmang, kadr o'zi ishlaydi
 
 **Ovoz**
-- **Alohida yozib oling**, ekran bilan bir vaqtda emas. Xato qilsangiz butun videoni qayta
-  yozish shart bo'lmaydi — faqat o'sha bo'limni qayta dublyaj qilasiz
+- **Alohida yozib oling**, ekran bilan bir vaqtda emas. Xato qilsangiz butun videoni emas,
+  faqat o'sha slaydni qayta dublyaj qilasiz
 - Mikrofon og'izdan 15–20 sm, jim xona, deraza yopiq
-- Har slaydni alohida dubl qiling; montajda birlashtiriladi
+- Har slaydga bitta dubl — ssenariy shunday bo'lingan
 
 **Montaj**
 - Slaydlar orasida 0.5 soniyalik pauza
@@ -204,7 +205,7 @@ sanab chiqadi. **Raqamlar ekranda kamida 3 soniya tursin.**
 - Chiqarish: MP4, H.264, 1080p, 30 fps
 
 **Nima qilmaslik kerak**
-- Slaydni o'qib bermang — eng ko'p uchraydigan xato
+- Slaydni o'qib bermang — ekrandagini takrorlamang, uni to'ldiring
 - Arxitekturani chuqur tushuntirmang; buning uchun repo bor
 - «Biz eng yaxshi mahsulotmiz» demang — raqamlar o'zi gapiradi
 - 3:01 bo'lsa ham qayta montaj qiling
