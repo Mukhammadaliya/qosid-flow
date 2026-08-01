@@ -148,6 +148,12 @@ services:
   prometheus:
     image: prom/prometheus:v2.50.1
     container_name: prometheus
+    # prometheus.yml scrapes the gateway at host.docker.internal:8091 because the JAR runs on
+    # the host, not in Docker. That name is a Docker Desktop convenience and does NOT exist on
+    # Linux without this mapping — every scrape then fails DNS, no gateway_* series is ever
+    # stored, and both the Statistics dashboard and gateway-alerts.yml go permanently silent.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:9090:9090"
     volumes:

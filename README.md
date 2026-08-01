@@ -111,16 +111,18 @@ acceptable.
 
 ## Production evidence
 
-This is not a prototype. The numbers below are measured, not estimated.
+This is not a prototype. The numbers below were measured on 2026-08-01 from the production
+server's own rotated logs over seven complete days (25–31 July): 422 776 requests completed
+and 1 358 reached the dead-letter queue, out of 424 134 in total.
 
 | | |
 |---|---|
-| Throughput | **~50 700 requests/day** |
-| Success rate | **99.994 %** |
-| Peak burst handled | **~330 requests/second**, zero loss |
-| Automated tests | **379** |
+| Throughput | **~60 600 requests/day** |
+| Success rate | **99.68 %** — a request that reached the DLQ is counted as failed, even where a later retry carried it through |
+| Peak burst handled | **918 requests/second**, zero loss (380/s on an ordinary day) |
+| Automated tests | **527** — 390 backend (app 304, ops 56, settings-core 30), 137 frontend |
 | Documented safety rules | **41**, each pinned by a test |
-| Codebase | 13 082 lines of Java across 158 files |
+| Codebase | 13 103 lines of Java, 2 761 of TypeScript |
 
 ---
 
@@ -150,11 +152,11 @@ queue with an alert. Response bodies are archived for 7 days and retrievable by 
 
 ## An incident, and what came out of it
 
-On 27 July 2026 a single 30-second circuit-breaker window pushed **212 live production requests**
-into the dead-letter queue. The cause was subtle: blocked messages were re-queued immediately, so
-a retry budget meant as "wait out the outage" was spent in about one second. The 212 alerts that
-followed hit Telegram's rate limit — 14 were delivered and 298 were rejected, so the alert channel
-failed exactly when it was needed.
+On 27 July 2026 a single circuit-breaker window pushed **241 live production requests** into the
+dead-letter queue inside one minute. The cause was subtle: blocked messages were re-queued
+immediately, so a retry budget meant as "wait out the outage" was spent in about one second. The
+alerts that followed hit Telegram's rate limit — 14 were delivered and 298 were rejected, so the
+alert channel failed exactly when it was needed.
 
 Three changes followed, each measured rather than assumed:
 

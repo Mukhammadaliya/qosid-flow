@@ -349,6 +349,29 @@ p95 latencies come from `histogram_quantile` over the percentile histograms enab
 `gateway.request.e2e.duration` and `gateway.http.request.duration` (see CONFIGURATION.md).
 The SPA renders `/statistics` with @ant-design/plots charts.
 
+**Resolution scales with the selected range.** The SPA offers `15m`/`1h`/`6h`/`24h`/`7d`/`30d`
+and derives `step` from the span (~300 points per series) rather than sending a constant: a fixed
+30 s step over 7 d asks for 20160 points, past Prometheus's 11000-per-series ceiling, and the
+whole panel fails. `StatsQueryService` raises the step again server-side if a caller still sends
+one that would breach that ceiling, so a hand-made API call degrades in resolution instead of
+erroring. Range presets carry `${step}` (counter rates) and `${histWindow}` (histogram rates)
+in place of a hard-coded `[1m]`/`[5m]`; the service expands them to `max(step, 60s)` and
+`max(step, 300s)`. The floors leave the short ranges byte-identical to the old fixed windows,
+while a 7 d chart samples a 34-minute window per point instead of reporting one minute in
+thirty-four as the trend. Auto-refresh scales the same way (never faster than the chart's own
+resolution, capped at 5 min) so a month-wide view is not re-fetched every 30 seconds.
+
+> Prometheus must actually be scraping the gateway for any of this to show data. The JAR runs on
+> the host while Prometheus runs in Docker, so `prometheus.yml` targets `host.docker.internal:8091`
+> — a name that exists on Docker Desktop but **not on Linux** unless the compose service declares
+> `extra_hosts: ["host.docker.internal:host-gateway"]`. Without it every scrape fails DNS, no
+> `gateway_*` series is ever stored, the dashboard renders blank with no error, and every rule in
+> `gateway-alerts.yml` evaluates against nothing and can never fire.
+
+Note: within the `kpi` preset, `dlq` uses the range-dependent `${window}` token (service-computed
+from `to-from`, clamped 60s..30d) while the rate KPIs use a fixed `[5m]` — this asymmetry is
+intentional (DLQ counts accumulate over the selected range; rates are a current snapshot), not a bug.
+
 Note: within the `kpi` preset, `dlq` uses the range-dependent `${window}` token (service-computed
 from `to-from`, clamped 60s..30d) while the rate KPIs use a fixed `[5m]` — this asymmetry is
 intentional (DLQ counts accumulate over the selected range; rates are a current snapshot), not a bug.
@@ -484,7 +507,7 @@ ResponseSaveRequest (Oracle save payload)
 - **Rejection Policy:** `RejectWithLogging` — when queue full, throws `RejectedExecutionException`. Consumer catches it and re-queues the message to Kafka without incrementing attempt count. Consumer thread stays free.
 - **Non-blocking:** Both request consumers use `.subscribe()` instead of `.block()` — threads are freed immediately after dispatching HTTP request.
 - **Message Expiry:** Messages older than `gateway.retry.max-message-age-ms` (default 5 min) are failed immediately to prevent infinite re-queue loops.
-- **CB-aware back-pressure (v2.3.0):** OAuth2 errors are NOT retried — they cause immediate DLQ. Circuit Breaker blocks (`errorSource=CIRCUIT_BREAKER`) are transient back-pressure, not a permanent failure, so the message is **parked** by `CbRequeueScheduler` until its circuit accepts traffic again and only then re-queued — no attempt-count increment, and no Kafka round trip while it waits (see E3 above). Give-up is by **time** (`max-message-age-ms`), which is what surfaces a genuinely down upstream in the DLQ after the deadline; `gateway.retry.cb-max-requeues` (now 1000, Redis counter `request:cb-requeue:<compositeId>`) is only a runaway guard for a broken delay path. It used to be an immediate re-queue bounded by that count at 50, which spent the whole budget in ~1 s of a 30 s open window and DLQ'd 212 live production requests on 2026-07-27. Redis down ⇒ `Integer.MAX_VALUE` ⇒ immediate DLQ (fail-closed), never an unbounded loop. Memory is bounded per flow by `cb-max-pending` / `cb-max-pending-bytes`. Signals: `...requeue.delayed` plus the `...requeue.pending{flow}` / `...requeue.pending.bytes{flow}` gauges show the wait itself; `...requeue.rejected` marks a bound-full DLQ. The **ordinary** aged-out give-up happens inside the park: the scheduler checks the message's deadline on every timer fire (before the circuit) and, once passed, DLQs through the consumer's give-up callback — `Circuit breaker still open after …`, moving `...requeue.exhausted` (+ `dlq.sent`), the counter to watch in a real outage. `processRequest`'s expiry gate (`Message expired after …`, `dlq.sent` only) now covers the case where an expired message travels through Kafka once more — a shutdown drain, or a retry that raced the deadline. Full exit table: SAFETY-RULES 23.
+- **CB-aware back-pressure (v2.3.0):** OAuth2 errors are NOT retried — they cause immediate DLQ. Circuit Breaker blocks (`errorSource=CIRCUIT_BREAKER`) are transient back-pressure, not a permanent failure, so the message is **parked** by `CbRequeueScheduler` until its circuit accepts traffic again and only then re-queued — no attempt-count increment, and no Kafka round trip while it waits (see E3 above). Give-up is by **time** (`max-message-age-ms`), which is what surfaces a genuinely down upstream in the DLQ after the deadline; `gateway.retry.cb-max-requeues` (now 1000, Redis counter `request:cb-requeue:<compositeId>`) is only a runaway guard for a broken delay path. It used to be an immediate re-queue bounded by that count at 50, which spent the whole budget in ~1 s of a 30 s open window and DLQ'd 241 live production requests inside a single minute on 2026-07-27. Redis down ⇒ `Integer.MAX_VALUE` ⇒ immediate DLQ (fail-closed), never an unbounded loop. Memory is bounded per flow by `cb-max-pending` / `cb-max-pending-bytes`. Signals: `...requeue.delayed` plus the `...requeue.pending{flow}` / `...requeue.pending.bytes{flow}` gauges show the wait itself; `...requeue.rejected` marks a bound-full DLQ. The **ordinary** aged-out give-up happens inside the park: the scheduler checks the message's deadline on every timer fire (before the circuit) and, once passed, DLQs through the consumer's give-up callback — `Circuit breaker still open after …`, moving `...requeue.exhausted` (+ `dlq.sent`), the counter to watch in a real outage. `processRequest`'s expiry gate (`Message expired after …`, `dlq.sent` only) now covers the case where an expired message travels through Kafka once more — a shutdown drain, or a retry that raced the deadline. Full exit table: SAFETY-RULES 23.
 - **OAuth2-aware 401 retry (v1.1.0):** When an upstream API returns 401 to a request whose `oauth2_provider` is set, the consumer evicts the cached token (`OAuth2ProviderService.evictToken`) and re-queues the request without incrementing the attempt counter. A per-request flag (`request:token-evicted:<compositeId>`, same TTL as request state) prevents repeating the eviction more than once per request — on the second 401 the request falls through to the standard permanent-failure path. Recovers from the main app's periodic "stuck token" glitch in one Kafka round-trip instead of waiting 3h for token TTL expiry.
 
 ### Admin Control-Plane Security (B1)

@@ -138,7 +138,8 @@ produced back to its request topic. Two consequences a future change must not un
   14:27** a deploy restart left a pull backlog, the gateway pulled 1000 requests in 15 s,
   resilience4j opened `cb-main-app.example.com` (`wait-duration-in-open-state: 30s`), and because a
   CB-blocked message was re-queued *immediately* it came back every ~20 ms — so the count cap of
-  50 was spent in about one second and **212 live production requests** were written to the DLQ
+  50 was spent in about one second and **241 live production requests** were written to the DLQ
+  over the following minute (14:27 UTC; re-counted from Loki on 2026-08-01)
   with `failureReason: "Circuit breaker still open after 51 requeues"`, `httpStatus: 503`,
   `attemptCount: 0`. The upstream never saw them. That cap had been added on 2026-07-25 for a
   real reason — an unbounded re-queue loop filled a 57 GB Redpanda volume on 2026-05-18 and hung
