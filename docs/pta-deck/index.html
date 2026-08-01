@@ -287,6 +287,34 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
 }
 @keyframes led-in { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
 
+
+/* ---- entrance choreography -------------------------------------------
+   Shared by every slide. .seq marks a container whose direct children arrive in
+   sequence; the delays below are the only per-slide tuning, and they are generic
+   rather than named so a slide can be reordered without touching this block.
+   Slides 1, 3 and 12 keep their own motion — there the movement IS the content. */
+@media (prefers-reduced-motion: no-preference) {
+  .slide.is-active .eyebrow { animation: qf-rise .45s cubic-bezier(.2,.7,.3,1) backwards .04s; }
+  .slide.is-active h2       { animation: qf-rise .55s cubic-bezier(.2,.7,.3,1) backwards .11s; }
+  .slide.is-active .punch   { animation: qf-rise .55s cubic-bezier(.2,.7,.3,1) backwards .58s; }
+
+  .slide.is-active .seq > * { animation: qf-rise .5s cubic-bezier(.2,.7,.3,1) backwards; }
+  .slide.is-active .seq > *:nth-child(1) { animation-delay: .20s; }
+  .slide.is-active .seq > *:nth-child(2) { animation-delay: .28s; }
+  .slide.is-active .seq > *:nth-child(3) { animation-delay: .36s; }
+  .slide.is-active .seq > *:nth-child(4) { animation-delay: .44s; }
+  .slide.is-active .seq > *:nth-child(5) { animation-delay: .52s; }
+  .slide.is-active .seq > *:nth-child(6) { animation-delay: .60s; }
+
+  /* The gate diagram breathes rather than enters: it is a live system, not a list. */
+  .slide.is-active .tp-gate__box { animation: qf-pulse 3.6s ease-in-out infinite .8s; }
+}
+@keyframes qf-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes qf-pulse {
+  0%, 100% { stroke: rgba(46,194,126,.55); }
+  50%      { stroke: rgba(46,194,126,.95); }
+}
+
 /* business model rows */
 .models { display: grid; gap: 1.3vh; margin-top: 3.4vh; }
 .model {
@@ -404,7 +432,7 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
   <section class="slide">
     <p class="eyebrow"><span data-lang="uz">Muammo</span><span data-lang="ru">Проблема</span><span data-lang="en">The problem</span></p>
     <h2><span data-lang="uz">Integratsiyalar qo‘lda yozilgan skriptlar bilan qilinadi</span><span data-lang="ru">Интеграции держатся на скриптах, написанных вручную</span><span data-lang="en">Integrations are held together by hand-written scripts</span></h2>
-    <div class="cols2">
+    <div class="cols2 seq">
       <div class="item item--amber"><div class="item__h"><span data-lang="uz">Birdaniga ming so‘rov kelsa — server ko‘tara olmaydi</span><span data-lang="ru">Тысяча запросов разом — сервер не выдерживает</span><span data-lang="en">A thousand requests at once — the server gives way</span></div><p class="item__p"><span data-lang="uz">Yuk to‘lqin bo‘lib keladi; oddiy tizim uni tekislay olmaydi va yiqiladi.</span><span data-lang="ru">Нагрузка приходит всплесками; обычная система не умеет их сглаживать и падает.</span><span data-lang="en">Load arrives in bursts; an ordinary system cannot smooth them and falls over.</span></p></div>
       <div class="item item--amber"><div class="item__h"><span data-lang="uz">Tashqi API sekinlashsa — skript bloklanadi</span><span data-lang="ru">Внешний API замедлился — скрипт блокируется</span><span data-lang="en">The external API slows down — the script blocks</span></div><p class="item__p"><span data-lang="uz">Bitta sust tizim butun jarayonni to‘xtatadi.</span><span data-lang="ru">Одна медленная система останавливает весь процесс.</span><span data-lang="en">One slow system stalls the whole process.</span></p></div>
       <div class="item item--amber"><div class="item__h"><span data-lang="uz">Xato bo‘lsa — u jim yutiladi</span><span data-lang="ru">Ошибка есть — её никто не видит</span><span data-lang="en">Something fails — the error is swallowed</span></div><p class="item__p"><span data-lang="uz">Retry yo‘q, jurnal yo‘q, kim nima yubordi — noma’lum.</span><span data-lang="ru">Ни повторов, ни журнала: кто что отправил — неизвестно.</span><span data-lang="en">No retry, no record: who sent what is unknown.</span></p></div>
@@ -430,7 +458,7 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
   <section class="slide">
     <p class="eyebrow"><span data-lang="uz">Mahsulot</span><span data-lang="ru">Продукт</span><span data-lang="en">The product</span></p>
     <h2><span data-lang="uz">Boshqaruv konsoli — quvur ko‘rinib turadi</span><span data-lang="ru">Консоль управления — конвейер виден целиком</span><span data-lang="en">A console where the pipeline is visible</span></h2>
-    <div class="shots">
+    <div class="shots seq">
       <div><div class="shot shot--filled"><img src="img/01-statistics.jpg" alt="QosID Flow — statistics dashboard"></div><div class="shot__cap"><span data-lang="uz">Jonli statistika, o‘tkazuvchanlik, p95</span><span data-lang="ru">Живая статистика, пропускная способность, p95</span><span data-lang="en">Live statistics, throughput, p95</span></div></div>
       <div><div class="shot shot--filled"><img src="img/02-errors.jpg" alt="QosID Flow — DLQ error console"></div><div class="shot__cap"><span data-lang="uz">DLQ, Telegram ogohlantirish, AI-tahlil</span><span data-lang="ru">DLQ, оповещения в Telegram, AI-анализ</span><span data-lang="en">DLQ, Telegram alerts, AI analysis</span></div></div>
       <div><div class="shot shot--filled"><img src="img/03-ops.jpg" alt="QosID Flow — ops console with live log"></div><div class="shot__cap"><span data-lang="uz">To‘xtatish/ishga tushirish, jonli jurnal</span><span data-lang="ru">Остановка/запуск, живой журнал</span><span data-lang="en">Stop/start, live log</span></div></div>
@@ -460,7 +488,7 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
            incident 27.07 14:27 UTC: 241 DLQ in one minute
          Success is defined the strict way — a request that ended in the DLQ counts as failed,
          even though most were later retried through. -->
-    <div class="figures">
+    <div class="figures seq">
       <div class="fig">
         <div class="fig__n">60 600</div>
         <div class="fig__k">
@@ -487,7 +515,7 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
       </div>
     </div>
 
-    <div class="pair">
+    <div class="pair seq">
       <div class="card card--bad">
         <div class="card__d">27.07.2026</div>
         <div class="card__h">
@@ -525,7 +553,7 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
   <section class="slide">
     <p class="eyebrow"><span data-lang="uz">Biznes-model</span><span data-lang="ru">Бизнес-модель</span><span data-lang="en">Business model</span></p>
     <h2><span data-lang="uz">Beshta daromad oqimi, uchtasi — bugungi fokus</span><span data-lang="ru">Пять источников дохода, три — фокус на сегодня</span><span data-lang="en">Five revenue streams, three are today’s focus</span></h2>
-    <div class="models">
+    <div class="models seq">
       <div class="model model--top"><div class="model__n"><span data-lang="uz">Joriy etish xizmatlari</span><span data-lang="ru">Услуги внедрения</span><span data-lang="en">Implementation services</span></div><div class="model__d"><span data-lang="uz">O‘rnatish, maxsus konnektor, konsalting</span><span data-lang="ru">Внедрение, коннекторы под заказ, консалтинг</span><span data-lang="en">Setup, custom connectors, consulting</span></div><div class="model__a"><span data-lang="uz">loyiha narxi</span><span data-lang="ru">цена проекта</span><span data-lang="en">project fee</span></div><div><span class="tag tag--now"><span data-lang="uz">bugun</span><span data-lang="ru">сегодня</span><span data-lang="en">today</span></span></div></div><div class="model model--top"><div class="model__n"><span data-lang="uz">Per-konnektor / hajm</span><span data-lang="ru">За коннектор / объём</span><span data-lang="en">Per connector / volume</span></div><div class="model__d"><span data-lang="uz">Har integratsiya yoki oylik so‘rov hajmi bo‘yicha</span><span data-lang="ru">По интеграции или месячному объёму запросов</span><span data-lang="en">Per integration or monthly request volume</span></div><div class="model__a"><span data-lang="uz">pay-as-you-go</span><span data-lang="ru">pay-as-you-go</span><span data-lang="en">pay-as-you-go</span></div><div><span class="tag"><span data-lang="uz">12+ oy</span><span data-lang="ru">12+ мес</span><span data-lang="en">12+ mo</span></span></div></div><div class="model model--top"><div class="model__n"><span data-lang="uz">Managed Cloud</span><span data-lang="ru">Managed Cloud</span><span data-lang="en">Managed Cloud</span></div><div class="model__d"><span data-lang="uz">Biz hostlaymiz va boshqaramiz</span><span data-lang="ru">Мы хостим и обслуживаем</span><span data-lang="en">We host and operate it</span></div><div class="model__a"><span data-lang="uz">oylik obuna</span><span data-lang="ru">месячная подписка</span><span data-lang="en">monthly subscription</span></div><div><span class="tag tag--next"><span data-lang="uz">6–12 oy</span><span data-lang="ru">6–12 мес</span><span data-lang="en">6–12 mo</span></span></div></div><div class="model"><div class="model__n"><span data-lang="uz">Self-host + Support</span><span data-lang="ru">Self-host + поддержка</span><span data-lang="en">Self-host + support</span></div><div class="model__d"><span data-lang="uz">Mijoz o‘zi o‘rnatadi, biz SLA beramiz</span><span data-lang="ru">Клиент ставит сам, мы даём SLA</span><span data-lang="en">The customer installs it, we provide the SLA</span></div><div class="model__a"><span data-lang="uz">yillik shartnoma</span><span data-lang="ru">годовой договор</span><span data-lang="en">annual contract</span></div><div><span class="tag tag--now"><span data-lang="uz">bugun</span><span data-lang="ru">сегодня</span><span data-lang="en">today</span></span></div></div><div class="model"><div class="model__n"><span data-lang="uz">Open-core</span><span data-lang="ru">Open-core</span><span data-lang="en">Open-core</span></div><div class="model__d"><span data-lang="uz">Yadro ochiq, korxona qatlami pullik</span><span data-lang="ru">Ядро открыто, корпоративный слой платный</span><span data-lang="en">Open core, commercial enterprise layer</span></div><div class="model__a"><span data-lang="uz">yillik litsenziya</span><span data-lang="ru">годовая лицензия</span><span data-lang="en">annual licence</span></div><div><span class="tag"><span data-lang="uz">12+ oy</span><span data-lang="ru">12+ мес</span><span data-lang="en">12+ mo</span></span></div></div>
     </div>
     <p class="punch" style="font-size:clamp(13px,1.35vw,21px);font-weight:550"><span data-lang="uz">Bulutdan foydalana olmaydigan davlat va bank mijozlari uchun self-host varianti ochiq qoladi.</span><span data-lang="ru">Для госорганов и банков, которым облако недоступно, остаётся self-host.</span><span data-lang="en">For government and banks that cannot use cloud, self-host stays on the table.</span></p>
@@ -539,7 +567,7 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
   <section class="slide">
     <p class="eyebrow"><span data-lang="uz">Bozor</span><span data-lang="ru">Рынок</span><span data-lang="en">Market</span></p>
     <h2><span data-lang="uz">Ikki segment kesishmasida turamiz</span><span data-lang="ru">Мы стоим на пересечении двух сегментов</span><span data-lang="en">We sit where two segments overlap</span></h2>
-    <div class="cols2">
+    <div class="cols2 seq">
       <div class="item item--blue">
         <div class="item__h"><span data-lang="uz">Integratsiya middleware</span><span data-lang="ru">Интеграционный middleware</span><span data-lang="en">Integration middleware</span></div>
         <p class="item__p"><span data-lang="uz">Korxona tizimlarini tashqi API‘larga ulash. Bu yerda Confluent va MuleSoft turadi.</span><span data-lang="ru">Связь корпоративных систем с внешними API. Здесь Confluent и MuleSoft.</span><span data-lang="en">Connecting enterprise systems to external APIs. Confluent and MuleSoft live here.</span></p>
@@ -557,7 +585,7 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
   <section class="slide">
     <p class="eyebrow"><span data-lang="uz">Raqobat</span><span data-lang="ru">Конкуренты</span><span data-lang="en">Competition</span></p>
     <h2><span data-lang="uz">Uch qatlam — va har birida nima yetishmaydi</span><span data-lang="ru">Три слоя — и чего не хватает в каждом</span><span data-lang="en">Three layers — and what each one lacks</span></h2>
-    <div style="margin-top:3.4vh">
+    <div class="seq" style="margin-top:3.4vh">
       <div class="layer"><div class="layer__w"><span data-lang="uz">API-shlyuz</span><span data-lang="ru">API-шлюз</span><span data-lang="en">API gateway</span><small>Kong, Apigee</small></div><div class="layer__g"><span data-lang="uz">Kiruvchi trafikni oladi, lekin <b>sinxron</b>: ilova o‘chiq bo‘lsa so‘rov yo‘qoladi.</span><span data-lang="ru">Берёт входящий трафик, но <b>синхронно</b>: приложение легло — запрос потерян.</span><span data-lang="en">Takes inbound traffic, but <b>synchronously</b>: if the app is down, the request is lost.</span></div></div><div class="layer"><div class="layer__w"><span data-lang="uz">Integratsiya / iPaaS</span><span data-lang="ru">Интеграция / iPaaS</span><span data-lang="en">Integration / iPaaS</span><small>Confluent, MuleSoft</small></div><div class="layer__g"><span data-lang="uz">Chiquvchi yetkazishni qiladi, lekin HTTP darvozasi emas.</span><span data-lang="ru">Делает исходящую доставку, но это не HTTP-шлюз.</span><span data-lang="en">Handles outbound delivery, but is not an HTTP front door.</span></div></div><div class="layer"><div class="layer__w"><span data-lang="uz">Ish-oqim dvigatellari</span><span data-lang="ru">Движки процессов</span><span data-lang="en">Workflow engines</span><small>n8n, Airflow</small></div><div class="layer__g"><span data-lang="uz">Ko‘pini <b>yozsa bo‘ladi</b> — lekin circuit breaker‘ni, idempotentlik kalitini va park qilingan navbatni <b>siz yozasiz</b>, va xatolarni prodda topasiz.</span><span data-lang="ru">Многое <b>можно написать</b> — но предохранитель, ключ идемпотентности и отложенную очередь <b>пишете вы</b>, а ошибки находите в проде.</span><span data-lang="en">Most of it <b>can be built</b> — but the breaker, the idempotency key and the parked queue are <b>yours to write</b>, and you find the bugs in production.</span></div></div>
     </div>
     <p class="punch" style="font-size:clamp(13px,1.4vw,22px)"><span data-lang="uz">Asl raqib esa hamon — <em>qo‘lda yozilgan skript</em>.</span><span data-lang="ru">А настоящий конкурент по-прежнему — <em>скрипт, написанный вручную</em>.</span><span data-lang="en">The real competitor is still the <em>hand-written script</em>.</span></p>
@@ -568,7 +596,7 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
   <section class="slide">
     <p class="eyebrow"><span data-lang="uz">Bozorga chiqish</span><span data-lang="ru">Выход на рынок</span><span data-lang="en">Go-to-market</span></p>
     <h2><span data-lang="uz">Uch kanal, eng past ishqalanishdan boshlab</span><span data-lang="ru">Три канала, начиная с наименьшего трения</span><span data-lang="en">Three channels, starting where friction is lowest</span></h2>
-    <div class="stack">
+    <div class="stack seq">
       <div class="item item--green"><div class="item__h"><span data-lang="uz">1 · Pilot ekotizimi mijozlari</span><span data-lang="ru">1 · Клиенты экосистемы пилота</span><span data-lang="en">1 · The pilot’s ecosystem</span></div><p class="item__p"><span data-lang="uz">Konnektor tayyor, tizim tanish — joriy etish kunlar ichida.</span><span data-lang="ru">Коннектор готов, система знакома — внедрение за дни.</span><span data-lang="en">The connector exists and the system is familiar — rollout takes days.</span></p></div>
       <div class="item item--blue"><div class="item__h"><span data-lang="uz">2 · IT Park rezidentlari va ERP-integratorlar</span><span data-lang="ru">2 · Резиденты IT Park и ERP-интеграторы</span><span data-lang="en">2 · IT Park residents and ERP integrators</span></div><p class="item__p"><span data-lang="uz">Hamkorlik kanali: ular mijozga bizni olib boradi, biz ularga ishonchlilikni beramiz.</span><span data-lang="ru">Партнёрский канал: они приводят клиента, мы даём надёжность.</span><span data-lang="en">A partner channel: they bring the customer, we bring the reliability.</span></p></div>
       <div class="item"><div class="item__h"><span data-lang="uz">3 · Managed cloud</span><span data-lang="ru">3 · Managed cloud</span><span data-lang="en">3 · Managed cloud</span></div><p class="item__p"><span data-lang="uz">O‘z-o‘ziga xizmat va takrorlanuvchi daromad — birinchi ikkitasi isbotlangandan keyin.</span><span data-lang="ru">Самообслуживание и повторяющийся доход — после того как первые два канала доказаны.</span><span data-lang="en">Self-serve and recurring revenue — once the first two channels are proven.</span></p></div>
@@ -580,7 +608,7 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
   <section class="slide">
     <p class="eyebrow"><span data-lang="uz">Jamoa</span><span data-lang="ru">Команда</span><span data-lang="en">Team</span></p>
     <h2><span data-lang="uz">Besh kishi — uchtasi quradi, ikkitasi bozorni tekshiradi</span><span data-lang="ru">Пять человек — трое строят, двое проверяют рынок</span><span data-lang="en">Five people — three build, two test the market</span></h2>
-    <div class="team"><div class="member member--biz"><div class="member__r"><span data-lang="uz">Product Owner</span><span data-lang="ru">Product Owner</span><span data-lang="en">Product Owner</span></div><div class="member__d"><span data-lang="uz">Mahsulot yo‘nalishi, mijoz kashfiyoti</span><span data-lang="ru">Направление продукта, customer discovery</span><span data-lang="en">Product direction, customer discovery</span></div></div><div class="member member--biz"><div class="member__r"><span data-lang="uz">Biznes-analitik</span><span data-lang="ru">Бизнес-аналитик</span><span data-lang="en">Business analyst</span></div><div class="member__d"><span data-lang="uz">Bozor tadqiqoti, narx modeli, suhbatlar tahlili</span><span data-lang="ru">Исследование рынка, ценообразование, анализ интервью</span><span data-lang="en">Market research, pricing, interview analysis</span></div></div><div class="member"><div class="member__r"><span data-lang="uz">Backend · Platforma</span><span data-lang="ru">Backend · Платформа</span><span data-lang="en">Backend · Platform</span></div><div class="member__d"><span data-lang="uz">Quvur, ishonchlilik</span><span data-lang="ru">Конвейер, надёжность</span><span data-lang="en">Pipeline, reliability</span></div></div><div class="member"><div class="member__r"><span data-lang="uz">Backend · Integratsiya</span><span data-lang="ru">Backend · Интеграции</span><span data-lang="en">Backend · Integrations</span></div><div class="member__d"><span data-lang="uz">Manba konnektorlari</span><span data-lang="ru">Коннекторы источников</span><span data-lang="en">Source connectors</span></div></div><div class="member"><div class="member__r"><span data-lang="uz">Frontend · DevOps</span><span data-lang="ru">Frontend · DevOps</span><span data-lang="en">Frontend · DevOps</span></div><div class="member__d"><span data-lang="uz">Boshqaruv konsoli, joriy etish</span><span data-lang="ru">Консоль управления, внедрение</span><span data-lang="en">Console, deployment</span></div></div></div>
+    <div class="team seq"><div class="member member--biz"><div class="member__r"><span data-lang="uz">Product Owner</span><span data-lang="ru">Product Owner</span><span data-lang="en">Product Owner</span></div><div class="member__d"><span data-lang="uz">Mahsulot yo‘nalishi, mijoz kashfiyoti</span><span data-lang="ru">Направление продукта, customer discovery</span><span data-lang="en">Product direction, customer discovery</span></div></div><div class="member member--biz"><div class="member__r"><span data-lang="uz">Biznes-analitik</span><span data-lang="ru">Бизнес-аналитик</span><span data-lang="en">Business analyst</span></div><div class="member__d"><span data-lang="uz">Bozor tadqiqoti, narx modeli, suhbatlar tahlili</span><span data-lang="ru">Исследование рынка, ценообразование, анализ интервью</span><span data-lang="en">Market research, pricing, interview analysis</span></div></div><div class="member"><div class="member__r"><span data-lang="uz">Backend · Platforma</span><span data-lang="ru">Backend · Платформа</span><span data-lang="en">Backend · Platform</span></div><div class="member__d"><span data-lang="uz">Quvur, ishonchlilik</span><span data-lang="ru">Конвейер, надёжность</span><span data-lang="en">Pipeline, reliability</span></div></div><div class="member"><div class="member__r"><span data-lang="uz">Backend · Integratsiya</span><span data-lang="ru">Backend · Интеграции</span><span data-lang="en">Backend · Integrations</span></div><div class="member__d"><span data-lang="uz">Manba konnektorlari</span><span data-lang="ru">Коннекторы источников</span><span data-lang="en">Source connectors</span></div></div><div class="member"><div class="member__r"><span data-lang="uz">Frontend · DevOps</span><span data-lang="ru">Frontend · DevOps</span><span data-lang="en">Frontend · DevOps</span></div><div class="member__d"><span data-lang="uz">Boshqaruv konsoli, joriy etish</span><span data-lang="ru">Консоль управления, внедрение</span><span data-lang="en">Console, deployment</span></div></div></div>
     <p class="punch" style="font-size:clamp(13px,1.35vw,21px);font-weight:550"><span data-lang="uz">Uch oyda maqsad sotuv emas, <em>validatsiya</em> — shuning uchun mijoz kashfiyotini PO va analitik olib boradi.</span><span data-lang="ru">Цель трёх месяцев — не продажи, а <em>валидация</em>, поэтому customer discovery ведут PO и аналитик.</span><span data-lang="en">The three-month goal is <em>validation</em>, not sales — so the PO and the analyst run customer discovery.</span></p>
     <div class="num">10</div>
   </section>
@@ -589,7 +617,7 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
   <section class="slide">
     <p class="eyebrow"><span data-lang="uz">Nega bizga inkubatsiya kerak</span><span data-lang="ru">Зачем нам инкубация</span><span data-lang="en">Why we need incubation</span></p>
     <h2><span data-lang="uz">Nima bor va nima yo‘q</span><span data-lang="ru">Что есть и чего нет</span><span data-lang="en">What we have and what we do not</span></h2>
-    <div class="cols2">
+    <div class="cols2 seq">
       <div class="hn hn--have">
         <div class="hn__h"><span data-lang="uz">Bizda bor</span><span data-lang="ru">У нас есть</span><span data-lang="en">We have</span></div>
         <ul><li><span data-lang="uz">Ishlab chiqarishda ishlaydigan tizim — yuqorida o‘lchangan</span><span data-lang="ru">Система в проде — измерено выше</span><span data-lang="en">A system running in production — measured on the previous slide</span></li><li><span data-lang="uz">41 xavfsizlik qoidasi, har biri test bilan mahkamlangan</span><span data-lang="ru">41 правило безопасности, каждое закреплено тестом</span><span data-lang="en">41 safety rules, every one pinned by a test</span></li><li><span data-lang="uz">Uch tilli boshqaruv konsoli — AI-yordamli xato tahlili va Telegram ogohlantirish bilan</span><span data-lang="ru">Консоль на трёх языках — с AI-анализом ошибок и оповещениями в Telegram</span><span data-lang="en">A console in three languages — with AI-assisted error analysis and Telegram alerting</span></li></ul>
@@ -616,11 +644,40 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
 </div>
 
 <script>
+
+  // The traction figures count up when their slide opens. Only the leading numeric text
+  // node moves — the unit span ("%", "/s") is left alone — and the original string is
+  // kept so a revisit replays from the same value rather than from wherever it stopped.
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function countUp(slide) {
+    if (REDUCED) return;
+    slide.querySelectorAll('.fig__n').forEach(el => {
+      const node = el.firstChild;
+      if (!node || node.nodeType !== 3) return;
+      if (!el.dataset.final) el.dataset.final = node.nodeValue;
+      const final = el.dataset.final;
+      const target = parseFloat(final.replace(/\s/g, '').replace(',', '.'));
+      if (!isFinite(target)) return;
+      const decimals = (final.split('.')[1] || '').length;
+      const sep = (final.trim().match(/\d(\s)\d/) || [])[1] || '';
+      const t0 = performance.now(), DUR = 900;
+      (function step(t) {
+        const p = Math.min(1, (t - t0) / DUR);
+        const v = target * (1 - Math.pow(1 - p, 3));   // ease-out, lands exactly on target
+        let out = v.toFixed(decimals);
+        if (sep) out = out.replace(/\B(?=(\d{3})+(?!\d))/g, sep);
+        node.nodeValue = p < 1 ? out : final;
+        if (p < 1) requestAnimationFrame(step);
+      })(t0);
+    });
+  }
+
   const slides = [...document.querySelectorAll('.slide')];
   let i = 0;
   function show(n) {
     i = Math.max(0, Math.min(slides.length - 1, n));
     slides.forEach((s, k) => s.classList.toggle('is-active', k === i));
+    countUp(slides[i]);
   }
   function setLang(l) {
     document.documentElement.lang = l;
