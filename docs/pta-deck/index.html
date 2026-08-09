@@ -341,7 +341,32 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
 .team { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.4vw; margin-top: 4vh; }
 .member { border-top: 2px solid var(--blue); padding-top: 1.6vh; }
 .member--biz { border-color: var(--green); }
-.member__r { font-weight: 680; font-size: clamp(12px,1.12vw,17px); line-height: 1.25; }
+/* Portrait: a square box clipped to a circle, framed chest-up. The crop is per-person,
+   because the five originals are framed differently (one square studio shot, four corridor
+   portraits ranging from head-and-shoulders to waist-up). Three knobs, and the order they
+   apply in matters:
+     --fy  vertical band via object-position — ONLY bites when the image overflows the
+           square box, i.e. on the portrait sources. For a square source (Muhammadali's
+           640x640) there is no overflow and this is inert; use --fo there instead.
+     --z   zoom via transform: scale()
+     --fo  the point scale() zooms about (transform-origin). Defaults to the box centre,
+           which is what cuts the top of a head off when --z is high: zooming from 50%
+           eats the crown first. Pull --fo up toward the face and the head stays in frame.
+   Deliberately a real <img>, not a background-image: browsers drop background images from
+   print, which would leave five empty circles in the PDF export. The print block resets
+   transforms on `.seq > *` only, so the zoom below survives it. */
+.member__ph { width: clamp(76px,9.6vw,168px); aspect-ratio: 1; border-radius: 50%; overflow: hidden;
+              margin-bottom: 1.4vh; background: var(--ink-2);
+              box-shadow: 0 0 0 2px rgba(0,149,217,.5), 0 6px 20px rgba(0,0,0,.5); }
+.member--biz .member__ph { box-shadow: 0 0 0 2px rgba(46,194,126,.5), 0 6px 20px rgba(0,0,0,.5); }
+/* saturate/contrast pulls the lone light-grey studio shot closer to the four darker
+   corridor ones, so the row of circles reads as one set rather than four plus an odd one. */
+.member__ph img { width: 100%; height: 100%; object-fit: cover; object-position: 50% var(--fy,25%);
+                  transform: scale(var(--z,1)); transform-origin: 50% var(--fo,50%);
+                  filter: saturate(.9) contrast(1.05); }
+.member__n { font-weight: 700; font-size: clamp(12.5px,1.18vw,18px); line-height: 1.2; }
+.member__r { margin-top: .45vh; font-weight: 680; font-size: clamp(11px,1.02vw,15px); line-height: 1.25; color: var(--blue); }
+.member--biz .member__r { color: var(--green); }
 .member__d { margin-top: .9vh; font-size: clamp(10.5px,.98vw,14px); color: var(--muted); line-height: 1.4; }
 
 /* ask */
@@ -619,7 +644,7 @@ html[lang="en"] svg [data-lang="en"] { display: inline; }
   <section class="slide">
     <p class="eyebrow"><span data-lang="uz">Jamoa</span><span data-lang="ru">Команда</span><span data-lang="en">Team</span></p>
     <h2><span data-lang="uz">Besh kishi — uchtasi quradi, ikkitasi bozorni tekshiradi</span><span data-lang="ru">Пять человек — трое строят, двое проверяют рынок</span><span data-lang="en">Five people — three build, two test the market</span></h2>
-    <div class="team seq"><div class="member member--biz"><div class="member__r"><span data-lang="uz">Product Owner</span><span data-lang="ru">Product Owner</span><span data-lang="en">Product Owner</span></div><div class="member__d"><span data-lang="uz">Mahsulot yo‘nalishi, mijoz kashfiyoti</span><span data-lang="ru">Направление продукта, customer discovery</span><span data-lang="en">Product direction, customer discovery</span></div></div><div class="member member--biz"><div class="member__r"><span data-lang="uz">Biznes-analitik</span><span data-lang="ru">Бизнес-аналитик</span><span data-lang="en">Business analyst</span></div><div class="member__d"><span data-lang="uz">Bozor tadqiqoti, narx modeli, suhbatlar tahlili</span><span data-lang="ru">Исследование рынка, ценообразование, анализ интервью</span><span data-lang="en">Market research, pricing, interview analysis</span></div></div><div class="member"><div class="member__r"><span data-lang="uz">Backend · Platforma</span><span data-lang="ru">Backend · Платформа</span><span data-lang="en">Backend · Platform</span></div><div class="member__d"><span data-lang="uz">Quvur, ishonchlilik</span><span data-lang="ru">Конвейер, надёжность</span><span data-lang="en">Pipeline, reliability</span></div></div><div class="member"><div class="member__r"><span data-lang="uz">Backend · Integratsiya</span><span data-lang="ru">Backend · Интеграции</span><span data-lang="en">Backend · Integrations</span></div><div class="member__d"><span data-lang="uz">Manba konnektorlari</span><span data-lang="ru">Коннекторы источников</span><span data-lang="en">Source connectors</span></div></div><div class="member"><div class="member__r"><span data-lang="uz">Frontend · DevOps</span><span data-lang="ru">Frontend · DevOps</span><span data-lang="en">Frontend · DevOps</span></div><div class="member__d"><span data-lang="uz">Boshqaruv konsoli, joriy etish</span><span data-lang="ru">Консоль управления, внедрение</span><span data-lang="en">Console, deployment</span></div></div></div>
+    <div class="team seq"><div class="member member--biz"><div class="member__ph"><img src="img/team/muhammadali-ergashev.jpg" alt="Muhammadali Ergashev" style="--z:1.5;--fo:18%"></div><div class="member__n">Muhammadali Ergashev</div><div class="member__r"><span data-lang="uz">Product Owner</span><span data-lang="ru">Product Owner</span><span data-lang="en">Product Owner</span></div><div class="member__d"><span data-lang="uz">Mahsulot yo‘nalishi, mijoz kashfiyoti</span><span data-lang="ru">Направление продукта, customer discovery</span><span data-lang="en">Product direction, customer discovery</span></div></div><div class="member member--biz"><div class="member__ph"><img src="img/team/shavkat-mominov.png" alt="Shavkat Mominov" style="--fy:21%;--z:1.17"></div><div class="member__n">Shavkat Mominov</div><div class="member__r"><span data-lang="uz">Biznes-analitik</span><span data-lang="ru">Бизнес-аналитик</span><span data-lang="en">Business analyst</span></div><div class="member__d"><span data-lang="uz">Bozor tadqiqoti, narx modeli, suhbatlar tahlili</span><span data-lang="ru">Исследование рынка, ценообразование, анализ интервью</span><span data-lang="en">Market research, pricing, interview analysis</span></div></div><div class="member"><div class="member__ph"><img src="img/team/sherzod-chorivey.jpg" alt="Sherzod Chorivey" style="--fy:41%;--z:1.23"></div><div class="member__n">Sherzod Chorivey</div><div class="member__r"><span data-lang="uz">Backend · Platforma</span><span data-lang="ru">Backend · Платформа</span><span data-lang="en">Backend · Platform</span></div><div class="member__d"><span data-lang="uz">Quvur, ishonchlilik</span><span data-lang="ru">Конвейер, надёжность</span><span data-lang="en">Pipeline, reliability</span></div></div><div class="member"><div class="member__ph"><img src="img/team/jaloliddin-temir.jpg" alt="Jaloliddin Temir" style="--fy:0%;--z:1.26"></div><div class="member__n">Jaloliddin Temir</div><div class="member__r"><span data-lang="uz">Backend · Integratsiya</span><span data-lang="ru">Backend · Интеграции</span><span data-lang="en">Backend · Integrations</span></div><div class="member__d"><span data-lang="uz">Manba konnektorlari</span><span data-lang="ru">Коннекторы источников</span><span data-lang="en">Source connectors</span></div></div><div class="member"><div class="member__ph"><img src="img/team/sarvar-jamoliddinov.jpg" alt="Sarvar Jamoliddinov" style="--fy:30%;--z:1.33"></div><div class="member__n">Sarvar Jamoliddinov</div><div class="member__r"><span data-lang="uz">Frontend · DevOps</span><span data-lang="ru">Frontend · DevOps</span><span data-lang="en">Frontend · DevOps</span></div><div class="member__d"><span data-lang="uz">Boshqaruv konsoli, joriy etish</span><span data-lang="ru">Консоль управления, внедрение</span><span data-lang="en">Console, deployment</span></div></div></div>
     <p class="punch" style="font-size:clamp(13px,1.35vw,21px);font-weight:550"><span data-lang="uz">Uch oyda maqsad sotuv emas, <em>validatsiya</em> — shuning uchun mijoz kashfiyotini PO va analitik olib boradi.</span><span data-lang="ru">Цель трёх месяцев — не продажи, а <em>валидация</em>, поэтому customer discovery ведут PO и аналитик.</span><span data-lang="en">The three-month goal is <em>validation</em>, not sales — so the PO and the analyst run customer discovery.</span></p>
     <div class="num">10</div>
   </section>

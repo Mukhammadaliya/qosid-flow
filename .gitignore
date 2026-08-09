@@ -63,7 +63,12 @@ ops-local-stop.cmd
 # command. Until now it was only excluded by the developer's GLOBAL gitignore,
 # so a fresh clone on another machine would have committed it.
 .claude/settings.local.json
-# Pitch-deck screenshots are captures of the live production console: real tenant ids,
-# real request ids and the upstream hostname. The deck references them from disk; they
-# must not travel with the repository, least of all into the public snapshot.
+# Everything the pitch deck loads from disk, for two independent reasons — narrowing this
+# rule to just one of them re-opens the other:
+#   img/*.jpg      captures of the live production console: real tenant ids, real request
+#                  ids and the upstream hostname.
+#   img/team/      photographs of five named team members — personal data, and consent to
+#                  put a face in a grant application is not consent to publish it in a repo.
+# The deck reads them from the working tree, so nothing here needs to be committed for it
+# to work. Keep this as a directory rule; do not replace it with a filename pattern.
 docs/pta-deck/img/
