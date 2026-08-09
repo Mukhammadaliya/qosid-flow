@@ -53,11 +53,12 @@ belgisi qo'yilgan to‘rt satrni olib tashlang — shunda 2:52 qoladi.
 **Ekranda:** sarlavha slaydi, paketlar shlyuz orqali oqib turadi. Kursorni umuman
 harakatlantirmang — birinchi kadr tinch bo'lsin.
 
-> Korxona tizimlari bir-biri bilan doim gaplashadi. O'sha suhbat uzilganda — buyurtma
-> yo'qoladi, to'lov o'tmaydi, hisobot kelmaydi.
-> Va ko'pincha buni birinchi bo'lib mijoz aytadi.
-> Men Muxammadali. Bu — QosID Flow.
+> Korxona tizimlari bir-biri bilan doimiy ravishda ma'lumotlar almashadi. 
+> O'sha jarayon uzilganda — buyurtma yo'qoladi, to'lov o'tmaydi, hisobot kelmaydi.
+> Va ko'pincha, afsuski buni birinchi bo'lib mijoz aytadi.
+> E'tiboringizda — QosID Flow.
 
+> Korxona tizimlari o‘rtasidagi har bir so‘rovni ishonchli yetkazadigan platforma. Yukni vaqt bo‘yicha taqsimlaydi: yo‘qolmaydi, takrorlanmaydi va asosiysi barcha jarayonlar ko‘rinib turadi.
 ---
 
 ### 0:14–0:30 · Slayd 02 — Muammo
@@ -66,8 +67,9 @@ harakatlantirmang — birinchi kadr tinch bo'lsin.
 band ekranga chiqqanda o'sha haqida gapiring.
 
 > Integratsiyalar odatda qo'lda yozilgan skriptlar bilan qilinadi.
-> Ming so'rov birdaniga kelsa — server ko'tara olmaydi. Tashqi API sekinlashsa — skript
-> bloklanadi. Xato bo'lsa — jim yutiladi.
+> Ming so'rov birdaniga kelsa — server ko'tara olmaydi. 
+> Tashqi API sekinlashsa — skript bloklanadi.
+> Xato bo'lsa — jim yutiladi.
 > Va yo'qolganini hech kim qaytarmaydi.
 
 ---
@@ -79,11 +81,12 @@ konturi sekin nafas oladi. **Kursor bilan bitta paketni kuzatib boring** — bu 
 tushunarli besh soniyasi.
 
 > QosID Flow asosiy ilovangizning oldida ikkala yo'nalishda turadi: unga kelayotgan
-> so'rovlarni ham, undan tashqi API'larga chiqayotganini ham.
-> Ikkala oqim bitta quvurdan o'tadi: navbatga yoziladi, qayta uriniladi — va yo'qolmaydi.
+> so'rovlarni ham, undan tashqi API'larga chiqayotganini ham nazorat qiladi.
+> Ikkala oqim bitta quvurdan o'tadi: navbatga yoziladi, xato bo'lsa qayta uriniladi — va asosiysi yo'qolmaydi.
 >
-> Bitta tafsilot muhim. Mijozga «qabul qildik» javobi so'rov navbatga **yozilgandan keyin**
-> qaytariladi. Ya'ni bu «urinib ko'ramiz» emas, «saqlab qo'ydik» degani.
+> Bitta tafsilot muhim. 
+> Mijozga «qabul qildik» javobi so'rov navbatga yozilgandan keyin qaytariladi.
+> Ya'ni bu sorovni amalga oshirish uchun «urinib ko'ramiz» emas, biz bu sorovni «saqlab qo'ydik» degani.
 > Odatda buning uchun ikkita alohida mahsulot kerak bo'ladi.  *(uzun chiqsa — tashlab yuboring)*
 
 ---
@@ -93,13 +96,14 @@ tushunarli besh soniyasi.
 **Ekranda:** konsolning uchta ekrani. Har biriga kursor bilan ishora qiling va rasm
 ustida 2–3 soniya turing — hakam ko'rishga ulgursin.
 
-> Bularning hammasi ko'rinib turadi. Birinchisi — jonli statistika: o'tkazuvchanlik,
+> Jarayonlarning hammasi ko'rinib turadi. 
+> Birinchisi — jonli statistika: o'tkazuvchanlik,
 > muvaffaqiyat, kechikish.
 > Ikkinchisi — xatolar. Yetkazib bo'lmagan so'rov yo'qolmaydi: alohida navbatga tushadi,
-> Telegramga xabar keladi, sababini AI tahlil qilib beradi.
+> Telegramga xabar keladi, sababini Sun'iy Intelekt orqali tahlil qilish mumkin bo'ladi.
 > Uchinchisi — operator paneli: to'xtatish, ishga tushirish, jonli jurnal.
-> Sozlamalar esa faqat tizim to'xtaganda tahrirlanadi — noto'g'ri sozlama jonli trafikni
-> ura olmaydi.
+> Sozlamalar esa faqat tizim to'xtaganda tahrirlanadi — noto'g'ri sozlama jonli trafikga 
+> ta'sir o'tqaza olmaydi
 
 ---
 
@@ -108,48 +112,51 @@ ustida 2–3 soniya turing — hakam ko'rishga ulgursin.
 **Ekranda:** to'rtta raqam noldan o'z qiymatiga sanab chiqadi (~0.9 soniya). **Sanoq
 tugagunicha kutib turing** — raqam o'sayotganda uni aytish chalkash eshitiladi.
 
-> Bu prototip emas. Aprel oyidan beri ishlab chiqarishda: kuniga oltmish ming olti yuz
-> so'rov, to'qson to'qqiz nuqta oltmish sakkiz foiz muvaffaqiyat.
-> O'lchangan cho'qqi — soniyasiga to'qqiz yuz o'n sakkiz, yo'qotishsiz.
->
-> Yigirma yettinchi iyulda avariya bo'ldi: bir daqiqada ikki yuz qirq bitta so'rov xato
-> navbatiga tushdi. Sababini topdik, tuzatdik, o'lchadik.
-> Ertasi kuni besh barobar zichroq yuklama o'tdi — bitta so'rov ham yo'qolmadi.
+> Bu prototip emas. Aprel oyidan beri production serverda ishlab kelayotgan tizim:
+> kuniga oltmish mingdan oshiq sorov
+> to'qson to'qqiz foiz natija.
+> Soniyasiga deyarli mingta sorov yo'qotishsiz yo'qotishsiz.
+> Va bular imkoniyat chegarasi emas
 
 ---
 
 ### 1:44–1:54 · Slayd 06 — Biznes-model
 
-> Beshta daromad oqimi bor, bugungi fokus uchtasi: joriy etish xizmatlari, har bir
-> konnektor uchun to'lov, va boshqariladigan bulut.
+> Bizning loyihamizning beshta daromad oqimi bor, bugungi fokus uchtasiga: 
+> tizimni joriy etish xizmatlari
+> har bir konnektor uchun to'lov
+> Va boshqariladigan bulutli yechim
 
 ---
 
 ### 1:54–2:03 · Slayd 07 — Bozor
 
-> Biz ikki segment kesishmasida turamiz: integratsiya platformalari va API-shlyuzlar.
-> Plasdarm — O'zbekiston korxona va davlat integratsiyalari.  *(uzun chiqsa — tashlab yuboring)*
+> Biz ikki segment kesishmasida turamiz: integratsiya platformalari va API-shlyuzlar
 
 ---
 
 ### 2:03–2:15 · Slayd 08 — Raqobat
 
 > API-shlyuzlar kiruvchi trafikni oladi, lekin sinxron — ilova o'chiq bo'lsa so'rov yo'qoladi.
-> Integratsiya platformalari chiquvchini uddalaydi, lekin HTTP darvozasi emas.
-> Ish-oqim dvigatellari bu hajmga mo'ljallanmagan.  *(uzun chiqsa — tashlab yuboring)*
+> Integratsiya platformalari chiquvchini uddalaydi, lekin HTTP sorovlar uchun darvoza bo'la olmaydi.
+> Ba'zi hollarda ularning ish-oqim dvigatellari bu hajmga mo'ljallanmagan
 
 ---
 
 ### 2:15–2:24 · Slayd 09 — Bozorga chiqish
 
-> Uch kanal, eng past ishqalanishdan: pilot ekotizimi mijozlari, IT Park rezidentlari va
-> ERP-integratorlar, keyin boshqariladigan bulut.
+> Asosan uch kanal va eng past ishqalanishdan: 
+> pilot ekotizimi mijozlari
+> IT Park rezidentlari
+> ERP-integratorlar
+> keyin boshqariladigan bulutga o'tamiz
 
 ---
 
 ### 2:24–2:32 · Slayd 10 — Jamoa
 
-> Besh kishimiz: uchtasi quradi, ikkitasi bozorni tekshiradi.
+> Besh kishimiz: uchtamiz tizimni takomillashtiramiz quradi, ikkitamiz bozorni analiz qilamiz
+
 
 ---
 
@@ -158,12 +165,11 @@ tugagunicha kutib turing** — raqam o'sayotganda uni aytish chalkash eshitiladi
 **Ekranda:** ikki ustun. **O'ng ustunda to'xtang** — bu videoning eng halol kadri va,
 aslida, arizaning sababi.
 
-> Bizda ishlab chiqarishda ishlaydigan tizim bor, qirq bitta xavfsizlik qoidasi bor,
+> Bizda ishlab chiqarishda ishlaydigan tizim bor, qirqtadan ko'p xavfsizlik qoidasi bor,
 > uch tilli boshqaruv konsoli bor.
-> Bizda yo'q narsa — asosiy kompaniyadan tashqarida mijoz, narx modeli, sotuv kanali,
-> bozor validatsiyasi.
-> Shuning uchun inkubatsiyaga kelyapmiz: mahsulot qurishga emas, **uni kim sotib olishini
-> aniqlashga**.
+> Bizda yo'q narsa — asosiy kompaniyadan tashqarida mijoz, narx modelimiz belgilanmagan, sotuv kanali,
+> bozor validatsiyasi mavjud emas.
+> Shuning uchun inkubatsiyaga kelyapmiz: mahsulot qurishga emas, **uni kim sotib olishini aniqlashga**.
 
 ---
 
@@ -174,8 +180,6 @@ Oxirgi ikki soniyada logotip va havolalar.
 
 > Uch oydan keyin o'sha ustun bo'shaydi: birinchi pullik pilot, tasdiqlangan narx,
 > IT Park orqali hamkorlik, yigirma korxona bilan suhbat.  *(uzun chiqsa — tashlab yuboring)*
-> Tizim har kuni oltmish ming so'rovni yetkazadi. Qolgani — mahsulotning o'zini kimga
-> yetkazishni bilish.
 > QosID Flow. Rahmat.
 
 ---
