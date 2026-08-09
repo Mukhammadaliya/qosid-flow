@@ -420,10 +420,30 @@ Prod SPA admin-parol ortida, real mijoz ma'lumotlari bor.
 2. Ekran yozuvi video ichida + README skrinshotlari — zaifroq
 3. Prodga vaqtinchalik akkaunt — tavsiya etilmaydi
 
-### GitHub havolasi
+### GitHub havolasi — ✅ YOPILDI 2026-08-09
 
-Repo private, tarixida 3 ta sir. Yechim: **tarixsiz (squash) yangi public showcase repo**;
-hozirgi repo private qoladi. Public README'ning o'zi pitch materiali bo'ladi.
+**https://github.com/Mukhammadaliya/qosid-flow-showcase** — public, **bitta commit**, 12 fayl
+(~3 500 satr). `SECURITY-REMEDIATION.md` §3 dagi «Route B» bajarildi: tarix umuman yo'q, ya'ni
+toza ekani qayta yozish bilan emas, konstruksiya bilan ta'minlangan.
+
+Kirgan mazmun: `SAFETY-RULES.md` (41 qoida), `ARCHITECTURE.md`, `SOURCE-INTEGRATION-CONTRACT.md`,
+`CbRequeueScheduler`, `OrderedAckTracker`, `HostConcurrencyLimiter`, `HttpRequestService`,
+`ApiRequestConsumer` va ikkita test. README pitch materiali sifatida yozilgan — 27-iyul
+hodisasi → sabab → uchta tuzatish → 28-iyul o'lchovi hikoyasi bilan.
+
+Ataylab kirmagan: REST proxy, fayl yuklash, settings/admin control-plane, ops sidecar, React
+konsoli, manba konnektori, konfiguratsiya va deploy hujjatlari. Sabab biznes: 06-slaydda
+open-core «12+ oy» deb turadi, ya'ni korxona qatlamini bugun bepul berib qo'yish kerak emas.
+«Kodning bir qismini yuklang» maydoni uchun shu papkaning zip'i ishlatiladi.
+
+**Ikkita qat'iy qoida — buzilmasin:**
+
+1. **`Mukhammadaliya/qosid-flow` (va `greenwhite/qosid-flow`) hech qachon public qilinmasin.**
+   354 commitlik tarixda uchta almashtirilmagan sir bor; public qilish = ularni ochish, va
+   force-push ham yaramaydi (GitHub eski commit'ni keshda SHA bo'yicha beradi).
+2. **Loyiha papkasini zip qilib hech qayerga yuklamang.** `.superpowers/` gitignore qilingan,
+   ya'ni git ko'rmaydi, lekin diskda turadi va ichida to'liq Telegram tokeni bor (eski review
+   diff'lari). Zip git'ni emas, fayl tizimini oladi.
 
 ---
 

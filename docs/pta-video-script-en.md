@@ -9,9 +9,16 @@ carries the same content in more, shorter words, so it is read faster; the timin
 slide order match.
 
 > **If the figures change, change them in all three scripts.** They are spoken as words, so
-> a search-and-replace over the deck will not find them. The five that appear below:
-> **60 600** requests/day · **99.68 %** · **918** req/s peak · **241** DLQ in one minute ·
-> **41** safety rules.
+> a search-and-replace over the deck will not find them.
+>
+> **UNRESOLVED: the voice and the deck disagree.** All three scripts now speak rounded
+> figures — "more than sixty thousand", "ninety-nine percent", "almost a thousand", "more
+> than forty" — and the 27 July incident is not mentioned at all. The deck on screen still
+> shows the exact values: **60 600** requests/day · **99.68 %** · **918** req/s peak ·
+> **241** DLQ in one minute · **41** safety rules. A judge therefore reads one number and
+> hears another. **Pick one before recording:** either put the exact figures back into the
+> scripts, or round them in the deck. Measured sources: 60 591/day, 99.68 %, 918/s (28.07),
+> 241 DLQ (27.07 14:27 UTC), 41 rules.
 
 **Structure:** the script follows the deck's twelve slides, and the deck is all that is on
 screen. The slides are animated: the headline settles, blocks arrive in sequence, packets
@@ -27,26 +34,37 @@ that, or the first words land on an empty screen.
 
 ## Timing
 
-| time | slide | on screen | words |
-|---|---|---|---|
-| 0:00–0:14 | 01 | Slide: title, packets flowing | ~30 |
-| 0:14–0:30 | 02 | Slide: four failures | ~35 |
-| 0:30–0:54 | 03 | Topology, packets crossing the gate | ~55 |
-| 0:54–1:16 | 04 | Three console screens | ~48 |
-| 1:16–1:44 | 05 | Figures count up, then the incident | ~62 |
-| 1:44–1:54 | 06 | Business model | ~21 |
-| 1:54–2:03 | 07 | Market | ~19 |
-| 2:03–2:15 | 08 | Competition | ~25 |
-| 2:15–2:24 | 09 | Channels | ~19 |
-| 2:24–2:32 | 10 | Team | ~15 |
-| 2:32–2:48 | 11 | Have / don't have columns | ~32 |
-| 2:48–3:00 | 12 | The close, rows striking through | ~22 |
+Time is the window the deck's animation sets; words are the text as it now stands, at
+2.5 words a second.
 
-**472 words.** Between 2:55 (2.7 words a second) and 3:17 (2.4) depending on pace — time your
-first read-through. The four marked lines are 29 words, about 12 seconds: drop them if you run long.
-Time your first read-through; if it runs long, drop the four lines marked *(drop this if you run long)*
-and you are at 3:05.
-English runs dense — slow down rather than adding words, and let the figures sit on screen.
+| time (window) | slide | on screen | words | ~duration | status |
+|---|---|---|---|---|---|
+| 0:00–0:14 | 01 | Title, packets flowing | 59 | 23.6s | **10s over** |
+| 0:14–0:30 | 02 | Four failures, one by one | 38 | 15.2s | ✓ |
+| 0:30–0:54 | 03 | Topology, packets crossing the gate | 51 | 20.4s | 4s spare |
+| 0:54–1:16 | 04 | Three console screens | 68 | 27.2s | **5s over** |
+| 1:16–1:44 | 05 | Figures count up, then the incident | 35 | 14.0s | **14s spare** |
+| 1:44–1:54 | 06 | Business model | 20 | 8.0s | ✓ |
+| 1:54–2:03 | 07 | Market | 11 | 4.4s | 5s spare |
+| 2:03–2:15 | 08 | Competition | 44 | 17.6s | **6s over** |
+| 2:15–2:24 | 09 | Channels | 16 | 6.4s | 3s spare |
+| 2:24–2:32 | 10 | Team | 15 | 6.0s | 2s spare |
+| 2:32–2:48 | 11 | Have / don't have columns | 55 | 22.0s | **6s over** |
+| 2:48–3:00 | 12 | The close, rows striking through | 29 | 11.6s | ✓ |
+
+**441 words ≈ 2:56** at 2.5 words a second — that is only four seconds inside the limit, and
+a slower read goes over it. Time your first read-through, and cut rather than speed up.
+
+Three things to know:
+
+- **Slide 01 runs 10 seconds over.** The cause is the second block, the positioning line. It
+  is **also on screen**, and the script's own rule is that the voice does not read the slide.
+  That makes it the obvious cut: drop it and slide 01 becomes 35 words and 14.0s, inside the
+  window (417 words, 2:47 overall).
+- **Slide 05 leaves about 14 seconds of silence** — the 27 July incident was cut from the
+  text while the screen still animates it: the voice is quiet, the screen talks.
+- **Slides 04, 08 and 11 run over** by 5–6 seconds. English is the densest of the three cuts;
+  lengthen the animation or shorten the lines.
 
 ---
 
@@ -56,10 +74,13 @@ English runs dense — slow down rather than adding words, and let the figures s
 
 **On screen:** the title slide, packets crossing the gate. No cursor. Let it breathe.
 
-> Enterprise systems talk to each other all day. When that conversation breaks, an order
-> vanishes, a payment never lands, a report never arrives.
-> And usually the customer is the one who notices first.
-> I'm Muxammadali. This is QosID Flow.
+> Enterprise systems exchange data constantly.
+> When that exchange breaks, an order vanishes, a payment never lands, a report never arrives.
+> And usually, unfortunately, the customer is the one who notices first.
+> This is QosID Flow.
+
+> A platform that reliably delivers every request between enterprise systems and spreads
+> load over time: nothing lost, nothing duplicated, and above all, everything visible.
 
 ---
 
@@ -68,8 +89,10 @@ English runs dense — slow down rather than adding words, and let the figures s
 **On screen:** the four failures arrive one by one. Hold a beat on each.
 
 > Integrations are usually hand-written scripts.
-> A thousand requests at once and the server gives way. The API slows and the script
-> blocks. Something fails, the error is swallowed, and nobody re-sends what was lost.
+> A thousand requests arrive at once and the server gives way.
+> A third-party API slows down and the script blocks.
+> Something fails and the error is swallowed.
+> And nobody re-sends what was lost.
 
 ---
 
@@ -78,13 +101,11 @@ English runs dense — slow down rather than adding words, and let the figures s
 **On screen:** the topology. **Follow one packet with the cursor** as it crosses the gate
 and turns from blue to green — these are the clearest five seconds in the video.
 
-> QosID Flow stands in front of your main application, in both directions — the requests
-> coming in, and the ones going out to third-party APIs.
-> One pipeline for both: queued, retried, never lost.
->
-> One detail matters. The client is told "accepted" only **after** the request is durably
-> queued. So it does not mean "we'll try" — it means "it is safe with us".
-> Normally this takes two separate products.  *(drop this if you run long)*
+> QosID Flow stands in front of your main application, in both directions: it governs the
+> requests coming in, and the ones going out to third-party APIs.
+> Both flows run through one pipeline: written to a queue, retried on failure — and, above
+> all, never lost.
+> Normally this takes two separate products.
 
 ---
 
@@ -93,12 +114,13 @@ and turns from blue to green — these are the clearest five seconds in the vide
 **On screen:** three captures of the console. Point at each with the cursor and rest there
 for two or three seconds — give the judge time to read it.
 
-> And all of it is visible. First, live statistics: throughput, success rate, latency.
+> Every process is visible.
+> First, live statistics: throughput, success rate, latency.
 > Second, errors. A request that cannot be delivered is never dropped — it lands in a
-> dead-letter queue, Telegram gets an alert, and AI explains the reason.
+> separate queue, Telegram gets an alert, and the cause can be analysed with AI.
 > Third, the operator console: stop, start, live log.
-> And settings can only be changed while the system is stopped — a bad setting can never
-> reach live traffic.
+> And settings can only be changed while the system is stopped — a bad setting cannot reach
+> live traffic.
 
 ---
 
@@ -107,49 +129,50 @@ for two or three seconds — give the judge time to read it.
 **On screen:** four figures count up from zero (~0.9 s). **Wait for the count to finish** —
 saying a number while it is still climbing sounds muddled.
 
-> Not a prototype. In production since April: sixty thousand six hundred requests a day,
-> ninety-nine point six eight percent success, measured peak nine hundred and eighteen
-> a second — nothing lost.
->
-> On the twenty-seventh of July, in one minute, two hundred and forty-one live requests
-> fell into the error queue.
-> We found the cause, shipped three changes, measured the result.
-> Next day a burst five times denser went through — not one request lost.
+> Not a prototype. Running on a production server since April:
+> more than sixty thousand requests a day,
+> ninety-nine percent success.
+> Almost a thousand requests a second, with nothing lost.
+> And that is not the ceiling.
 
 ---
 
 ### 1:44–1:54 · Slide 06 — Business model
 
-> Five revenue streams, three in focus: implementation services, per-connector pricing,
-> managed cloud.
+> Our project has five revenue streams; three are in focus today:
+> implementation services,
+> per-connector pricing,
+> and a managed cloud offering.
 
 ---
 
 ### 1:54–2:03 · Slide 07 — Market
 
 > We sit where two segments overlap: integration platforms and API gateways.
-> The beachhead is Uzbek enterprise and government integration.  *(drop this if you run long)*
 
 ---
 
 ### 2:03–2:15 · Slide 08 — Competition
 
-> API gateways take inbound traffic, but synchronously — if the app is down, the request
-> is lost. Integration platforms handle outbound, but are no HTTP front door.
-> Workflow engines were never built for this volume.  *(drop this if you run long)*
+> API gateways take inbound traffic, but if the application is down the request is lost.
+> Integration platforms handle outbound, but they cannot be the front door for HTTP requests.
+> And in many cases their workflow engines were not built for this kind of volume.
 
 ---
 
 ### 2:15–2:24 · Slide 09 — Go to market
 
-> Three channels, lowest friction first: pilot-ecosystem customers, IT Park residents and
-> ERP integrators, then managed cloud.
+> Three channels, mainly:
+> pilot-ecosystem customers,
+> IT Park residents,
+> ERP integrators,
+> then we move to managed cloud.
 
 ---
 
 ### 2:24–2:32 · Slide 10 — Team
 
-> Five of us. Three build. Two go and test the market.
+> Five of us: three of us develop the system, two of us analyse the market.
 
 ---
 
@@ -158,10 +181,11 @@ saying a number while it is still climbing sounds muddled.
 **On screen:** two columns. **Hold on the right-hand one** — it is the most honest frame in
 the video, and it is the reason we are applying.
 
-> We have a system in production, forty-one safety rules, a console in three languages.
-> What we don't have: a customer outside the parent company, a pricing model, a sales
-> channel, market validation.
-> That is why we are here. Not to build the product — **to find out who buys it**.
+> We have a system running in production, more than forty safety rules, a management console
+> in three languages.
+> What we don't have: a customer outside the parent company; no pricing model; no sales
+> channel, no market validation.
+> That is why we are here: not to build the product, but to find out who buys it.
 
 ---
 
@@ -170,47 +194,46 @@ the video, and it is the reason we are applying.
 **On screen:** the closing slide, four rows striking through. Logo and links in the last two
 seconds.
 
-> In three months that column empties: a first paying pilot, a confirmed price, a first
-> partnership through IT Park, twenty customer interviews.  *(drop this if you run long)*
-> The system already delivers sixty thousand requests a day. What's left is knowing who to
-> deliver the product to.
-> QosID Flow. Thank you.
+> Our three-month plan is three outcomes:
+> a first customer,
+> a confirmed price and business model,
+> a partnership through IT Park.
+> This is QosID Flow. Thank you for your attention.
 
 ---
 
-## Recording notes
+## Practical notes for the recording
 
-**Deck**
-- `f` for fullscreen; arrow keys move between slides
-- Language: `1` `2` `3`, or `?lang=uz|ru|en`. Open the right one **before** you record
-- 1920×1080, notifications off, spare tabs closed
+**The deck**
+- `f` for full screen; arrow keys move between slides
+- Language: keys `1` `2` `3`, or `?lang=uz|ru|en`. Open the right one **before** you record
+- 1920×1080, notifications off, other tabs closed
 
 **Work with the animation**
-- Each slide takes ~0.6 s to arrive — start the line after that
+- A slide takes ~0.6 s to arrive — start the line after that
 - On slide 5 the figures count for 0.9 s — wait for them
-- Slides 3 and 12 move continuously; don't rush, the frame carries itself
+- On slides 3 and 12 the motion is continuous; do not rush, the frame carries itself
 
 **Voice**
-- Record it **separately** from the screen. A fumbled line then costs one take, not the
-  whole video
-- Microphone 15–20 cm from your mouth, quiet room, window shut
-- One take per slide — the script is already split that way
+- Record it **separately** from the screen. Then a fluffed line costs one slide, not the film
+- Mic 15–20 cm from the mouth, quiet room, window shut
+- One take per slide — the script is already cut that way
 
-**Editing**
+**Edit**
 - Half a second of air between slides
-- Numbers stay on screen three seconds minimum
-- Music, if any, well under the voice. None at all is fine
-- Export MP4, H.264, 1080p, 30 fps
+- Figures stay on screen for at least three seconds
+- Music, if any, well under the voice. None at all is fine too
+- Export: MP4, H.264, 1080p, 30 fps
 
-**Don't**
-- Read the slides — don't repeat what is written, add to it
-- Explain the architecture; that is what the repository is for
-- Say "we are the best" — the numbers already said it
-- Run over. Re-cut even at 3:01
+**Do not**
+- Read the slides — do not repeat what is written, add to it
+- Go deep on architecture; the repository is there for that
+- Say "we are the best" — the figures already said it
+- Run past three minutes. Re-cut even for 3:01
 
 ---
 
-## Links in the final frame
+## Links in the closing frame
 
-- GitHub: `github.com/Mukhammadaliya/qosid-flow`
-- Demo: *(added once the demo instance is up)*
+- GitHub: `github.com/Mukhammadaliya/qosid-flow-showcase`
+- Demo: *(to be added once the demo instance is up)*

@@ -97,6 +97,6 @@ o'ylaydi. Yuqoridagi ro'yxat esa jamoaning validatsiya qila olishini ko'rsatadi.
 - **Yuridik holat:** Yuridik shaxs ro'yxatdan o'tgan, IT Park bilan shartnoma mavjud
   *(taqdimot slaydidan olib tashlandi — bu ariza mezoni, pitch da'vosi emas; slaydda
   o'rniga muhandislik tayyorligi turadi)*
-- **GitHub:** `github.com/Mukhammadaliya/qosid-flow`
+- **GitHub:** `github.com/Mukhammadaliya/qosid-flow-showcase`
 - **MVP havolasi:** *(demo instans tayyor bo'lgach)*
 - **Video:** *(yozib olingach — ssenariy `docs/pta-video-script.md` da)*

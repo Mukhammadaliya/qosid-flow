@@ -6,9 +6,16 @@
 **Format:** **animatsion deck yozuvi + ovoz.** Jonli tizim ko'rsatilmaydi
 
 > **Raqamlar o'zgarsa — uchala ssenariyda ham o'zgartiring.** Ular ovozda so'z bilan
-> aytiladi, ya'ni deck bo'yicha raqamli qidiruv ularni topmaydi. Quyida uchraydigan beshtasi:
-> **60 600** so'rov/kun · **99.68 %** · cho'qqi **918** so'rov/s · bir daqiqada **241** DLQ ·
-> **41** xavfsizlik qoidasi.
+> aytiladi, ya'ni deck bo'yicha raqamli qidiruv ularni topmaydi.
+>
+> **HAL QILINMAGAN: ovoz va deck bir xil emas.** Uchala ssenariy hozir yumaloqlangan
+> raqamlarni aytadi — «oltmish mingdan oshiq», «to'qson to'qqiz foiz», «deyarli mingta»,
+> «qirqtadan ko'p» — va 27-iyul hodisasini umuman aytmaydi. Deck ekranda esa aniq
+> qiymatlar turadi: **60 600** so'rov/kun · **99.68 %** · cho'qqi **918** so'rov/s ·
+> bir daqiqada **241** DLQ · **41** xavfsizlik qoidasi. Ya'ni hakam ekranda bir raqamni
+> ko'rib, quloqda boshqasini eshitadi. **Ovoz yozishdan oldin bittasini tanlang:** yoki
+> ssenariylarga aniq raqamlarni qaytarasiz, yoki deckdagi raqamlarni yumaloqlaysiz.
+> Manba o'lchovlar: 60 591/kun, 99.68 %, 918/s (28.07), 241 DLQ (27.07 14:27 UTC), 41 qoida.
 
 **Tuzilma:** ssenariy deckning 12 slaydi bo'yicha boradi, ekranda ham faqat deck turadi.
 Slaydlar animatsiyali: sarlavha joylashadi, bloklar ketma-ket keladi, 3-slaydda paketlar
@@ -24,25 +31,36 @@ shundan keyin boshlang, aks holda birinchi so'zlar bo'sh ekranga tushadi.
 
 ## Xronometraj
 
-| vaqt | slayd | ekranda | so'z |
-|---|---|---|---|
-| 0:00–0:14 | 01 | Sarlavha, paketlar oqadi | ~30 |
-| 0:14–0:30 | 02 | To'rtta muammo navbat bilan | ~34 |
-| 0:30–0:54 | 03 | Topologiya, paketlar shlyuzdan o'tadi | ~52 |
-| 0:54–1:16 | 04 | Konsolning uchta ekrani | ~44 |
-| 1:16–1:44 | 05 | Raqamlar sanaydi, keyin hodisa | ~58 |
-| 1:44–1:54 | 06 | Biznes-model | ~20 |
-| 1:54–2:03 | 07 | Bozor | ~18 |
-| 2:03–2:15 | 08 | Raqobat | ~24 |
-| 2:15–2:24 | 09 | Kanallar | ~18 |
-| 2:24–2:32 | 10 | Jamoa | ~15 |
-| 2:32–2:48 | 11 | Bor / yo'q ustunlari | ~30 |
-| 2:48–3:00 | 12 | Yakun, satrlar chizib tashlanadi | ~20 |
+Budjet — deck animatsiyasi bo'yicha belgilangan oyna; so'z — matnning hozirgi holati.
 
-**389 so'z.** Tezlikka qarab 2:46 (2.35 so'z/s) dan 3:05 (2.1) gacha — birinchi o'qishni
-sekundomer bilan o'lchang. Belgilangan to'rt satr 28 so'z, ya'ni ~13 soniya: uzun chiqsa o'shalarni tashlang.
-Birinchi o'qishni sekundomer bilan o'lchang; uzun chiqsa, *(uzun chiqsa — tashlab yuboring)*
-belgisi qo'yilgan to‘rt satrni olib tashlang — shunda 2:52 qoladi.
+| vaqt (budjet) | slayd | ekranda | so'z | ~davomiylik | holat |
+|---|---|---|---|---|---|
+| 0:00–0:14 | 01 | Sarlavha, paketlar oqadi | 51 | 23.2s | **9s oshadi** |
+| 0:14–0:30 | 02 | To'rtta muammo navbat bilan | 31 | 14.1s | ✓ |
+| 0:30–0:54 | 03 | Topologiya, paketlar shlyuzdan o'tadi | 42 | 19.1s | 5s bo'sh |
+| 0:54–1:16 | 04 | Konsolning uchta ekrani | 55 | 25.0s | **3s oshadi** |
+| 1:16–1:44 | 05 | Raqamlar sanaydi, keyin hodisa | 30 | 13.6s | **14s bo'sh** |
+| 1:44–1:54 | 06 | Biznes-model | 22 | 10.0s | ✓ |
+| 1:54–2:03 | 07 | Bozor | 9 | 4.1s | 5s bo'sh |
+| 2:03–2:15 | 08 | Raqobat | 30 | 13.6s | ✓ |
+| 2:15–2:24 | 09 | Kanallar | 14 | 6.4s | 3s bo'sh |
+| 2:24–2:32 | 10 | Jamoa | 9 | 4.1s | 4s bo'sh |
+| 2:32–2:48 | 11 | Bor / yo'q ustunlari | 45 | 20.5s | **4s oshadi** |
+| 2:48–3:00 | 12 | Yakun, satrlar chizib tashlanadi | 24 | 10.9s | ✓ |
+
+**362 so'z ≈ 2:45** (2.2 so'z/s), sekinroq o'qilsa ~3:00 ga tegib ketadi. Chegara 3 daqiqa,
+ya'ni zaxira kichik — birinchi o'qishni sekundomer bilan o'lchang.
+
+Uchta joyni bilib turing:
+
+- **01-slayd 9 soniya oshadi.** Sababi — ikkinchi blok, ya'ni taglayn jumlasi. U **ekranda
+  ham yozilgan**, ssenariyning o'z qoidasi esa «ovoz slaydni o'qib bermaydi» deydi. Eng
+  aniq qisqartirish shu: o'sha blokni olib tashlasangiz 01-slayd 30 so'z, 13.6 soniya
+  bo'ladi va budjetga aynan tushadi (jami 341 so'z, 2:35).
+- **05-slaydda 14 soniya bo'sh qoladi** — 27-iyul hodisasi matndan olingan, ekranda esa
+  o'sha paytda hodisa animatsiyasi ketadi: ovoz jim, ekran gapiradi.
+- **04 va 11-slaydlar** budjetdan 3–4 soniya oshadi: animatsiyani uzaytirish yoki matnni
+  qisqartirish kerak.
 
 ---
 
@@ -67,7 +85,7 @@ harakatlantirmang — birinchi kadr tinch bo'lsin.
 band ekranga chiqqanda o'sha haqida gapiring.
 
 > Integratsiyalar odatda qo'lda yozilgan skriptlar bilan qilinadi.
-> Ming so'rov birdaniga kelsa — server ko'tara olmaydi. 
+> Minglab so'rov birdaniga kelsa — server ko'tara olmaydi. 
 > Tashqi API sekinlashsa — skript bloklanadi.
 > Xato bo'lsa — jim yutiladi.
 > Va yo'qolganini hech kim qaytarmaydi.
@@ -84,9 +102,6 @@ tushunarli besh soniyasi.
 > so'rovlarni ham, undan tashqi API'larga chiqayotganini ham nazorat qiladi.
 > Ikkala oqim bitta quvurdan o'tadi: navbatga yoziladi, xato bo'lsa qayta uriniladi — va asosiysi yo'qolmaydi.
 >
-> Bitta tafsilot muhim. 
-> Mijozga «qabul qildik» javobi so'rov navbatga yozilgandan keyin qaytariladi.
-> Ya'ni bu sorovni amalga oshirish uchun «urinib ko'ramiz» emas, biz bu sorovni «saqlab qo'ydik» degani.
 > Odatda buning uchun ikkita alohida mahsulot kerak bo'ladi.  *(uzun chiqsa — tashlab yuboring)*
 
 ---
@@ -100,10 +115,10 @@ ustida 2–3 soniya turing — hakam ko'rishga ulgursin.
 > Birinchisi — jonli statistika: o'tkazuvchanlik,
 > muvaffaqiyat, kechikish.
 > Ikkinchisi — xatolar. Yetkazib bo'lmagan so'rov yo'qolmaydi: alohida navbatga tushadi,
-> Telegramga xabar keladi, sababini Sun'iy Intelekt orqali tahlil qilish mumkin bo'ladi.
+> Telegramga xabar keladi, sababini sun'iy intellekt orqali tahlil qilish mumkin bo'ladi.
 > Uchinchisi — operator paneli: to'xtatish, ishga tushirish, jonli jurnal.
-> Sozlamalar esa faqat tizim to'xtaganda tahrirlanadi — noto'g'ri sozlama jonli trafikga 
-> ta'sir o'tqaza olmaydi
+> Sozlamalar esa faqat tizim to'xtaganda tahrirlanadi — noto'g'ri sozlama jonli trafikka
+> ta'sir o'tkaza olmaydi.
 
 ---
 
@@ -113,49 +128,49 @@ ustida 2–3 soniya turing — hakam ko'rishga ulgursin.
 tugagunicha kutib turing** — raqam o'sayotganda uni aytish chalkash eshitiladi.
 
 > Bu prototip emas. Aprel oyidan beri production serverda ishlab kelayotgan tizim:
-> kuniga oltmish mingdan oshiq sorov
+> kuniga oltmish mingdan oshiq so'rov,
 > to'qson to'qqiz foiz natija.
-> Soniyasiga deyarli mingta sorov yo'qotishsiz yo'qotishsiz.
-> Va bular imkoniyat chegarasi emas
+> Soniyasiga deyarli mingta so'rov, yo'qotishsiz.
+> Va bular imkoniyat chegarasi emas.
 
 ---
 
 ### 1:44–1:54 · Slayd 06 — Biznes-model
 
-> Bizning loyihamizning beshta daromad oqimi bor, bugungi fokus uchtasiga: 
-> tizimni joriy etish xizmatlari
-> har bir konnektor uchun to'lov
-> Va boshqariladigan bulutli yechim
+> Bizning loyihamizning beshta daromad oqimi bor, bugungi fokus uchtasiga:
+> tizimni joriy etish xizmatlari,
+> har bir konnektor uchun to'lov,
+> va boshqariladigan bulutli yechim.
 
 ---
 
 ### 1:54–2:03 · Slayd 07 — Bozor
 
-> Biz ikki segment kesishmasida turamiz: integratsiya platformalari va API-shlyuzlar
+> Biz ikki segment kesishmasida turamiz: integratsiya platformalari va API-shlyuzlar.
 
 ---
 
 ### 2:03–2:15 · Slayd 08 — Raqobat
 
-> API-shlyuzlar kiruvchi trafikni oladi, lekin sinxron — ilova o'chiq bo'lsa so'rov yo'qoladi.
-> Integratsiya platformalari chiquvchini uddalaydi, lekin HTTP sorovlar uchun darvoza bo'la olmaydi.
-> Ba'zi hollarda ularning ish-oqim dvigatellari bu hajmga mo'ljallanmagan
+> API-shlyuzlar kiruvchi trafikni oladi, lekin ilova o'chiq bo'lsa so'rov yo'qoladi.
+> Integratsiya platformalari chiquvchini uddalaydi, lekin HTTP so'rovlar uchun darvoza bo'la olmaydi.
+> Ba'zi hollarda ularning ish-oqim dvigatellari katta hajmlarga mo'ljallanmagan bo'ladi.
 
 ---
 
 ### 2:15–2:24 · Slayd 09 — Bozorga chiqish
 
-> Asosan uch kanal va eng past ishqalanishdan: 
-> pilot ekotizimi mijozlari
-> IT Park rezidentlari
-> ERP-integratorlar
-> keyin boshqariladigan bulutga o'tamiz
+> Asosan uch kanal:
+> pilot ekotizimi mijozlari,
+> IT Park rezidentlari,
+> ERP-integratorlar,
+> keyin boshqariladigan bulutga o'tamiz.
 
 ---
 
 ### 2:24–2:32 · Slayd 10 — Jamoa
 
-> Besh kishimiz: uchtamiz tizimni takomillashtiramiz quradi, ikkitamiz bozorni analiz qilamiz
+> Besh kishimiz: uchtamiz tizimni takomillashtiramiz, ikkitamiz bozorni analiz qilamiz.
 
 
 ---
@@ -169,7 +184,7 @@ aslida, arizaning sababi.
 > uch tilli boshqaruv konsoli bor.
 > Bizda yo'q narsa — asosiy kompaniyadan tashqarida mijoz, narx modelimiz belgilanmagan, sotuv kanali,
 > bozor validatsiyasi mavjud emas.
-> Shuning uchun inkubatsiyaga kelyapmiz: mahsulot qurishga emas, **uni kim sotib olishini aniqlashga**.
+> Inkubatsiyaga mahsulot qurish uchun emas, **uni kim sotib olishini aniqlash uchun kelyapmiz**.
 
 ---
 
@@ -178,9 +193,11 @@ aslida, arizaning sababi.
 **Ekranda:** to'rtta satr navbat bilan chizib tashlanadi, o'ngda yashil javob paydo bo'ladi.
 Oxirgi ikki soniyada logotip va havolalar.
 
-> Uch oydan keyin o'sha ustun bo'shaydi: birinchi pullik pilot, tasdiqlangan narx,
-> IT Park orqali hamkorlik, yigirma korxona bilan suhbat.  *(uzun chiqsa — tashlab yuboring)*
-> QosID Flow. Rahmat.
+> Bizning uch oylik rejamiz — uchta natija:
+> birinchi mijoz,
+> tasdiqlangan narx va biznes-model,
+> IT Park orqali hamkorlik.
+> Bu — QosID Flow. E'tiboringiz uchun rahmat.
 
 ---
 
@@ -218,5 +235,5 @@ Oxirgi ikki soniyada logotip va havolalar.
 
 ## Oxirgi kadrdagi havolalar
 
-- GitHub: `github.com/Mukhammadaliya/qosid-flow`
+- GitHub: `github.com/Mukhammadaliya/qosid-flow-showcase`
 - Demo: *(demo instans tayyor bo'lganda qo'shiladi)*
