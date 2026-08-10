@@ -72,3 +72,7 @@ ops-local-stop.cmd
 # The deck reads them from the working tree, so nothing here needs to be committed for it
 # to work. Keep this as a directory rule; do not replace it with a filename pattern.
 docs/pta-deck/img/
+# Deck'ning PDF eksporti — generatsiya qilinadigan artefakt (~3.5 MB × 3 til).
+# Manba `index.html`, qayta yaratish: docs/pta-deck/export-pdf.js. Binar fayllarni
+# git tarixiga solish deck har tahrirlanganda 10 MB qo'shadi va farqi ko'rinmaydi.
+docs/pta-deck/export/
