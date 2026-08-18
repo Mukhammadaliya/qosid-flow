@@ -13,6 +13,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import uz.greenwhite.gateway.config.ConcurrencyProperties;
 import uz.greenwhite.gateway.config.KafkaProperties;
+import uz.greenwhite.gateway.util.ErrorText;
+import uz.greenwhite.gateway.util.RepeatingFailureLog;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,6 +33,9 @@ public class ConcurrencyMonitorService {
 
     private final Map<String, Long> lagMap = new ConcurrentHashMap<>();
 
+    /** Reporting policy for the repeating-failure case; see SAFETY-RULES 42. */
+    private final RepeatingFailureLog monitorFailures = new RepeatingFailureLog(100);
+
     @PostConstruct
     public void init() {
         log.info("ConcurrencyMonitor started: group={}, interval={}ms, " +
@@ -47,6 +52,9 @@ public class ConcurrencyMonitorService {
     public void monitorAndScale() {
         try {
             Map<TopicPartition, OffsetAndMetadata> allCommittedOffsets = getCommittedOffsets();
+            // The admin call came back — that alone is the recovery signal, so it is noted here
+            // rather than after the scaling work below, which returns early on an empty group.
+            noteMonitorSuccess();
 
             if (allCommittedOffsets == null || allCommittedOffsets.isEmpty()) {
                 log.debug("No committed offsets found for group: {}", kafkaProperties.getGroupId());
@@ -70,7 +78,35 @@ public class ConcurrencyMonitorService {
                     "apiResponseConsumer", allCommittedOffsets);
 
         } catch (Exception e) {
-            log.error("Error monitoring consumer lag: {}", e.getMessage(), e);
+            noteMonitorFailure(e);
+        }
+    }
+
+    /**
+     * This method runs every 10 s, so anything it logs unconditionally on failure it logs
+     * ~8 640 times a day. A downed broker used to produce exactly that: 4 257 ERROR entries in
+     * one day reading "Error monitoring consumer lag: null" — {@code TimeoutException} carries
+     * no message — each with an identical stack trace. That is the shape of the 4.7 GB log file
+     * found on the demo box, and the same shape that filled a 57 GB volume in May.
+     *
+     * <p>So: name the exception type, log the first occurrence and then only every hundredth,
+     * and leave the stack trace to DEBUG. An unreachable broker is not silent even so — the
+     * actuator health indicator reports lag, enqueue failures are logged where they happen, and
+     * DLQ alerts still fire.
+     */
+    private void noteMonitorFailure(Exception e) {
+        if (monitorFailures.noteFailure()) {
+            log.warn("Consumer lag monitoring failed ({} consecutive): {}",
+                    monitorFailures.consecutive(), ErrorText.brief(e));
+        }
+        log.debug("Consumer lag monitoring failure detail", e);
+    }
+
+    /** Closes the outage in the log, so a reader can tell "still broken" from "was broken". */
+    private void noteMonitorSuccess() {
+        int ended = monitorFailures.noteSuccess();
+        if (ended > 0) {
+            log.info("Consumer lag monitoring recovered after {} consecutive failure(s)", ended);
         }
     }
 

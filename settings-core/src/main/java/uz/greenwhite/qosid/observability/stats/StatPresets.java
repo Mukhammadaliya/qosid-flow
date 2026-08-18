@@ -1,4 +1,4 @@
-package uz.greenwhite.gateway.stats;
+package uz.greenwhite.qosid.observability.stats;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

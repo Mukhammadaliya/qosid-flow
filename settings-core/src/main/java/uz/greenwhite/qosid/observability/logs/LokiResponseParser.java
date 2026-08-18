@@ -1,4 +1,4 @@
-package uz.greenwhite.gateway.logs;
+package uz.greenwhite.qosid.observability.logs;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

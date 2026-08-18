@@ -194,9 +194,20 @@ docker compose ps --format 'table {{.Name}}\t{{.State}}' 2>/dev/null | head -12
 
 # ------------------------------------------------------------------ 6. systemd
 say "6/7 systemd unit'lari"
+
+# Ikkala JVM bitta .env ni o'qiydi, va u yerda SERVER_PORT=8090 bor. Spring Boot muhit
+# o'zgaruvchisini `server.port` ga bog'laydi va muhit o'zgaruvchisi application.yml dagi
+# `${OPS_PORT:8092}` dan USTUN turadi — natijada ops sidecar 8090 ni egallashga urinadi va
+# "Port 8090 was already in use" bilan yiqiladi. Demo serverida bu 30 marta takrorlandi.
+# Shuning uchun ops uchun alohida override fayl: u SERVER_PORT ni OPS_PORT bilan bosib o'tadi.
+printf 'SERVER_PORT=%s
+' "$(grep -E '^OPS_PORT=' "$APP_DIR/.env" | cut -d= -f2)" > "$APP_DIR/ops.env"
+chmod 600 "$APP_DIR/ops.env"
+ok "ops.env — ops uchun SERVER_PORT override"
+
 for u in gateway-service qosid-ops; do
-  jar=app.jar; port_desc="gateway :8090"
-  [ "$u" = qosid-ops ] && { jar=ops.jar; port_desc="ops sidecar :8092"; }
+  jar=app.jar; port_desc="gateway :8090"; extra_env=""
+  [ "$u" = qosid-ops ] && { jar=ops.jar; port_desc="ops sidecar :8092"; extra_env="EnvironmentFile=$APP_DIR/ops.env"; }
   cat > /etc/systemd/system/$u.service <<UNITEOF
 [Unit]
 Description=QosID Flow — $port_desc (demo)
@@ -207,11 +218,18 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
+$extra_env
 ExecStart=/usr/bin/java -jar $APP_DIR/$jar
 Restart=on-failure
 RestartSec=5
-StandardOutput=append:$APP_DIR/logs/$u.log
-StandardError=append:$APP_DIR/logs/$u.log
+# journal, `append:` EMAS. logback allaqachon logs/gateway.log ni hajm chegarasi bilan
+# rotatsiya qiladi; systemd ayni oqimni ikkinchi faylga ROTATSIYASIZ yozadi. Demo serverida
+# shu ikkinchi nusxa uch kunda 4.7 GB ga yetdi (Kafka o'lgan va NetworkClient sekundiga ~44
+# satr yozgan payt). journald o'z hajm chegarasiga ega va `journalctl --vacuum-*` bilan
+# tozalanadi. Ops konsolining jonli log oynasi logback fayliga qaraydi (OPS_LOG_FILE),
+# shuning uchun bu o'zgarish unga ta'sir qilmaydi.
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -229,7 +247,7 @@ for i in $(seq 60); do
   sleep 2
 done
 curl -sf -m 3 http://localhost:8090/qosid/admin/api/health >/dev/null 2>&1 \
-  && ok "gateway UP" || { bad "gateway ko'tarilmadi — $APP_DIR/logs/gateway-service.log ga qarang"; tail -25 "$APP_DIR/logs/gateway-service.log" 2>/dev/null; exit 1; }
+  && ok "gateway UP" || { bad "gateway ko'tarilmadi — journalctl -u gateway-service ga qarang"; journalctl -u gateway-service -n 25 --no-pager 2>/dev/null; exit 1; }
 
 # Parol tiklandi; satrni olib tashlaymiz, aks holda har restart uni qaytaradi.
 if [ -n "$ADMIN_PW" ]; then
@@ -240,7 +258,7 @@ fi
 systemctl enable --now qosid-ops >/dev/null 2>&1 || true
 sleep 5
 curl -sf -m 3 http://localhost:8092/ops/api/status >/dev/null 2>&1 \
-  && ok "ops sidecar UP" || warn "ops javob bermadi — logs/qosid-ops.log"
+  && ok "ops sidecar UP" || { warn "ops javob bermadi — quyida oxirgi satrlar"; journalctl -u qosid-ops -n 15 --no-pager 2>/dev/null; }
 
 # ------------------------------------------------------------------ 7. nginx
 say "7/7 nginx 2021"

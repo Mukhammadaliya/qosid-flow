@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import uz.greenwhite.qosid.settings.SettingsCipher;
 import uz.greenwhite.qosid.settings.SettingsRecord;
 import uz.greenwhite.qosid.settings.SettingsRepository;
+import uz.greenwhite.qosid.observability.SettingsResolver;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class SettingsService {
+public class SettingsService implements SettingsResolver {
 
     private static final String MASK = "***";
 
@@ -39,6 +40,7 @@ public class SettingsService {
         log.info("SettingsService cache loaded: {} entries", cache.size());
     }
 
+    @Override
     public String get(String key, String defaultValue) {
         SettingsRecord r = cache.get(key);
         return r != null && r.getValue() != null ? r.getValue() : defaultValue;

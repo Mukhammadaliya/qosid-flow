@@ -21,7 +21,7 @@
   "auth.passwordChangeRequired": "The default password (admin/admin) is still in use — no other page works until you change it",
   "auth.loginFailed": "Incorrect username or password",
   "auth.allDown": "Could not reach the servers — neither the gateway nor the ops sidecar is responding",
-  "auth.gatewayDown": "The gateway is stopped — only the Ops page is available",
+  "auth.gatewayDown": "The gateway is stopped — the pipeline is idle; the console keeps working through Ops",
   "auth.gatewaySessionExpired": "The gateway session has expired — sign in again",
   "settings.title": "Settings",
   "settings.sourceAuth": "Source Auth",

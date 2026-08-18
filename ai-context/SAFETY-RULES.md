@@ -569,6 +569,70 @@ Guards: `AlertCoalescingTest`, `TelegramNotificationServiceTest`, `SchedulerIsol
 
 ---
 
+### 42. Never log an unbounded or per-retry message on a repeating failure path
+
+**What:** On any code path that runs on a timer, per Kafka retry, or per polled request, a failure
+must not produce (a) one log entry per occurrence, (b) an upstream response body verbatim, or
+(c) a stack trace. Use `ErrorText.brief(e)` for the message, log the first occurrence plus a
+back-off (and the recovery), and leave full detail to DEBUG.
+
+**Why:** Log volume on this service is an availability property, not housekeeping. Two incidents:
+
+- **2026-05-18** — the Redpanda volume filled to 57 GB, the gateway hung for 34 hours.
+- **2026-08-12..18** — the demo box lost Redpanda and Redis for six days. `NetworkClient` logs one
+  WARN per reconnect attempt per client; with 22 consumer clients plus the producer that measured
+  **1.9 million lines in twelve hours** (~44/s). `ConcurrencyMonitorService` added 4 257 ERROR
+  entries in one day, every one of them reading `Error monitoring consumer lag: null` — a
+  `TimeoutException` carries no message — each with an identical stack trace. A misconfigured pull
+  URI made the source answer 404 on every poll, and the ~2 KB HTML error page was written twice per
+  poll (once caught, once inside the wrapped rethrow that `RequestPuller` logged). The systemd unit
+  duplicated the whole stream into an unrotated `append:` file: **4.7 GB in three days**, 5% of the
+  disk, on a host that also runs ClickHouse and Superset.
+
+None of it was new information after the first line. The signal for a downed dependency belongs in
+channels that report a *state*, not a *retry count*: the actuator health indicator's per-consumer
+lag, one-shot failure/recovery log lines, and DLQ alerts on message expiry.
+
+**Instead** — use the two helpers in `uz.greenwhite.gateway.util`, do not re-derive the policy:
+`RepeatingFailureLog` (first occurrence + every 100th + recovery) and `ErrorText.brief(e)`
+(one line, 300-char cap, names the exception type when there is no message).
+
+```java
+// WRONG — one entry per tick, "null" as the message, stack trace every time
+} catch (Exception e) {
+    log.error("Error monitoring consumer lag: {}", e.getMessage(), e);
+}
+
+// RIGHT — bounded and legible; the outage also gets a visible end
+private final RepeatingFailureLog monitorFailures = new RepeatingFailureLog(100);
+
+} catch (Exception e) {
+    if (monitorFailures.noteFailure()) {
+        log.warn("Consumer lag monitoring failed ({} consecutive): {}",
+                monitorFailures.consecutive(), ErrorText.brief(e));
+    }
+    log.debug("Consumer lag monitoring failure detail", e);   // full detail, opt-in
+}
+// ...and on the success path:
+int ended = monitorFailures.noteSuccess();
+if (ended > 0) log.info("Consumer lag monitoring recovered after {} consecutive failure(s)", ended);
+```
+
+**One reporter per failure.** When a failure crosses a layer, exactly one layer logs it at
+operator level and the other drops to DEBUG — otherwise the back-off is defeated by the
+duplicate. `SourceClient` reports the pull failure; `RequestPuller` logs the same event at DEBUG
+and relies on the `oraclePullError` metric.
+
+**State, not events.** "Telegram is disabled" is a configuration state, so it is latched to one
+line per off-period rather than one per DLQ record (152 of those appeared in under an hour).
+
+**Guarded by:** `RepeatingFailureLogTest`, `ErrorTextTest`, `ConcurrencyMonitorLoggingTest`,
+`SourceClientErrorLoggingTest`, `TelegramDisabledLogVolumeTest`. Third-party floods are capped in
+`application.yml` (`org.apache.kafka.clients.NetworkClient: ERROR`). Deployment side: systemd units
+log to `journal`, never `append:` (see CONFIGURATION.md → ops deploy notes), and every
+`docker-compose.yml` service carries `restart: unless-stopped` so a dependency does not stay down
+for six days generating the flood in the first place.
+
 ## Protected Zones
 
 These files contain production-critical logic. Before modifying any of them, run through the Required Checklist below.
@@ -620,7 +684,7 @@ These files can be modified without the above checklist:
 |--------------|----------|
 | `TestController.java` | Dev-only (`@Profile("dev")`), never runs in production |
 | `infrastructure/` | Monitoring configs (dashboards, alerts) — no runtime impact |
-| `application.yml` | Adding new config properties is safe (existing ones have defaults) |
+| `application.yml` | Adding new config properties is safe (existing ones have defaults). **Exception: the `logging.level` block is load-bearing** — see rule 42; raising a chatty third-party logger back to WARN can reintroduce the 1.9M-lines-in-12h flood. |
 | New `*Properties.java` classes | Adding config classes doesn't affect existing logic |
 | `ai-context/` and other docs | Documentation files |
 | `docker-compose.yml` | Infrastructure only — no gateway runtime logic. **Not "local dev only":** production runs this same file for Redpanda/Redis/Prometheus/Grafana/Loki (only the JVMs are outside Docker), so every published port is bound to `127.0.0.1`. A bare `"6379:6379"` binds `0.0.0.0` **and bypasses the host firewall** (Docker writes its own nat/`DOCKER-USER` rules, so `ufw deny` does not apply) — that is how unauthenticated Redis/Redpanda/Grafana ended up network-reachable. Keep the `127.0.0.1:` prefix on every port; container-to-container traffic uses compose DNS names on the internal network and is unaffected. |

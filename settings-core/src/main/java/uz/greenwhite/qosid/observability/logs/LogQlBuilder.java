@@ -1,4 +1,4 @@
-package uz.greenwhite.gateway.logs;
+package uz.greenwhite.qosid.observability.logs;
 
 /** Builds the LogQL selector for each of the three error sources. */
 public final class LogQlBuilder {

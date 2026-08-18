@@ -1,10 +1,10 @@
-package uz.greenwhite.gateway.logs;
+package uz.greenwhite.qosid.observability.logs;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
-import uz.greenwhite.gateway.settings.SettingsService;
+import uz.greenwhite.qosid.observability.SettingsResolver;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -18,7 +18,7 @@ import org.hamcrest.Matchers;
 class LogQueryServiceTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
-    private final SettingsService settings = mock(SettingsService.class);
+    private final SettingsResolver settings = mock(SettingsResolver.class);
 
     private static final String YAML_URL = "http://localhost:3100";
 

@@ -18,23 +18,26 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   const selectedKey = location.pathname.startsWith('/settings') ? '/settings' : location.pathname;
 
-  const gwDisabled = !gatewayUp;
-  const gwLabel = (label: string) =>
-    gwDisabled ? <Tooltip title={t('auth.gatewayDown')}>{label}</Tooltip> : label;
-
-  // Settings stays usable through the ops sidecar while the gateway is stopped
-  // (strict stop-to-edit model); it is disabled only when BOTH backends are down.
-  const settingsDisabled = !gatewayUp && !opsUp;
+  // Every console module reaches its data through EITHER backend, so none of them is tied to
+  // the gateway alone:
+  //   - Settings: edits go through the ops sidecar while the gateway is stopped (stop-to-edit).
+  //   - Errors / Statistics: Loki and Prometheus are separate processes that keep running when
+  //     the gateway is down, and the sidecar proxies both (OpsObservabilityController). Gating
+  //     these on the gateway used to black them out during stop-to-edit — precisely the state
+  //     in which an operator is trying to find out what went wrong.
+  // Hence one rule for all three: dark only when BOTH backends are unreachable.
+  const consoleDisabled = !gatewayUp && !opsUp;
+  const withHint = (label: string) =>
+    consoleDisabled ? <Tooltip title={t('auth.gatewayDown')}>{label}</Tooltip> : label;
 
   const navItems = [
-    { key: '/settings', icon: <SettingOutlined />, disabled: settingsDisabled,
-      label: settingsDisabled ? <Tooltip title={t('auth.gatewayDown')}>{t('nav.settings')}</Tooltip> : t('nav.settings') },
-    { key: '/errors', icon: <WarningOutlined />, disabled: gwDisabled, label: gwLabel(t('nav.errors')), children: [
+    { key: '/settings', icon: <SettingOutlined />, disabled: consoleDisabled, label: withHint(t('nav.settings')) },
+    { key: '/errors', icon: <WarningOutlined />, disabled: consoleDisabled, label: withHint(t('nav.errors')), children: [
         { key: '/errors/dlq', label: t('errors.dlqNav') },
         { key: '/errors/jar', label: t('errors.jarNav') },
         { key: '/errors/docker', label: t('errors.dockerNav') },
     ] },
-    { key: '/statistics', icon: <BarChartOutlined />, disabled: gwDisabled, label: gwLabel(t('nav.statistics')) },
+    { key: '/statistics', icon: <BarChartOutlined />, disabled: consoleDisabled, label: withHint(t('nav.statistics')) },
     { key: '/ops', icon: <ControlOutlined />, disabled: !opsUp, label: t('nav.ops') },
   ];
 

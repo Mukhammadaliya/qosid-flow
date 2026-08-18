@@ -7,8 +7,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
-import uz.greenwhite.gateway.stats.StatsQueryService;
-import uz.greenwhite.gateway.stats.StatsResult;
+import uz.greenwhite.qosid.observability.stats.StatsQueryService;
+import uz.greenwhite.qosid.observability.stats.StatsResult;
 
 import java.util.List;
 import java.util.Map;

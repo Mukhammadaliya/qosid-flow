@@ -1,11 +1,9 @@
-package uz.greenwhite.gateway.stats;
+package uz.greenwhite.qosid.observability.stats;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
-import uz.greenwhite.gateway.settings.SettingsService;
+import uz.greenwhite.qosid.observability.SettingsResolver;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -23,7 +21,6 @@ import java.util.Map;
  * scale with the resolution, so a 7d or 30d chart samples a representative window).
  */
 @Slf4j
-@Service
 public class StatsQueryService {
 
     /** Prometheus refuses a range query that would yield more than this many points per series. */
@@ -31,12 +28,12 @@ public class StatsQueryService {
 
     private final RestClient prometheusRestClient;
     private final PrometheusResponseParser parser;
-    private final SettingsService settings;
+    private final SettingsResolver settings;
     private final String prometheusUrl;
 
     public StatsQueryService(RestClient prometheusRestClient, PrometheusResponseParser parser,
-                             SettingsService settings,
-                             @Value("${gateway.prometheus.url:http://localhost:9090}") String prometheusUrl) {
+                             SettingsResolver settings,
+                             String prometheusUrl) {
         this.prometheusRestClient = prometheusRestClient;
         this.parser = parser;
         this.settings = settings;

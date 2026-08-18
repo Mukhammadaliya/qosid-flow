@@ -1,4 +1,4 @@
-package uz.greenwhite.gateway.logs;
+package uz.greenwhite.qosid.observability.logs;
 
 import java.util.Map;
 

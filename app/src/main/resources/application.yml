@@ -331,6 +331,16 @@ logging:
     org.apache.kafka: WARN
     org.springframework.kafka.listener: INFO
     org.apache.kafka.clients.Metadata: INFO
+    # NetworkClient logs one WARN per reconnect attempt, per client. With 22 consumer clients
+    # plus the producer that is ~44 lines a SECOND while the broker is unreachable: a demo box
+    # measured 1.9 million such lines in twelve hours, and they were the bulk of a log file that
+    # reached 4.7 GB in three days. The same failure mode filled a 57 GB volume in May 2026 and
+    # took the service down for 34 hours, so log volume here is an availability concern, not
+    # tidiness. An unreachable broker stays loud through channels that report it ONCE rather
+    # than per retry: ConcurrencyMonitorService (first failure + recovery), the
+    # enqueue-failure logs in ProxyController / LoggingProducerListener, the actuator health
+    # indicator's per-consumer lag, and DLQ alerts on message expiry.
+    org.apache.kafka.clients.NetworkClient: ERROR
   pattern:
     console: "%d{HH:mm:ss.SSS} %-5level [%15.15thread] %-40.40logger{39} : %msg%n"
 

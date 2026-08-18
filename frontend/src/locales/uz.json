@@ -21,7 +21,7 @@
   "auth.passwordChangeRequired": "Standart parol (admin/admin) ishlatilmoqda — uni o'zgartirmaguningizcha boshqa sahifalar ishlamaydi",
   "auth.loginFailed": "Login yoki parol noto'g'ri",
   "auth.allDown": "Serverlarga ulanib bo'lmadi — gateway ham, ops sidecar ham javob bermayapti",
-  "auth.gatewayDown": "Gateway o'chiq — faqat Ops sahifasi ishlaydi",
+  "auth.gatewayDown": "Gateway to'xtatilgan — quvur ishlamaydi; konsol Ops orqali ishlashda davom etadi",
   "auth.gatewaySessionExpired": "Gateway sessiyasi tugagan — qayta kirish kerak",
   "settings.title": "Sozlamalar",
   "settings.sourceAuth": "Source Auth",

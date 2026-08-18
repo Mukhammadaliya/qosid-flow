@@ -1,10 +1,9 @@
-package uz.greenwhite.gateway.logs;
+package uz.greenwhite.qosid.observability.logs;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
-import uz.greenwhite.gateway.settings.SettingsService;
+import uz.greenwhite.qosid.observability.SettingsResolver;
 
 import java.util.List;
 
@@ -15,7 +14,6 @@ import java.util.List;
  * (never a 500) so the Errors UI stays usable when logging infra is down.
  */
 @Slf4j
-@Service
 public class LogQueryService {
 
     private static final int MAX_LIMIT = 1000;
@@ -23,11 +21,11 @@ public class LogQueryService {
 
     private final RestClient lokiRestClient;
     private final LokiResponseParser parser;
-    private final SettingsService settings;
+    private final SettingsResolver settings;
     private final String lokiUrl;
 
-    public LogQueryService(RestClient lokiRestClient, LokiResponseParser parser, SettingsService settings,
-                           @org.springframework.beans.factory.annotation.Value("${gateway.loki.url:http://localhost:3100}") String lokiUrl) {
+    public LogQueryService(RestClient lokiRestClient, LokiResponseParser parser, SettingsResolver settings,
+                           String lokiUrl) {
         this.lokiRestClient = lokiRestClient;
         this.parser = parser;
         this.settings = settings;

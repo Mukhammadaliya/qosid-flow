@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { AuthProvider, useAuth } from './AuthContext';
 import { api } from '../api/client';
 import { opsLogin, opsMe, requestHandoff } from '../api/ops';
+import { isGatewayReachable } from '../api/gatewayReach';
 
 vi.mock('../api/ops', () => ({
   opsLogin: vi.fn(),
@@ -344,5 +345,29 @@ describe('AuthProvider', () => {
       expect(meCalls).toBeGreaterThan(callsBefore); // re-probe still happened
       expect(auth!.user).toBe('admin'); // ops session keeps the user in degraded mode
     });
+  });
+
+  it('publishes gateway reachability to the api layer so log/stat reads pick a live backend', async () => {
+    // The api modules cannot read React context; they consult api/gatewayReach. If refresh()
+    // never writes it, the ops fallback is unreachable code and the Errors/Statistics pages
+    // keep hammering a dead gateway.
+    vi.spyOn(api, 'get').mockImplementation((url: string) =>
+      url.endsWith('/health')
+        ? Promise.resolve({ data: {} } as any)
+        : Promise.resolve({ data: { username: 'admin' } } as any));
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByText('gatewayUp:true')).toBeInTheDocument());
+    expect(isGatewayReachable()).toBe(true);
+  });
+
+  it('marks the gateway unreachable when its probe fails, with ops still alive', async () => {
+    (opsMe as Mock).mockResolvedValue({ data: { user: 'admin' } });
+    vi.spyOn(api, 'get').mockImplementation((url: string) =>
+      url.endsWith('/health')
+        ? Promise.resolve({ data: {} } as any)
+        : Promise.reject(axiosDown));
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByText('gatewayUp:false')).toBeInTheDocument());
+    expect(isGatewayReachable()).toBe(false);
   });
 });

@@ -1,11 +1,11 @@
-package uz.greenwhite.gateway.stats;
+package uz.greenwhite.qosid.observability.stats;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
-import uz.greenwhite.gateway.settings.SettingsService;
+import uz.greenwhite.qosid.observability.SettingsResolver;
 import org.hamcrest.Matchers;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,7 +19,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class StatsQueryServiceTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
-    private final SettingsService settings = mock(SettingsService.class);
+    private final SettingsResolver settings = mock(SettingsResolver.class);
 
     private StatsQueryService service(MockRestServiceServer[] holder) {
         RestClient.Builder b = RestClient.builder();
