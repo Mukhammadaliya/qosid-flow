@@ -14,6 +14,7 @@ import uz.greenwhite.gateway.model.kafka.DlqMessage;
 import uz.greenwhite.gateway.model.kafka.RequestMessage;
 import uz.greenwhite.gateway.source.RequestSourceClient;
 import uz.greenwhite.gateway.validation.RequestValidator;
+import uz.greenwhite.gateway.util.ErrorText;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -46,7 +47,11 @@ public class RequestPuller {
                 } catch (Exception e) {
                     pullSample.stop(metrics.getOraclePullTimer());
                     metrics.getOraclePullError().increment();
-                    log.error("E1: Oracle pull failed: {}", e.getMessage(), e);
+                    // DEBUG, not ERROR: SourceClient is the single reporter for this failure and
+                    // applies the SAFETY-42 back-off. Logging it again here would restore the
+                    // per-poll duplicate the back-off exists to remove — the metric above
+                    // (oraclePullError) is what a dashboard should count, not log lines.
+                    log.debug("E1: Oracle pull failed: {}", ErrorText.brief(e));
                     return;
                 }
 
@@ -63,7 +68,7 @@ public class RequestPuller {
 
         } catch (Exception e) {
             metrics.getOraclePullError().increment();
-            log.error("E1: Error while pulling requests from Oracle: {}", e.getMessage(), e);
+            log.error("E1: Error while pulling requests from Oracle: {}", ErrorText.brief(e), e);
         }
     }
 

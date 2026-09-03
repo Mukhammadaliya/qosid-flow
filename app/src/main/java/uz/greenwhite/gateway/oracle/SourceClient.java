@@ -18,6 +18,8 @@ import uz.greenwhite.gateway.source.RequestSourceClient;
 import uz.greenwhite.gateway.source.ResponseSinkClient;
 import uz.greenwhite.gateway.source.SourceAuthService;
 import uz.greenwhite.gateway.tenant.TenantMappingService;
+import uz.greenwhite.gateway.util.ErrorText;
+import uz.greenwhite.gateway.util.RepeatingFailureLog;
 
 import java.time.Duration;
 import java.util.Arrays;
@@ -42,6 +44,9 @@ public class SourceClient implements RequestSourceClient, ResponseSinkClient {
      * Reset to false as soon as the endpoints become configured again.
      */
     private final AtomicBoolean pullDisabledWarned = new AtomicBoolean(false);
+
+    /** The pull leg runs every few seconds; a bad URI fails on every tick. See SAFETY-RULES 42. */
+    private final RepeatingFailureLog pullFailures = new RepeatingFailureLog(100);
 
     @Autowired
     public SourceClient(GatewayProperties properties, TenantMappingService tenantMappingService,
@@ -128,12 +133,25 @@ public class SourceClient implements RequestSourceClient, ResponseSinkClient {
                     .map(tenantMappingService::toInternal)
                     .toList();
 
+            int endedOutage = pullFailures.noteSuccess();
+            if (endedOutage > 0) {
+                log.info("Source pull recovered after {} consecutive failure(s)", endedOutage);
+            }
             log.info("Pulled {} requests from data source", requests.size());
             return requests;
 
         } catch (Exception e) {
-            log.error("Error pulling requests from data source: {}", e.getMessage(), e);
-            throw new RuntimeException("Request pull failed: " + e.getMessage(), e);
+            // Bounded, single-line rendering on purpose. A misconfigured pull URI makes the
+            // source answer 404 on EVERY poll, and an origin's 404 page is kilobytes of HTML;
+            // logging it verbatim here and again inside the rethrow (which RequestPuller then
+            // logs) cost ~4 KB of identical text per failed poll. The status is the diagnostic.
+            // The untouched exception stays the cause, and the full detail stays on DEBUG.
+            if (pullFailures.noteFailure()) {
+                log.error("Error pulling requests from data source ({} consecutive): {}",
+                        pullFailures.consecutive(), ErrorText.brief(e));
+            }
+            log.debug("Source pull failure detail", e);
+            throw new RuntimeException("Request pull failed: " + ErrorText.brief(e), e);
         }
     }
 
@@ -179,7 +197,10 @@ public class SourceClient implements RequestSourceClient, ResponseSinkClient {
             return response;
 
         } catch (Exception e) {
-            log.error("Error saving response to data source: {}", e.getMessage(), e);
+            // Same reasoning as the pull leg: the save target can reject every response in a
+            // batch, so the message must stay bounded. Detail on DEBUG.
+            log.error("Error saving response to data source: {}", ErrorText.brief(e));
+            log.debug("Source save failure detail", e);
             return false;
         }
     }

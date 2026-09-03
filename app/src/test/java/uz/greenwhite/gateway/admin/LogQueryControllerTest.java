@@ -7,9 +7,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import uz.greenwhite.gateway.logs.LogEntry;
-import uz.greenwhite.gateway.logs.LogQueryResult;
-import uz.greenwhite.gateway.logs.LogQueryService;
+import uz.greenwhite.qosid.observability.logs.LogEntry;
+import uz.greenwhite.qosid.observability.logs.LogQueryResult;
+import uz.greenwhite.qosid.observability.logs.LogQueryService;
 
 import java.util.List;
 import java.util.Map;

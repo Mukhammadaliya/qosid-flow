@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { api, setUnauthorizedHandler } from '../api/client';
+import { setGatewayReachable } from '../api/gatewayReach';
 import { opsLogin, opsLogout, opsMe, requestHandoff } from '../api/ops';
 
 export interface RefreshOptions { silent?: boolean; }
@@ -68,6 +69,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // (network failure) — both leave gatewayUp false, but only the former is a 401.
       setGatewayAuthExpired(gw.status === 'rejected' && is401(gw.reason));
       setGatewayUp(gw.status === 'fulfilled');
+      // The api layer has no context access, so the observability modules read this flag to
+      // decide whether to ask the gateway's admin routes or the ops sidecar's twins.
+      setGatewayReachable(gw.status === 'fulfilled');
       setOpsUp(ops.status === 'fulfilled');
       // /me reports the flag too, so a page reload (session but no login response) still forces
       // the change form. Sent as a string because the body is a Map<String, String>.
@@ -120,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await Promise.allSettled([api.post(`${BASE}/logout`), opsLogout()]);
     setUser(null);
     setGatewayUp(false);
+    setGatewayReachable(false);
     setOpsUp(false);
     setGatewayAuthExpired(false);
     setPasswordChangeRequired(false);

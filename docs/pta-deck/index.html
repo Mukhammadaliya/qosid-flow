@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QosID Flow — President Tech Award</title>
+<style>
+/* ============================================================================
+   QosID Flow — pitch deck
+   Self-contained: no fonts, no scripts, no images from the network. Opens
+   offline, prints to PDF, and screen-records cleanly for the video.
+
+   The visual language is deliberately the console's: same palette, same
+   monospace-for-data / sans-for-prose split, same gate-and-flow motif. When the
+   video cuts from a slide to the live product it should not feel like a cut.
+
+   Three languages live in one file. Only the text differs, so keeping three
+   separate files would mean fixing every correction three times.
+   ============================================================================ */
+
+:root {
+  --blue:  #0095D9;
+  --green: #2EC27E;
+  --amber: #F5A623;
+  --ink:   #0a1520;
+  --ink-2: #142434;
+  --paper: #ffffff;
+  --muted: rgba(255,255,255,.42);
+  --muted-2: rgba(255,255,255,.62);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: #05090e; }
+body { font-family: var(--sans); overflow: hidden; }
+
+/* ---- language switching: one file, three languages --------------------- */
+[data-lang] { display: none !important; }
+html[lang="uz"] [data-lang="uz"],
+html[lang="ru"] [data-lang="ru"],
+html[lang="en"] [data-lang="en"] { display: revert !important; }
+
+/* ---- deck shell -------------------------------------------------------- */
+.deck { position: fixed; inset: 0; display: grid; place-items: center; }
+
+.slide {
+  position: absolute;
+  inset: 0;
+  display: none;
+  padding: 6.5vh 7vw;
+  background: radial-gradient(130% 100% at 50% 46%, var(--ink-2) 0%, var(--ink) 58%, #060d14 100%);
+  color: #fff;
+  overflow: hidden;
+}
+.slide.is-active { display: grid; align-content: center; animation: rise .5s cubic-bezier(.16,1,.3,1) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+
+/* slide number + section eyebrow — structural, not decorative */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: clamp(10px, .95vw, 13px);
+  letter-spacing: .26em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2.6vh;
+}
+.num {
+  position: absolute; right: 7vw; bottom: 5vh;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .1em; color: rgba(255,255,255,.2);
+}
+
+h1 { font-size: clamp(38px, 6.4vw, 104px); font-weight: 800; letter-spacing: -.035em; line-height: 1; }
+h2 { font-size: clamp(26px, 3.5vw, 56px); font-weight: 750; letter-spacing: -.025em; line-height: 1.06; }
+.lede { font-size: clamp(15px, 1.5vw, 24px); line-height: 1.5; color: var(--muted-2); max-width: 40ch; }
+
+/* ---- title slide -------------------------------------------------------- */
+.brand { display: flex; align-items: center; gap: 2.2vw; }
+.mark { width: clamp(56px, 7vw, 112px); height: auto; flex: none; }
+.tagline { margin-top: 3.4vh; }
+.meta {
+  position: absolute; left: 7vw; bottom: 5vh;
+  font-family: var(--mono); font-size: clamp(10px, 1vw, 13px);
+  letter-spacing: .1em; color: var(--muted);
+}
+
+/* the gate seam + two lanes, echoing the console's login screen */
+.stage { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.seam {
+  position: absolute; left: 50%; top: 0; bottom: 0; width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(46,194,126,.42) 50%, transparent);
+}
+.lane { position: absolute; left: 0; right: 0; height: 26px; }
+.lane--in  { top: 21%; }
+.lane--out { bottom: 21%; }
+.lane::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.08) 14%, rgba(255,255,255,.08) 86%, transparent);
+}
+.pkt {
+  position: absolute; top: 0; height: 26px; line-height: 24px; padding: 0 12px;
+  border-radius: 13px; border: 1px solid rgba(0,149,217,.3); background: rgba(0,149,217,.1);
+  color: #62c6f0; font-family: var(--mono); font-size: 11px; white-space: nowrap; opacity: 0;
+}
+.lane--in  .pkt { animation: travel-in 15s linear infinite; }
+.lane--out .pkt { animation: travel-out 15s linear infinite; }
+@keyframes travel-in {
+  0% { transform: translateX(-22vw); opacity: 0; } 8% { opacity: 1; }
+  49% { border-color: rgba(0,149,217,.3); background: rgba(0,149,217,.1); color: #62c6f0; }
+  51% { border-color: rgba(46,194,126,.34); background: rgba(46,194,126,.11); color: #62d9a2; }
+  92% { opacity: 1; } 100% { transform: translateX(116vw); opacity: 0; }
+}
+@keyframes travel-out {
+  0% { transform: translateX(116vw); opacity: 0; } 8% { opacity: 1; }
+  49% { border-color: rgba(0,149,217,.3); background: rgba(0,149,217,.1); color: #62c6f0; }
+  51% { border-color: rgba(46,194,126,.34); background: rgba(46,194,126,.11); color: #62d9a2; }
+  92% { opacity: 1; } 100% { transform: translateX(-22vw); opacity: 0; }
+}
+
+/* ---- traction slide ----------------------------------------------------- */
+.figures { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.6vw; margin: 4vh 0 5vh; }
+.fig__n {
+  font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: clamp(30px, 4.4vw, 68px); letter-spacing: -.03em; line-height: 1;
+}
+.fig--good .fig__n { color: var(--green); }
+.fig__k {
+  margin-top: 1.4vh; font-family: var(--mono); font-size: clamp(9px, .92vw, 12px);
+  letter-spacing: .2em; text-transform: uppercase; color: var(--muted);
+}
+
+/* the before/after pair: the incident, then the day after */
+.pair { display: grid; grid-template-columns: 1fr auto 1fr; gap: 2.4vw; align-items: stretch; }
+.card {
+  border: 1px solid rgba(255,255,255,.1); border-radius: 14px; padding: 2.6vh 2vw;
+  background: rgba(255,255,255,.028);
+}
+.card--bad  { border-color: rgba(245,166,35,.34); }
+.card--good { border-color: rgba(46,194,126,.34); }
+.card__d {
+  font-family: var(--mono); font-size: clamp(10px, .95vw, 12px);
+  letter-spacing: .16em; color: var(--muted); margin-bottom: 1.4vh;
+}
+.card__h { font-size: clamp(17px, 1.9vw, 30px); font-weight: 700; letter-spacing: -.02em; line-height: 1.14; }
+.card--bad .card__h  { color: var(--amber); }
+.card--good .card__h { color: var(--green); }
+.card__p { margin-top: 1.4vh; font-size: clamp(12px, 1.15vw, 17px); line-height: 1.5; color: var(--muted-2); }
+.arrow { display: grid; place-items: center; color: rgba(255,255,255,.24); font-size: 26px; }
+
+/* ---- chrome: language + progress --------------------------------------- */
+.chrome {
+  position: fixed; top: 20px; right: 22px; z-index: 20;
+  display: flex; gap: 6px; font-family: var(--mono); font-size: 11px;
+}
+.chrome button {
+  background: rgba(255,255,255,.06); color: rgba(255,255,255,.5);
+  border: 1px solid rgba(255,255,255,.1); border-radius: 7px;
+  padding: 5px 10px; cursor: pointer; font: inherit; letter-spacing: .1em; text-transform: uppercase;
+}
+.chrome button:hover { color: #fff; }
+.chrome button[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: #fff; }
+.hint {
+  position: fixed; left: 22px; bottom: 18px; z-index: 20;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; color: rgba(255,255,255,.2);
+}
+
+
+/* ---- shared content layouts ------------------------------------------- */
+.cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3vw; margin-top: 4vh; }
+.cols3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.4vw; margin-top: 4vh; }
+.stack { display: grid; gap: 2.2vh; margin-top: 4vh; }
+
+.item { border-left: 2px solid rgba(255,255,255,.14); padding-left: 1.6vw; }
+.item--blue  { border-color: var(--blue); }
+.item--green { border-color: var(--green); }
+.item--amber { border-color: var(--amber); }
+.item__h { font-size: clamp(15px, 1.6vw, 24px); font-weight: 680; letter-spacing: -.015em; }
+.item__p { margin-top: .8vh; font-size: clamp(12px, 1.12vw, 17px); line-height: 1.5; color: var(--muted-2); }
+
+.tag {
+  display: inline-block; font-family: var(--mono); font-size: clamp(9px,.88vw,11.5px);
+  letter-spacing: .16em; text-transform: uppercase; padding: .5vh .8vw; border-radius: 5px;
+  border: 1px solid rgba(255,255,255,.16); color: var(--muted);
+}
+.tag--now  { border-color: rgba(46,194,126,.45); color: #62d9a2; }
+.tag--next { border-color: rgba(0,149,217,.45);  color: #62c6f0; }
+
+/* have / need columns */
+.hn { border-radius: 14px; padding: 3vh 2.2vw; border: 1px solid rgba(255,255,255,.1); }
+.hn--have { border-color: rgba(46,194,126,.3);  background: rgba(46,194,126,.045); }
+.hn--need { border-color: rgba(245,166,35,.32); background: rgba(245,166,35,.045); }
+.hn__h { font-family: var(--mono); font-size: clamp(10px,.95vw,13px); letter-spacing: .2em; text-transform: uppercase; margin-bottom: 2.2vh; }
+.hn--have .hn__h { color: #62d9a2; } .hn--need .hn__h { color: var(--amber); }
+.hn ul { list-style: none; display: grid; gap: 1.5vh; }
+.hn li { font-size: clamp(13px,1.25vw,19px); line-height: 1.35; padding-left: 1.4em; position: relative; }
+.hn li::before { position: absolute; left: 0; opacity: .75; }
+.hn--have li::before { content: '✓'; color: var(--green); }
+.hn--need li::before { content: '—'; color: var(--amber); }
+
+.punch {
+  margin-top: 4vh; font-size: clamp(16px,1.85vw,29px); font-weight: 650;
+  letter-spacing: -.02em; line-height: 1.3; max-width: 46ch;
+}
+.punch em { font-style: normal; color: var(--green); }
+
+/* ---- slide 03: topology ------------------------------------------------
+   The earlier version was three labelled boxes. A gateway diagram should look
+   like a gateway diagram: drawn devices, real connection lines, and traffic
+   moving ALONG those lines. Packets ride the paths with animateMotion, blue
+   before the gate and green after it, so the picture states the guarantee.  */
+.topo { width: 100%; height: auto; max-height: 52vh; display: block; margin: 3vh auto 0; }
+
+.tp-w { fill: none; stroke-width: 1.6; }
+.tp-w--in   { stroke: rgba(0,149,217,.4); }
+.tp-w--in2  { stroke: rgba(0,149,217,.4); }
+.tp-w--out  { stroke: rgba(46,194,126,.42); }
+
+.tp-badge { fill: rgba(255,255,255,.045); stroke: rgba(255,255,255,.14); stroke-width: 1; }
+.tp-dev   { fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tp-dev .fill { fill: currentColor; stroke: none; }
+.tp-node { color: rgba(255,255,255,.5); }
+
+.tp-lbl {
+  text-anchor: middle; fill: rgba(255,255,255,.6);
+  font-family: var(--sans); font-size: 15px; font-weight: 500;
+}
+.tp-gate__box {
+  fill: rgba(9,19,29,.98); stroke: rgba(46,194,126,.55); stroke-width: 1.6;
+}
+.tp-gate__n {
+  text-anchor: middle; fill: #fff; font-family: var(--sans);
+  font-size: 19px; font-weight: 700; letter-spacing: -.3px;
+}
+.tp-gate__s {
+  text-anchor: middle; fill: rgba(255,255,255,.42); font-family: var(--mono);
+  font-size: 11.5px; letter-spacing: 1.7px; text-transform: uppercase;
+}
+.tp-ring { fill: none; stroke: rgba(255,255,255,.07); stroke-width: 1; }
+.tp-orb__t {
+  text-anchor: middle; fill: rgba(255,255,255,.9);
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: 1.6px; text-transform: uppercase;
+}
+.tp-dir {
+  text-anchor: middle; font-family: var(--mono); font-size: 11px;
+  letter-spacing: 2.6px; text-transform: uppercase;
+}
+.tp-dir--in  { fill: rgba(0,149,217,.72); }
+.tp-dir--out { fill: rgba(46,194,126,.72); }
+
+/* Language switching has to reach inside the SVG too. */
+svg [data-lang] { display: none; }
+html[lang="uz"] svg [data-lang="uz"],
+html[lang="ru"] svg [data-lang="ru"],
+html[lang="en"] svg [data-lang="en"] { display: inline; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tp-flow { display: none; }
+  .tp-w { stroke-dasharray: 5 6; }
+}
+
+
+/* ---- slide 12: the closing ledger -------------------------------------
+   Four rows, each the same gap slide 06 named, carried across an arrow into what
+   three months make of it. Blue on the left, green on the right: the colours the
+   packets use when they cross the gate, so the last slide reads as a delivery. */
+.ledger { display: grid; gap: 2.2vh; margin-top: 4.5vh; }
+.led {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  gap: 2vw; padding-bottom: 2.2vh; border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.led:last-child { border-bottom: 0; }
+.led__a {
+  text-align: right; color: var(--muted); font-size: clamp(12px,1.15vw,17px);
+  text-decoration: line-through; text-decoration-color: rgba(0,149,217,.5);
+  text-decoration-thickness: 1px;
+}
+.led__x { font-family: var(--mono); font-size: clamp(13px,1.3vw,20px); color: rgba(0,149,217,.55); }
+.led__b { color: #fff; font-size: clamp(12.5px,1.25vw,19px); font-weight: 560; line-height: 1.3; }
+.led__b em { font-style: normal; color: var(--green); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .slide.is-active .led { animation: led-in .5s ease-out backwards; }
+  .slide.is-active .led:nth-child(1) { animation-delay: .10s; }
+  .slide.is-active .led:nth-child(2) { animation-delay: .22s; }
+  .slide.is-active .led:nth-child(3) { animation-delay: .34s; }
+  .slide.is-active .led:nth-child(4) { animation-delay: .46s; }
+}
+@keyframes led-in { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+
+
+/* ---- entrance choreography -------------------------------------------
+   Shared by every slide. .seq marks a container whose direct children arrive in
+   sequence; the delays below are the only per-slide tuning, and they are generic
+   rather than named so a slide can be reordered without touching this block.
+   Slides 1, 3 and 12 keep their own motion — there the movement IS the content. */
+@media (prefers-reduced-motion: no-preference) {
+  .slide.is-active .eyebrow { animation: qf-rise .45s cubic-bezier(.2,.7,.3,1) backwards .04s; }
+  .slide.is-active h2       { animation: qf-rise .55s cubic-bezier(.2,.7,.3,1) backwards .11s; }
+  .slide.is-active .punch   { animation: qf-rise .55s cubic-bezier(.2,.7,.3,1) backwards .58s; }
+
+  .slide.is-active .seq > * { animation: qf-rise .5s cubic-bezier(.2,.7,.3,1) backwards; }
+  .slide.is-active .seq > *:nth-child(1) { animation-delay: .20s; }
+  .slide.is-active .seq > *:nth-child(2) { animation-delay: .28s; }
+  .slide.is-active .seq > *:nth-child(3) { animation-delay: .36s; }
+  .slide.is-active .seq > *:nth-child(4) { animation-delay: .44s; }
+  .slide.is-active .seq > *:nth-child(5) { animation-delay: .52s; }
+  .slide.is-active .seq > *:nth-child(6) { animation-delay: .60s; }
+
+  /* The gate diagram breathes rather than enters: it is a live system, not a list. */
+  .slide.is-active .tp-gate__box { animation: qf-pulse 3.6s ease-in-out infinite .8s; }
+}
+@keyframes qf-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes qf-pulse {
+  0%, 100% { stroke: rgba(46,194,126,.55); }
+  50%      { stroke: rgba(46,194,126,.95); }
+}
+
+/* business model rows */
+.models { display: grid; gap: 1.3vh; margin-top: 3.4vh; }
+.model {
+  display: grid; grid-template-columns: 2.1fr 1.5fr 1fr auto; gap: 1.6vw; align-items: baseline;
+  padding: 1.5vh 1.4vw; border-radius: 9px; border: 1px solid rgba(255,255,255,.08);
+}
+.model--top { border-color: rgba(46,194,126,.34); background: rgba(46,194,126,.05); }
+.model__n { font-weight: 680; font-size: clamp(13px,1.22vw,19px); }
+.model--top .model__n { color: #7ee2b0; }
+.model__d, .model__a { font-size: clamp(11px,1.02vw,15px); color: var(--muted-2); }
+.model__a { font-family: var(--mono); color: var(--muted); }
+
+/* competition layers */
+.layer {
+  display: grid; grid-template-columns: 1fr 1.5fr; gap: 2vw; align-items: baseline;
+  padding: 2vh 0; border-top: 1px solid rgba(255,255,255,.1);
+}
+.layer:last-of-type { border-bottom: 1px solid rgba(255,255,255,.1); }
+.layer__w { font-weight: 680; font-size: clamp(13px,1.25vw,20px); }
+.layer__w small { display: block; font-weight: 400; font-family: var(--mono); font-size: .68em; color: var(--muted); letter-spacing: .1em; margin-top: .5vh; }
+.layer__g { font-size: clamp(12px,1.1vw,17px); color: var(--muted-2); line-height: 1.45; }
+
+/* team */
+.team { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.4vw; margin-top: 4vh; }
+.member { border-top: 2px solid var(--blue); padding-top: 1.6vh; }
+.member--biz { border-color: var(--green); }
+/* Portrait: a square box clipped to a circle, framed chest-up. The crop is per-person,
+   because the five originals are framed differently (one square studio shot, four corridor
+   portraits ranging from head-and-shoulders to waist-up). Three knobs, and the order they
+   apply in matters:
+     --fy  vertical band via object-position — ONLY bites when the image overflows the
+           square box, i.e. on the portrait sources. For a square source (Muhammadali's
+           640x640) there is no overflow and this is inert; use --fo there instead.
+     --z   zoom via transform: scale()
+     --fo  the point scale() zooms about (transform-origin). Defaults to the box centre,
+           which is what cuts the top of a head off when --z is high: zooming from 50%
+           eats the crown first. Pull --fo up toward the face and the head stays in frame.
+   Deliberately a real <img>, not a background-image: browsers drop background images from
+   print, which would leave five empty circles in the PDF export. The print block resets
+   transforms on `.seq > *` only, so the zoom below survives it. */
+.member__ph { width: clamp(76px,9.6vw,168px); aspect-ratio: 1; border-radius: 50%; overflow: hidden;
+              margin-bottom: 1.4vh; background: var(--ink-2);
+              box-shadow: 0 0 0 2px rgba(0,149,217,.5), 0 6px 20px rgba(0,0,0,.5); }
+.member--biz .member__ph { box-shadow: 0 0 0 2px rgba(46,194,126,.5), 0 6px 20px rgba(0,0,0,.5); }
+/* saturate/contrast pulls the lone light-grey studio shot closer to the four darker
+   corridor ones, so the row of circles reads as one set rather than four plus an odd one. */
+.member__ph img { width: 100%; height: 100%; object-fit: cover; object-position: 50% var(--fy,25%);
+                  transform: scale(var(--z,1)); transform-origin: 50% var(--fo,50%);
+                  filter: saturate(.9) contrast(1.05); }
+.member__n { font-weight: 700; font-size: clamp(12.5px,1.18vw,18px); line-height: 1.2; }
+.member__r { margin-top: .45vh; font-weight: 680; font-size: clamp(11px,1.02vw,15px); line-height: 1.25; color: var(--blue); }
+.member--biz .member__r { color: var(--green); }
+.member__d { margin-top: .9vh; font-size: clamp(10.5px,.98vw,14px); color: var(--muted); line-height: 1.4; }
+
+/* ask */
+.ask { display: grid; grid-template-columns: auto 1fr; gap: 3.4vw; align-items: center; margin-top: 4vh; }
+.ask__n { font-family: var(--mono); font-weight: 650; font-size: clamp(42px,6vw,96px); color: var(--green); letter-spacing: -.04em; line-height: 1; }
+.ask__k { margin-top: 1.4vh; font-family: var(--mono); font-size: clamp(9.5px,.92vw,12px); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+.kpi { display: grid; gap: 1.5vh; }
+.kpi li { list-style: none; font-size: clamp(12.5px,1.2vw,18px); line-height: 1.35; padding-left: 1.5em; position: relative; color: var(--muted-2); }
+.kpi li::before { content: '→'; position: absolute; left: 0; color: var(--blue); }
+
+/* screenshot slots */
+.shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.6vw; margin-top: 3.6vh; }
+.shot {
+  aspect-ratio: 16/9; border-radius: 10px; border: 1px dashed rgba(255,255,255,.2);
+  display: grid; place-items: center; text-align: center;
+  font-family: var(--mono); font-size: clamp(9.5px,.92vw,12px); letter-spacing: .14em;
+  text-transform: uppercase; color: rgba(255,255,255,.28);
+  background: rgba(255,255,255,.02); overflow: hidden;
+}
+/* A filled slot is no longer a placeholder: solid hairline, and the crop keeps the top
+   of each capture — the KPI row, the first DLQ rows, the status bar — since that is
+   where each screen states what it is. */
+.shot--filled { border-style: solid; border-color: rgba(255,255,255,.13); background: #fff; }
+.shot img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.shot__cap { margin-top: 1.2vh; font-family: var(--mono); font-size: clamp(9.5px,.9vw,12px); letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
+
+@page { size: 1600px 900px; margin: 0; }
+@media print {
+  html, body { height: auto; overflow: visible; }
+  /* .deck is position:fixed for the on-screen viewer; a fixed ancestor prints once and
+     never paginates, which is why the export used to come out as a single page. */
+  .deck { position: static !important; display: block !important; place-items: initial; }
+  .slide { width: 1600px; }
+  .chrome, .hint { display: none !important; }
+  .slide { display: grid !important; position: relative; page-break-after: always; height: 100vh; animation: none; }
+  /* The entrance choreography must not be caught mid-flight by the print snapshot:
+     an element still at its animation-delay would land on the page invisible. Only the
+     animated entrance elements are reset, so nothing else has its opacity forced. */
+  .slide .eyebrow, .slide h2, .slide .punch, .slide .seq > *, .slide .led {
+    animation: none !important; opacity: 1 !important; transform: none !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pkt { animation: none; opacity: 1; }
+  .slide.is-active { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="chrome">
+  <button onclick="setLang('uz')" aria-pressed="true">uz</button>
+  <button onclick="setLang('ru')" aria-pressed="false">ru</button>
+  <button onclick="setLang('en')" aria-pressed="false">en</button>
+</div>
+<div class="hint">← → space</div>
+
+<div class="deck">
+
+  <!-- ================= 1. Title ================= -->
+  <section class="slide is-active">
+    <div class="stage">
+      <div class="seam"></div>
+      <div class="lane lane--in">
+        <span class="pkt" style="animation-delay:-1s">order_export</span>
+        <span class="pkt" style="animation-delay:-6s">payment</span>
+        <span class="pkt" style="animation-delay:-11s">stock_sync</span>
+      </div>
+      <div class="lane lane--out">
+        <span class="pkt" style="animation-delay:-3.5s">invoice</span>
+        <span class="pkt" style="animation-delay:-9s">report</span>
+      </div>
+    </div>
+
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="3" y="3" width="24" height="26" rx="7.5" fill="none" stroke="#0095D9" stroke-width="4.2"/>
+        <rect x="19" y="18.6" width="12" height="5.4" rx="2.7" fill="#2EC27E"/>
+      </svg>
+      <h1>QosID&nbsp;Flow</h1>
+    </div>
+
+    <p class="lede tagline">
+      <span data-lang="uz">Korxona tizimlari o‘rtasidagi har bir so‘rovni ishonchli yetkazadigan platforma. Yukni vaqt bo‘yicha taqsimlaydi: yo‘qolmaydi, takrorlanmaydi, ko‘rinib turadi.</span>
+      <span data-lang="ru">Платформа, которая надёжно доставляет каждый запрос между корпоративными системами и распределяет нагрузку во времени. Ничего не теряется, не дублируется, всё видно.</span>
+      <span data-lang="en">A platform that reliably delivers every request between enterprise systems and spreads load over time. Nothing lost, nothing duplicated, everything visible.</span>
+    </p>
+
+    <div class="meta">
+      <span data-lang="uz">President Tech Award 2026 · Inkubatsiya</span>
+      <span data-lang="ru">President Tech Award 2026 · Инкубация</span>
+      <span data-lang="en">President Tech Award 2026 · Incubation</span>
+    </div>
+    <div class="num">01</div>
+  </section>
+
+
+  <!-- ================= 2. Problem ================= -->
+  <section class="slide">
+    <p class="eyebrow"><span data-lang="uz">Muammo</span><span data-lang="ru">Проблема</span><span data-lang="en">The problem</span></p>
+    <h2><span data-lang="uz">Integratsiyalar qo‘lda yozilgan skriptlar bilan qilinadi</span><span data-lang="ru">Интеграции держатся на скриптах, написанных вручную</span><span data-lang="en">Integrations are held together by hand-written scripts</span></h2>
+    <div class="cols2 seq">
+      <div class="item item--amber"><div class="item__h"><span data-lang="uz">Birdaniga ming so‘rov kelsa — server ko‘tara olmaydi</span><span data-lang="ru">Тысяча запросов разом — сервер не выдерживает</span><span data-lang="en">A thousand requests at once — the server gives way</span></div><p class="item__p"><span data-lang="uz">Yuk to‘lqin bo‘lib keladi; oddiy tizim uni tekislay olmaydi va yiqiladi.</span><span data-lang="ru">Нагрузка приходит всплесками; обычная система не умеет их сглаживать и падает.</span><span data-lang="en">Load arrives in bursts; an ordinary system cannot smooth them and falls over.</span></p></div>
+      <div class="item item--amber"><div class="item__h"><span data-lang="uz">Tashqi API sekinlashsa — skript bloklanadi</span><span data-lang="ru">Внешний API замедлился — скрипт блокируется</span><span data-lang="en">The external API slows down — the script blocks</span></div><p class="item__p"><span data-lang="uz">Bitta sust tizim butun jarayonni to‘xtatadi.</span><span data-lang="ru">Одна медленная система останавливает весь процесс.</span><span data-lang="en">One slow system stalls the whole process.</span></p></div>
+      <div class="item item--amber"><div class="item__h"><span data-lang="uz">Xato bo‘lsa — u jim yutiladi</span><span data-lang="ru">Ошибка есть — её никто не видит</span><span data-lang="en">Something fails — the error is swallowed</span></div><p class="item__p"><span data-lang="uz">Retry yo‘q, jurnal yo‘q, kim nima yubordi — noma’lum.</span><span data-lang="ru">Ни повторов, ни журнала: кто что отправил — неизвестно.</span><span data-lang="en">No retry, no record: who sent what is unknown.</span></p></div>
+      <div class="item item--amber"><div class="item__h"><span data-lang="uz">Tizim tiklandi — yo‘qolgani qaytmaydi</span><span data-lang="ru">Система поднялась — потерянное не вернулось</span><span data-lang="en">The system recovers — what was lost stays lost</span></div><p class="item__p"><span data-lang="uz">Buyurtma o‘tmaydi, to‘lov tushmaydi, hisobot kelmaydi.</span><span data-lang="ru">Заказ не проходит, платёж не приходит, отчёт не приходит.</span><span data-lang="en">The order does not go through, the payment does not arrive.</span></p></div>
+    </div>
+    <p class="punch"><span data-lang="uz">Va buni ko‘pincha <em>mijoz shikoyat qilganda</em> bilib qolishadi.</span><span data-lang="ru">И узнают об этом чаще всего, <em>когда жалуется клиент</em>.</span><span data-lang="en">And it is usually the <em>customer’s complaint</em> that tells you.</span></p>
+    <div class="num">02</div>
+  </section>
+
+  <!-- ================= 3. Solution ================= -->
+  <section class="slide">
+    <p class="eyebrow"><span data-lang="uz">Yechim</span><span data-lang="ru">Решение</span><span data-lang="en">The solution</span></p>
+    <h2><span data-lang="uz">Asosiy ilovaning oldida — ikkala yo‘nalishda</span><span data-lang="ru">Перед основным приложением — в обе стороны</span><span data-lang="en">In front of the main application — in both directions</span></h2>
+    <svg class="topo" viewBox="0 0 1000 470" role="img" aria-hidden="true"><g class="tp-wires"><path id="w1" class="tp-w tp-w--in" d="M 148 62 C 300 62, 330 160, 446 196"/><path id="w2" class="tp-w tp-w--in" d="M 148 152 C 290 152, 330 192, 446 206"/><path id="w3" class="tp-w tp-w--in" d="M 148 242 C 300 242, 340 234, 446 218"/><path id="w4" class="tp-w tp-w--out" d="M 554 198 C 660 192, 720 192, 834 198"/><path id="w5" class="tp-w tp-w--in" d="M 834 232 C 720 246, 660 252, 554 232"/><path id="w6" class="tp-w tp-w--out" d="M 446 244 C 340 280, 280 356, 148 356"/></g><g class="tp-flow"><circle r="4.6" fill="#0095D9"><animateMotion dur="2.6s" begin="0s" repeatCount="indefinite"><mpath href="#w1"/></animateMotion></circle><circle r="4.6" fill="#0095D9"><animateMotion dur="2.6s" begin="1.4s" repeatCount="indefinite"><mpath href="#w2"/></animateMotion></circle><circle r="4.6" fill="#0095D9"><animateMotion dur="2.6s" begin="2.8s" repeatCount="indefinite"><mpath href="#w3"/></animateMotion></circle><circle r="4.6" fill="#0095D9"><animateMotion dur="2.6s" begin="4.2s" repeatCount="indefinite"><mpath href="#w1"/></animateMotion></circle><circle r="4.6" fill="#0095D9"><animateMotion dur="2.6s" begin="5.6s" repeatCount="indefinite"><mpath href="#w2"/></animateMotion></circle><circle r="4.6" fill="#2EC27E"><animateMotion dur="2.2s" begin="2.6s" repeatCount="indefinite"><mpath href="#w4"/></animateMotion></circle><circle r="4.6" fill="#2EC27E"><animateMotion dur="2.2s" begin="4.0s" repeatCount="indefinite"><mpath href="#w4"/></animateMotion></circle><circle r="4.6" fill="#2EC27E"><animateMotion dur="2.2s" begin="5.4s" repeatCount="indefinite"><mpath href="#w4"/></animateMotion></circle><circle r="4.6" fill="#2EC27E"><animateMotion dur="2.2s" begin="6.8s" repeatCount="indefinite"><mpath href="#w4"/></animateMotion></circle><circle r="4.6" fill="#2EC27E"><animateMotion dur="2.2s" begin="8.2s" repeatCount="indefinite"><mpath href="#w4"/></animateMotion></circle><circle r="4.6" fill="#0095D9"><animateMotion dur="2.4s" begin="0.6s" repeatCount="indefinite"><mpath href="#w5"/></animateMotion></circle><circle r="4.6" fill="#0095D9"><animateMotion dur="2.4s" begin="3.4s" repeatCount="indefinite"><mpath href="#w5"/></animateMotion></circle><circle r="4.6" fill="#0095D9"><animateMotion dur="2.4s" begin="6.2s" repeatCount="indefinite"><mpath href="#w5"/></animateMotion></circle><circle r="4.6" fill="#2EC27E"><animateMotion dur="2.6s" begin="3.0s" repeatCount="indefinite"><mpath href="#w6"/></animateMotion></circle><circle r="4.6" fill="#2EC27E"><animateMotion dur="2.6s" begin="5.8s" repeatCount="indefinite"><mpath href="#w6"/></animateMotion></circle><circle r="4.6" fill="#2EC27E"><animateMotion dur="2.6s" begin="8.6s" repeatCount="indefinite"><mpath href="#w6"/></animateMotion></circle></g><g class="tp-gate" transform="translate(500,212)"><rect class="tp-gate__box" x="-52" y="-56" width="104" height="112" rx="16"/><g transform="translate(-16,-34)"><rect x="3" y="3" width="24" height="26" rx="7.5" fill="none" stroke="#0095D9" stroke-width="4.2"/><rect x="19" y="18.6" width="12" height="5.4" rx="2.7" fill="#2EC27E"/></g><text class="tp-gate__n" y="26">QosID Flow</text><path id="tp-ring" class="tp-ring" d="M -118,92 a 118,30 0 1,1 236,0 a 118,30 0 1,1 -236,0"/><g class="tp-orb"><text class="tp-orb__t"><tspan data-lang="uz">navbat</tspan><tspan data-lang="ru">очередь</tspan><tspan data-lang="en">queue</tspan><animateMotion dur="20s" begin="0s" repeatCount="indefinite" rotate="0"><mpath href="#tp-ring"/></animateMotion><animate attributeName="opacity" dur="20s" begin="0s" repeatCount="indefinite" values="0.55;0.24;0.55;1;0.55" keyTimes="0;0.25;0.5;0.75;1"/><animate attributeName="font-size" dur="20s" begin="0s" repeatCount="indefinite" values="11.5;9.5;11.5;13.5;11.5" keyTimes="0;0.25;0.5;0.75;1"/></text></g><g class="tp-orb"><text class="tp-orb__t">retry<animateMotion dur="20s" begin="-6.67s" repeatCount="indefinite" rotate="0"><mpath href="#tp-ring"/></animateMotion><animate attributeName="opacity" dur="20s" begin="-6.67s" repeatCount="indefinite" values="0.55;0.24;0.55;1;0.55" keyTimes="0;0.25;0.5;0.75;1"/><animate attributeName="font-size" dur="20s" begin="-6.67s" repeatCount="indefinite" values="11.5;9.5;11.5;13.5;11.5" keyTimes="0;0.25;0.5;0.75;1"/></text></g><g class="tp-orb"><text class="tp-orb__t"><tspan data-lang="uz">himoya</tspan><tspan data-lang="ru">защита</tspan><tspan data-lang="en">protection</tspan><animateMotion dur="20s" begin="-13.34s" repeatCount="indefinite" rotate="0"><mpath href="#tp-ring"/></animateMotion><animate attributeName="opacity" dur="20s" begin="-13.34s" repeatCount="indefinite" values="0.55;0.24;0.55;1;0.55" keyTimes="0;0.25;0.5;0.75;1"/><animate attributeName="font-size" dur="20s" begin="-13.34s" repeatCount="indefinite" values="11.5;9.5;11.5;13.5;11.5" keyTimes="0;0.25;0.5;0.75;1"/></text></g></g><g class="tp-node" transform="translate(110,62)"><circle class="tp-badge" r="30"/><g class="tp-dev" style="stroke:rgba(255,255,255,.5)"><rect x="-15" y="-12" width="30" height="24" rx="2.6"/><path d="M-15 -5h30"/><circle cx="-11" cy="-8.6" r="1.1" class="fill"/></g><text class="tp-lbl" y="49"><tspan data-lang="uz">Veb-mijozlar</tspan><tspan data-lang="ru">Веб-клиенты</tspan><tspan data-lang="en">Web clients</tspan></text></g><g class="tp-node" transform="translate(110,152)"><circle class="tp-badge" r="30"/><g class="tp-dev" style="stroke:rgba(255,255,255,.5)"><rect x="-8.5" y="-14" width="17" height="28" rx="3"/><path d="M-3 -10.5h6"/><circle cx="0" cy="9.5" r="1.5" class="fill"/></g><text class="tp-lbl" y="49"><tspan data-lang="uz">Mobil ilovalar</tspan><tspan data-lang="ru">Мобильные приложения</tspan><tspan data-lang="en">Mobile apps</tspan></text></g><g class="tp-node" transform="translate(110,242)"><circle class="tp-badge" r="30"/><g class="tp-dev" style="stroke:rgba(255,255,255,.5)"><rect x="-13" y="-14" width="26" height="9" rx="2"/><rect x="-13" y="-2.5" width="26" height="9" rx="2"/><rect x="-13" y="9" width="26" height="9" rx="2"/><circle cx="-8" cy="-9.5" r="1.3" class="fill"/><circle cx="-8" cy="2" r="1.3" class="fill"/><circle cx="-8" cy="13.5" r="1.3" class="fill"/></g><text class="tp-lbl" y="49"><tspan data-lang="uz">Hamkor tizimlar</tspan><tspan data-lang="ru">Партнёрские системы</tspan><tspan data-lang="en">Partner systems</tspan></text></g><g class="tp-node" transform="translate(110,356)"><circle class="tp-badge" r="30"/><g class="tp-dev" style="stroke:rgba(255,255,255,.5)"><path d="M-9 8a7 7 0 0 1-.6-14 9.6 9.6 0 0 1 18.4-1.6A6.3 6.3 0 0 1 10 8z"/><path d="M-2.5 -1.5l-3 3.5 3 3.5M4.5 -1.5l3 3.5-3 3.5"/></g><text class="tp-lbl" y="49"><tspan data-lang="uz">Tashqi API‘lar</tspan><tspan data-lang="ru">Внешние API</tspan><tspan data-lang="en">External APIs</tspan></text></g><g class="tp-node" transform="translate(880,212)"><circle class="tp-badge" r="44"/><g class="tp-dev" style="stroke:rgba(255,255,255,.82)"><rect x="-16" y="-16" width="32" height="20" rx="2.8"/><path d="M-16 -8h32"/><circle cx="-11" cy="-12" r="1.4" class="fill"/><path d="M-11 -1h14"/><ellipse cx="0" cy="9.5" rx="12" ry="4"/><path d="M-12 9.5v5a12 4 0 0 0 24 0v-5"/></g><text class="tp-lbl" y="63"><tspan data-lang="uz">Asosiy ilova</tspan><tspan data-lang="ru">Основное приложение</tspan><tspan data-lang="en">Main application</tspan></text></g><text class="tp-dir tp-dir--in" x="300" y="30"><tspan data-lang="uz">Kiruvchi</tspan><tspan data-lang="ru">Входящие</tspan><tspan data-lang="en">Inbound</tspan></text><text class="tp-dir tp-dir--out" x="300" y="452"><tspan data-lang="uz">Chiquvchi</tspan><tspan data-lang="ru">Исходящие</tspan><tspan data-lang="en">Outbound</tspan></text></svg>
+    <p class="punch"><span data-lang="uz">Ikkala oqim bitta quvurdan o‘tadi: navbat, qayta urinish, himoya va to‘liq kuzatuv. <em>Odatda buning uchun ikkita mahsulot kerak.</em></span><span data-lang="ru">Оба потока идут по одному конвейеру: очередь, повторы, защита и полная наблюдаемость. <em>Обычно для этого нужны два продукта.</em></span><span data-lang="en">Both directions run through one pipeline: queue, retry, protection and full observability. <em>Usually this takes two products.</em></span></p>
+    <div class="num">03</div>
+  </section>
+
+  <!-- ================= 4. Product =================
+       Captures live in img/. They are real production screens, so they carry real
+       tenant ids, request ids and the upstream hostname — redact before this deck
+       leaves the team, and never publish img/ to the open repository. -->
+  <section class="slide">
+    <p class="eyebrow"><span data-lang="uz">Mahsulot</span><span data-lang="ru">Продукт</span><span data-lang="en">The product</span></p>
+    <h2><span data-lang="uz">Boshqaruv konsoli — quvur ko‘rinib turadi</span><span data-lang="ru">Консоль управления — конвейер виден целиком</span><span data-lang="en">A console where the pipeline is visible</span></h2>
+    <div class="shots seq">
+      <div><div class="shot shot--filled"><img src="img/01-statistics.jpg" alt="QosID Flow — statistics dashboard"></div><div class="shot__cap"><span data-lang="uz">Jonli statistika, o‘tkazuvchanlik, p95</span><span data-lang="ru">Живая статистика, пропускная способность, p95</span><span data-lang="en">Live statistics, throughput, p95</span></div></div>
+      <div><div class="shot shot--filled"><img src="img/02-errors.jpg" alt="QosID Flow — DLQ error console"></div><div class="shot__cap"><span data-lang="uz">DLQ, Telegram ogohlantirish, AI-tahlil</span><span data-lang="ru">DLQ, оповещения в Telegram, AI-анализ</span><span data-lang="en">DLQ, Telegram alerts, AI analysis</span></div></div>
+      <div><div class="shot shot--filled"><img src="img/03-ops.jpg" alt="QosID Flow — ops console with live log"></div><div class="shot__cap"><span data-lang="uz">To‘xtatish/ishga tushirish, jonli jurnal</span><span data-lang="ru">Остановка/запуск, живой журнал</span><span data-lang="en">Stop/start, live log</span></div></div>
+    </div>
+    <p class="punch" style="font-size:clamp(13px,1.3vw,20px);font-weight:500;color:var(--muted-2)"><span data-lang="uz">Sozlamalar faqat tizim to‘xtaganda tahrirlanadi — noto‘g‘ri sozlama jonli trafikni ura olmaydi.</span><span data-lang="ru">Настройки меняются только при остановленном шлюзе — ошибочная настройка не заденет живой трафик.</span><span data-lang="en">Settings are editable only while the gateway is stopped — a bad setting cannot reach live traffic.</span></p>
+    <div class="num">04</div>
+  </section>
+
+  <!-- ================= 5. Traction ================= -->
+  <section class="slide">
+    <p class="eyebrow">
+      <span data-lang="uz">Prototip emas — ishlab chiqarishda</span>
+      <span data-lang="ru">Не прототип — в продакшене</span>
+      <span data-lang="en">Not a prototype — in production</span>
+    </p>
+
+    <h2>
+      <span data-lang="uz">2026-yil apreldan beri jonli yukda</span>
+      <span data-lang="ru">Под живой нагрузкой с апреля 2026</span>
+      <span data-lang="en">Under live load since April 2026</span>
+    </h2>
+
+    <!-- Every figure here was re-measured on 2026-08-01 from the production server's own
+         rotated logs (25–31 July, seven complete days), not from a dashboard:
+           422 776 completed + 1 358 DLQ = 424 134 requests  ->  60 591/day, 99.68% success
+           peak second: 918 completions (28.07), 380 on an ordinary day (31.07)
+           incident 27.07 14:27 UTC: 241 DLQ in one minute
+         Success is defined the strict way — a request that ended in the DLQ counts as failed,
+         even though most were later retried through. -->
+    <div class="figures seq">
+      <div class="fig">
+        <div class="fig__n">60 600</div>
+        <div class="fig__k">
+          <span data-lang="uz">so‘rov / kun</span><span data-lang="ru">запросов / день</span><span data-lang="en">requests / day</span>
+        </div>
+      </div>
+      <div class="fig fig--good">
+        <div class="fig__n">99.68<span style="font-size:.5em">%</span></div>
+        <div class="fig__k">
+          <span data-lang="uz">muvaffaqiyat</span><span data-lang="ru">успешность</span><span data-lang="en">success rate</span>
+        </div>
+      </div>
+      <div class="fig">
+        <div class="fig__n">918<span style="font-size:.42em">/s</span></div>
+        <div class="fig__k">
+          <span data-lang="uz">cho‘qqi, yo‘qotishsiz</span><span data-lang="ru">пик, без потерь</span><span data-lang="en">peak, zero loss</span>
+        </div>
+      </div>
+      <div class="fig">
+        <div class="fig__n">527</div>
+        <div class="fig__k">
+          <span data-lang="uz">avtomatik test</span><span data-lang="ru">автотестов</span><span data-lang="en">automated tests</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair seq">
+      <div class="card card--bad">
+        <div class="card__d">27.07.2026</div>
+        <div class="card__h">
+          <span data-lang="uz">Bir daqiqada 241 jonli so‘rov xato navbatiga tushdi</span>
+          <span data-lang="ru">За одну минуту 241 живой запрос ушёл в очередь ошибок</span>
+          <span data-lang="en">241 live requests fell into the error queue in one minute</span>
+        </div>
+        <p class="card__p">
+          <span data-lang="uz">O‘ttiz soniyalik uzilish. Sababini topdik, uchta o‘zgarish kiritdik va o‘lchadik.</span>
+          <span data-lang="ru">Тридцать секунд сбоя. Нашли причину, внесли три изменения и измерили.</span>
+          <span data-lang="en">A thirty-second outage. We found the cause, made three changes, and measured.</span>
+        </p>
+      </div>
+
+      <div class="arrow">→</div>
+
+      <div class="card card--good">
+        <div class="card__d">28.07.2026</div>
+        <div class="card__h">
+          <span data-lang="uz">5 barobar kuchli yuklama — bitta ham yo‘qolmadi</span>
+          <span data-lang="ru">Нагрузка в 5 раз выше — ни один не потерян</span>
+          <span data-lang="en">Five times the load — not one lost</span>
+        </div>
+        <p class="card__p">
+          <span data-lang="uz">Himoya umuman ochilmadi. Biz shunday ishlaymiz: muammo, sabab, o‘lchangan yechim.</span>
+          <span data-lang="ru">Предохранитель не сработал ни разу. Так мы и работаем: проблема, причина, измеренное решение.</span>
+          <span data-lang="en">The circuit never opened. That is how we work: problem, cause, measured fix.</span>
+        </p>
+      </div>
+    </div>
+    <div class="num">05</div>
+  </section>
+
+  <!-- ================= 6. Business model ================= -->
+  <section class="slide">
+    <p class="eyebrow"><span data-lang="uz">Biznes-model</span><span data-lang="ru">Бизнес-модель</span><span data-lang="en">Business model</span></p>
+    <h2><span data-lang="uz">Beshta daromad oqimi, uchtasi — bugungi fokus</span><span data-lang="ru">Пять источников дохода, три — фокус на сегодня</span><span data-lang="en">Five revenue streams, three are today’s focus</span></h2>
+    <div class="models seq">
+      <div class="model model--top"><div class="model__n"><span data-lang="uz">Joriy etish xizmatlari</span><span data-lang="ru">Услуги внедрения</span><span data-lang="en">Implementation services</span></div><div class="model__d"><span data-lang="uz">O‘rnatish, maxsus konnektor, konsalting</span><span data-lang="ru">Внедрение, коннекторы под заказ, консалтинг</span><span data-lang="en">Setup, custom connectors, consulting</span></div><div class="model__a"><span data-lang="uz">loyiha narxi</span><span data-lang="ru">цена проекта</span><span data-lang="en">project fee</span></div><div><span class="tag tag--now"><span data-lang="uz">bugun</span><span data-lang="ru">сегодня</span><span data-lang="en">today</span></span></div></div><div class="model model--top"><div class="model__n"><span data-lang="uz">Per-konnektor / hajm</span><span data-lang="ru">За коннектор / объём</span><span data-lang="en">Per connector / volume</span></div><div class="model__d"><span data-lang="uz">Har integratsiya yoki oylik so‘rov hajmi bo‘yicha</span><span data-lang="ru">По интеграции или месячному объёму запросов</span><span data-lang="en">Per integration or monthly request volume</span></div><div class="model__a"><span data-lang="uz">pay-as-you-go</span><span data-lang="ru">pay-as-you-go</span><span data-lang="en">pay-as-you-go</span></div><div><span class="tag"><span data-lang="uz">12+ oy</span><span data-lang="ru">12+ мес</span><span data-lang="en">12+ mo</span></span></div></div><div class="model model--top"><div class="model__n"><span data-lang="uz">Managed Cloud</span><span data-lang="ru">Managed Cloud</span><span data-lang="en">Managed Cloud</span></div><div class="model__d"><span data-lang="uz">Biz hostlaymiz va boshqaramiz</span><span data-lang="ru">Мы хостим и обслуживаем</span><span data-lang="en">We host and operate it</span></div><div class="model__a"><span data-lang="uz">oylik obuna</span><span data-lang="ru">месячная подписка</span><span data-lang="en">monthly subscription</span></div><div><span class="tag tag--next"><span data-lang="uz">6–12 oy</span><span data-lang="ru">6–12 мес</span><span data-lang="en">6–12 mo</span></span></div></div><div class="model"><div class="model__n"><span data-lang="uz">Self-host + Support</span><span data-lang="ru">Self-host + поддержка</span><span data-lang="en">Self-host + support</span></div><div class="model__d"><span data-lang="uz">Mijoz o‘zi o‘rnatadi, biz SLA beramiz</span><span data-lang="ru">Клиент ставит сам, мы даём SLA</span><span data-lang="en">The customer installs it, we provide the SLA</span></div><div class="model__a"><span data-lang="uz">yillik shartnoma</span><span data-lang="ru">годовой договор</span><span data-lang="en">annual contract</span></div><div><span class="tag tag--now"><span data-lang="uz">bugun</span><span data-lang="ru">сегодня</span><span data-lang="en">today</span></span></div></div><div class="model"><div class="model__n"><span data-lang="uz">Open-core</span><span data-lang="ru">Open-core</span><span data-lang="en">Open-core</span></div><div class="model__d"><span data-lang="uz">Yadro ochiq, korxona qatlami pullik</span><span data-lang="ru">Ядро открыто, корпоративный слой платный</span><span data-lang="en">Open core, commercial enterprise layer</span></div><div class="model__a"><span data-lang="uz">yillik litsenziya</span><span data-lang="ru">годовая лицензия</span><span data-lang="en">annual licence</span></div><div><span class="tag"><span data-lang="uz">12+ oy</span><span data-lang="ru">12+ мес</span><span data-lang="en">12+ mo</span></span></div></div>
+    </div>
+    <p class="punch" style="font-size:clamp(13px,1.35vw,21px);font-weight:550"><span data-lang="uz">Bulutdan foydalana olmaydigan davlat va bank mijozlari uchun self-host varianti ochiq qoladi.</span><span data-lang="ru">Для госорганов и банков, которым облако недоступно, остаётся self-host.</span><span data-lang="en">For government and banks that cannot use cloud, self-host stays on the table.</span></p>
+    <div class="num">06</div>
+  </section>
+
+  <!-- ================= 7. Market =================
+       TAM/SAM/SOM is not calculated yet. Numbers go in the .fig__n slots below when
+       the business analyst has them; showing an invented figure to a jury is worse
+       than showing the segmentation and saying the sizing is in progress. -->
+  <section class="slide">
+    <p class="eyebrow"><span data-lang="uz">Bozor</span><span data-lang="ru">Рынок</span><span data-lang="en">Market</span></p>
+    <h2><span data-lang="uz">Ikki segment kesishmasida turamiz</span><span data-lang="ru">Мы стоим на пересечении двух сегментов</span><span data-lang="en">We sit where two segments overlap</span></h2>
+    <div class="cols2 seq">
+      <div class="item item--blue">
+        <div class="item__h"><span data-lang="uz">Integratsiya middleware</span><span data-lang="ru">Интеграционный middleware</span><span data-lang="en">Integration middleware</span></div>
+        <p class="item__p"><span data-lang="uz">Korxona tizimlarini tashqi API‘larga ulash. Bu yerda Confluent va MuleSoft turadi.</span><span data-lang="ru">Связь корпоративных систем с внешними API. Здесь Confluent и MuleSoft.</span><span data-lang="en">Connecting enterprise systems to external APIs. Confluent and MuleSoft live here.</span></p>
+      </div>
+      <div class="item item--green">
+        <div class="item__h"><span data-lang="uz">API-shlyuz</span><span data-lang="ru">API-шлюз</span><span data-lang="en">API gateway</span></div>
+        <p class="item__p"><span data-lang="uz">Ilovaga kiradigan trafikni himoyalash. Bu yerda Kong va Apigee turadi.</span><span data-lang="ru">Защита входящего трафика приложения. Здесь Kong и Apigee.</span><span data-lang="en">Protecting an application’s inbound traffic. Kong and Apigee live here.</span></p>
+      </div>
+    </div>
+    <p class="punch"><span data-lang="uz">Boshlang‘ich plasdarm: O‘zbekiston korxona va davlat integratsiyalari — ma’lumot rezidensiyasi mahalliy yechimni majburiy qiladi.</span><span data-lang="ru">Плацдарм: корпоративные и государственные интеграции в Узбекистане — требование к резидентности данных делает локальное решение обязательным.</span><span data-lang="en">Beachhead: enterprise and government integrations in Uzbekistan, where data residency makes a local solution mandatory.</span></p>
+    <div class="num">07</div>
+  </section>
+
+  <!-- ================= 8. Competition ================= -->
+  <section class="slide">
+    <p class="eyebrow"><span data-lang="uz">Raqobat</span><span data-lang="ru">Конкуренты</span><span data-lang="en">Competition</span></p>
+    <h2><span data-lang="uz">Uch qatlam — va har birida nima yetishmaydi</span><span data-lang="ru">Три слоя — и чего не хватает в каждом</span><span data-lang="en">Three layers — and what each one lacks</span></h2>
+    <div class="seq" style="margin-top:3.4vh">
+      <div class="layer"><div class="layer__w"><span data-lang="uz">API-shlyuz</span><span data-lang="ru">API-шлюз</span><span data-lang="en">API gateway</span><small>Kong, Apigee</small></div><div class="layer__g"><span data-lang="uz">Kiruvchi trafikni oladi, lekin <b>sinxron</b>: ilova o‘chiq bo‘lsa so‘rov yo‘qoladi.</span><span data-lang="ru">Берёт входящий трафик, но <b>синхронно</b>: приложение легло — запрос потерян.</span><span data-lang="en">Takes inbound traffic, but <b>synchronously</b>: if the app is down, the request is lost.</span></div></div><div class="layer"><div class="layer__w"><span data-lang="uz">Integratsiya / iPaaS</span><span data-lang="ru">Интеграция / iPaaS</span><span data-lang="en">Integration / iPaaS</span><small>Confluent, MuleSoft</small></div><div class="layer__g"><span data-lang="uz">Chiquvchi yetkazishni qiladi, lekin HTTP darvozasi emas.</span><span data-lang="ru">Делает исходящую доставку, но это не HTTP-шлюз.</span><span data-lang="en">Handles outbound delivery, but is not an HTTP front door.</span></div></div><div class="layer"><div class="layer__w"><span data-lang="uz">Ish-oqim dvigatellari</span><span data-lang="ru">Движки процессов</span><span data-lang="en">Workflow engines</span><small>n8n, Airflow</small></div><div class="layer__g"><span data-lang="uz">Ko‘pini <b>yozsa bo‘ladi</b> — lekin circuit breaker‘ni, idempotentlik kalitini va park qilingan navbatni <b>siz yozasiz</b>, va xatolarni prodda topasiz.</span><span data-lang="ru">Многое <b>можно написать</b> — но предохранитель, ключ идемпотентности и отложенную очередь <b>пишете вы</b>, а ошибки находите в проде.</span><span data-lang="en">Most of it <b>can be built</b> — but the breaker, the idempotency key and the parked queue are <b>yours to write</b>, and you find the bugs in production.</span></div></div>
+    </div>
+    <p class="punch" style="font-size:clamp(13px,1.4vw,22px)"><span data-lang="uz">Asl raqib esa hamon — <em>qo‘lda yozilgan skript</em>.</span><span data-lang="ru">А настоящий конкурент по-прежнему — <em>скрипт, написанный вручную</em>.</span><span data-lang="en">The real competitor is still the <em>hand-written script</em>.</span></p>
+    <div class="num">08</div>
+  </section>
+
+  <!-- ================= 9. Go-to-market ================= -->
+  <section class="slide">
+    <p class="eyebrow"><span data-lang="uz">Bozorga chiqish</span><span data-lang="ru">Выход на рынок</span><span data-lang="en">Go-to-market</span></p>
+    <h2><span data-lang="uz">Uch kanal, eng past ishqalanishdan boshlab</span><span data-lang="ru">Три канала, начиная с наименьшего трения</span><span data-lang="en">Three channels, starting where friction is lowest</span></h2>
+    <div class="stack seq">
+      <div class="item item--green"><div class="item__h"><span data-lang="uz">1 · Pilot ekotizimi mijozlari</span><span data-lang="ru">1 · Клиенты экосистемы пилота</span><span data-lang="en">1 · The pilot’s ecosystem</span></div><p class="item__p"><span data-lang="uz">Konnektor tayyor, tizim tanish — joriy etish kunlar ichida.</span><span data-lang="ru">Коннектор готов, система знакома — внедрение за дни.</span><span data-lang="en">The connector exists and the system is familiar — rollout takes days.</span></p></div>
+      <div class="item item--blue"><div class="item__h"><span data-lang="uz">2 · IT Park rezidentlari va ERP-integratorlar</span><span data-lang="ru">2 · Резиденты IT Park и ERP-интеграторы</span><span data-lang="en">2 · IT Park residents and ERP integrators</span></div><p class="item__p"><span data-lang="uz">Hamkorlik kanali: ular mijozga bizni olib boradi, biz ularga ishonchlilikni beramiz.</span><span data-lang="ru">Партнёрский канал: они приводят клиента, мы даём надёжность.</span><span data-lang="en">A partner channel: they bring the customer, we bring the reliability.</span></p></div>
+      <div class="item"><div class="item__h"><span data-lang="uz">3 · Managed cloud</span><span data-lang="ru">3 · Managed cloud</span><span data-lang="en">3 · Managed cloud</span></div><p class="item__p"><span data-lang="uz">O‘z-o‘ziga xizmat va takrorlanuvchi daromad — birinchi ikkitasi isbotlangandan keyin.</span><span data-lang="ru">Самообслуживание и повторяющийся доход — после того как первые два канала доказаны.</span><span data-lang="en">Self-serve and recurring revenue — once the first two channels are proven.</span></p></div>
+    </div>
+    <div class="num">09</div>
+  </section>
+
+  <!-- ================= 10. Team ================= -->
+  <section class="slide">
+    <p class="eyebrow"><span data-lang="uz">Jamoa</span><span data-lang="ru">Команда</span><span data-lang="en">Team</span></p>
+    <h2><span data-lang="uz">Besh kishi — uchtasi quradi, ikkitasi bozorni tekshiradi</span><span data-lang="ru">Пять человек — трое строят, двое проверяют рынок</span><span data-lang="en">Five people — three build, two test the market</span></h2>
+    <div class="team seq"><div class="member member--biz"><div class="member__ph"><img src="img/team/muhammadali-ergashev.jpg" alt="Muhammadali Ergashev" style="--z:1.5;--fo:18%"></div><div class="member__n">Muhammadali Ergashev</div><div class="member__r"><span data-lang="uz">Product Owner</span><span data-lang="ru">Product Owner</span><span data-lang="en">Product Owner</span></div><div class="member__d"><span data-lang="uz">Mahsulot yo‘nalishi, mijoz kashfiyoti</span><span data-lang="ru">Направление продукта, customer discovery</span><span data-lang="en">Product direction, customer discovery</span></div></div><div class="member member--biz"><div class="member__ph"><img src="img/team/shavkat-mominov.png" alt="Shavkat Mominov" style="--fy:21%;--z:1.17"></div><div class="member__n">Shavkat Mominov</div><div class="member__r"><span data-lang="uz">Biznes-analitik</span><span data-lang="ru">Бизнес-аналитик</span><span data-lang="en">Business analyst</span></div><div class="member__d"><span data-lang="uz">Bozor tadqiqoti, narx modeli, suhbatlar tahlili</span><span data-lang="ru">Исследование рынка, ценообразование, анализ интервью</span><span data-lang="en">Market research, pricing, interview analysis</span></div></div><div class="member"><div class="member__ph"><img src="img/team/sherzod-chorivey.jpg" alt="Sherzod Chorivey" style="--fy:41%;--z:1.23"></div><div class="member__n">Sherzod Chorivey</div><div class="member__r"><span data-lang="uz">Backend · Platforma</span><span data-lang="ru">Backend · Платформа</span><span data-lang="en">Backend · Platform</span></div><div class="member__d"><span data-lang="uz">Quvur, ishonchlilik</span><span data-lang="ru">Конвейер, надёжность</span><span data-lang="en">Pipeline, reliability</span></div></div><div class="member"><div class="member__ph"><img src="img/team/jaloliddin-temir.jpg" alt="Jaloliddin Temir" style="--fy:0%;--z:1.26"></div><div class="member__n">Jaloliddin Temir</div><div class="member__r"><span data-lang="uz">Backend · Integratsiya</span><span data-lang="ru">Backend · Интеграции</span><span data-lang="en">Backend · Integrations</span></div><div class="member__d"><span data-lang="uz">Manba konnektorlari</span><span data-lang="ru">Коннекторы источников</span><span data-lang="en">Source connectors</span></div></div><div class="member"><div class="member__ph"><img src="img/team/sarvar-jamoliddinov.jpg" alt="Sarvar Jamoliddinov" style="--fy:30%;--z:1.33"></div><div class="member__n">Sarvar Jamoliddinov</div><div class="member__r"><span data-lang="uz">Frontend · DevOps</span><span data-lang="ru">Frontend · DevOps</span><span data-lang="en">Frontend · DevOps</span></div><div class="member__d"><span data-lang="uz">Boshqaruv konsoli, joriy etish</span><span data-lang="ru">Консоль управления, внедрение</span><span data-lang="en">Console, deployment</span></div></div></div>
+    <p class="punch" style="font-size:clamp(13px,1.35vw,21px);font-weight:550"><span data-lang="uz">Uch oyda maqsad sotuv emas, <em>validatsiya</em> — shuning uchun mijoz kashfiyotini PO va analitik olib boradi.</span><span data-lang="ru">Цель трёх месяцев — не продажи, а <em>валидация</em>, поэтому customer discovery ведут PO и аналитик.</span><span data-lang="en">The three-month goal is <em>validation</em>, not sales — so the PO and the analyst run customer discovery.</span></p>
+    <div class="num">10</div>
+  </section>
+
+  <!-- ================= 11. Have / need ================= -->
+  <section class="slide">
+    <p class="eyebrow"><span data-lang="uz">Nega bizga inkubatsiya kerak</span><span data-lang="ru">Зачем нам инкубация</span><span data-lang="en">Why we need incubation</span></p>
+    <h2><span data-lang="uz">Nima bor va nima yo‘q</span><span data-lang="ru">Что есть и чего нет</span><span data-lang="en">What we have and what we do not</span></h2>
+    <div class="cols2 seq">
+      <div class="hn hn--have">
+        <div class="hn__h"><span data-lang="uz">Bizda bor</span><span data-lang="ru">У нас есть</span><span data-lang="en">We have</span></div>
+        <ul><li><span data-lang="uz">Ishlab chiqarishda ishlaydigan tizim — yuqorida o‘lchangan</span><span data-lang="ru">Система в проде — измерено выше</span><span data-lang="en">A system running in production — measured on the previous slide</span></li><li><span data-lang="uz">41 xavfsizlik qoidasi, har biri test bilan mahkamlangan</span><span data-lang="ru">41 правило безопасности, каждое закреплено тестом</span><span data-lang="en">41 safety rules, every one pinned by a test</span></li><li><span data-lang="uz">Uch tilli boshqaruv konsoli — AI-yordamli xato tahlili va Telegram ogohlantirish bilan</span><span data-lang="ru">Консоль на трёх языках — с AI-анализом ошибок и оповещениями в Telegram</span><span data-lang="en">A console in three languages — with AI-assisted error analysis and Telegram alerting</span></li></ul>
+      </div>
+      <div class="hn hn--need">
+        <div class="hn__h"><span data-lang="uz">Bizda yo‘q</span><span data-lang="ru">У нас нет</span><span data-lang="en">We do not have</span></div>
+        <ul><li><span data-lang="uz">Asosiy kompaniyadan tashqarida mijoz</span><span data-lang="ru">Клиента вне основной компании</span><span data-lang="en">A customer outside the parent company</span></li><li><span data-lang="uz">Narx modeli</span><span data-lang="ru">Модели ценообразования</span><span data-lang="en">A pricing model</span></li><li><span data-lang="uz">Sotuv kanali</span><span data-lang="ru">Канала продаж</span><span data-lang="en">A sales channel</span></li><li><span data-lang="uz">Bozor validatsiyasi</span><span data-lang="ru">Валидации рынка</span><span data-lang="en">Market validation</span></li></ul>
+      </div>
+    </div>
+    <p class="punch"><span data-lang="uz">Biz dasturdan mahsulot qurishni emas, <em>uni kim sotib olishini aniqlashni</em> so‘raymiz.</span><span data-lang="ru">Мы просим у программы не построить продукт, а <em>выяснить, кто его купит</em>.</span><span data-lang="en">We are not asking the programme to build the product. We are asking it to find out <em>who will buy it</em>.</span></p>
+    <div class="num">11</div>
+  </section>
+
+  <!-- ================= 12. The close =================
+       Answers slide 06's four gaps, in its order, using the packet colours. No grant
+       figure: the amount belongs in the application form, not in the last image. -->
+  <section class="slide">
+    <p class="eyebrow"><span data-lang="uz">Uch oydan keyin</span><span data-lang="ru">Через три месяца</span><span data-lang="en">Three months from now</span></p>
+    <h2><span data-lang="uz">O‘sha ustun bo‘shaydi</span><span data-lang="ru">Тот столбец опустеет</span><span data-lang="en">That column empties</span></h2>
+    <div class="ledger"><div class="led"><div class="led__a"><span data-lang="uz">Asosiy kompaniyadan tashqarida mijoz</span><span data-lang="ru">Клиента вне основной компании</span><span data-lang="en">A customer outside the parent company</span></div><div class="led__x">→</div><div class="led__b"><span data-lang="uz">Birinchi <em>pullik pilot</em></span><span data-lang="ru">Первый <em>платный пилот</em></span><span data-lang="en">The first <em>paying pilot</em></span></div></div><div class="led"><div class="led__a"><span data-lang="uz">Narx modeli</span><span data-lang="ru">Модели ценообразования</span><span data-lang="en">A pricing model</span></div><div class="led__x">→</div><div class="led__b"><span data-lang="uz"><em>Uch mijozda</em> tasdiqlangan narx</span><span data-lang="ru">Цена, подтверждённая <em>тремя клиентами</em></span><span data-lang="en">A price confirmed by <em>three customers</em></span></div></div><div class="led"><div class="led__a"><span data-lang="uz">Sotuv kanali</span><span data-lang="ru">Канала продаж</span><span data-lang="en">A sales channel</span></div><div class="led__x">→</div><div class="led__b"><span data-lang="uz">IT Park orqali <em>birinchi hamkorlik</em></span><span data-lang="ru"><em>Первое партнёрство</em> через IT Park</span><span data-lang="en">A <em>first partnership</em> through IT Park</span></div></div><div class="led"><div class="led__a"><span data-lang="uz">Bozor validatsiyasi</span><span data-lang="ru">Валидации рынка</span><span data-lang="en">Market validation</span></div><div class="led__x">→</div><div class="led__b"><span data-lang="uz"><em>20 ta korxona</em> bilan suhbat</span><span data-lang="ru">Интервью с <em>20 компаниями</em></span><span data-lang="en">Interviews with <em>20 companies</em></span></div></div></div>
+    <p class="punch"><span data-lang="uz">Tizim allaqachon kuniga 60 600 so‘rovni yetkazadi. Qolgani — <em>mahsulotning o‘zini kimga yetkazishni bilish</em>.</span><span data-lang="ru">Система уже доставляет 60 600 запросов в день. Осталось — <em>понять, кому доставить сам продукт</em>.</span><span data-lang="en">The system already delivers 60,600 requests a day. What is left is <em>knowing who to deliver the product to</em>.</span></p>
+    <div class="num">12</div>
+  </section>
+</div>
+
+<script>
+
+  // The traction figures count up when their slide opens. Only the leading numeric text
+  // node moves — the unit span ("%", "/s") is left alone — and the original string is
+  // kept so a revisit replays from the same value rather than from wherever it stopped.
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function countUp(slide) {
+    if (REDUCED) return;
+    slide.querySelectorAll('.fig__n').forEach(el => {
+      const node = el.firstChild;
+      if (!node || node.nodeType !== 3) return;
+      if (!el.dataset.final) el.dataset.final = node.nodeValue;
+      const final = el.dataset.final;
+      const target = parseFloat(final.replace(/\s/g, '').replace(',', '.'));
+      if (!isFinite(target)) return;
+      const decimals = (final.split('.')[1] || '').length;
+      const sep = (final.trim().match(/\d(\s)\d/) || [])[1] || '';
+      const t0 = performance.now(), DUR = 900;
+      (function step(t) {
+        const p = Math.min(1, (t - t0) / DUR);
+        const v = target * (1 - Math.pow(1 - p, 3));   // ease-out, lands exactly on target
+        let out = v.toFixed(decimals);
+        if (sep) out = out.replace(/\B(?=(\d{3})+(?!\d))/g, sep);
+        node.nodeValue = p < 1 ? out : final;
+        if (p < 1) requestAnimationFrame(step);
+      })(t0);
+    });
+  }
+
+  const slides = [...document.querySelectorAll('.slide')];
+  let i = 0;
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('is-active', k === i));
+    countUp(slides[i]);
+  }
+  function setLang(l) {
+    document.documentElement.lang = l;
+    document.querySelectorAll('.chrome button').forEach(b =>
+      b.setAttribute('aria-pressed', String(b.textContent.trim() === l)));
+  }
+  // ?lang=ru / ?lang=en — bir faylni uch tilda eksport qilish uchun. Tugmalar bilan
+  // bir xil yo'ldan o'tadi, shuning uchun aria-pressed ham to'g'ri qoladi.
+  {
+    const q = new URLSearchParams(location.search).get('lang');
+    if (['uz', 'ru', 'en'].includes(q)) setLang(q);
+  }
+
+  addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); show(i + 1); }
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); show(i - 1); }
+    if (e.key === 'f') document.documentElement.requestFullscreen?.();
+    if (['1','2','3'].includes(e.key)) setLang(['uz','ru','en'][+e.key - 1]);
+  });
+</script>
+</body>
+</html>

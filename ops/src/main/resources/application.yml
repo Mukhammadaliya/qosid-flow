@@ -29,6 +29,17 @@ ops:
   # Same key as the gateway's SETTINGS_ENCRYPTION_KEY — secrets must round-trip between both JVMs.
   settings-encryption-key: ${SETTINGS_ENCRYPTION_KEY:}
 
+# Errors/Statistics modullari uchun: Loki va Prometheus gateway'ga bog'liq emas, shuning
+# uchun ops sidecar ularni gateway to'xtatilganda ham o'qiy oladi (OpsObservabilityController).
+# Kalit nomlari gateway bilan AYNAN bir xil — sozlamalar bazasidagi qator (gateway.loki.url)
+# ikkala JVM'da bir xil ishlashi kerak, aks holda operator bir joyda o'zgartirib boshqasida
+# eski manzilni ko'radi.
+gateway:
+  loki:
+    url: ${LOKI_URL:http://localhost:3100}
+  prometheus:
+    url: ${PROMETHEUS_URL:http://localhost:9090}
+
 logging:
   level:
     root: INFO

@@ -6,8 +6,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import uz.greenwhite.gateway.stats.StatsQueryService;
-import uz.greenwhite.gateway.stats.StatsResult;
+import uz.greenwhite.qosid.observability.stats.StatsQueryService;
+import uz.greenwhite.qosid.observability.stats.StatsResult;
 
 /**
  * Read-only admin proxy over Prometheus. Under the /qosid/admin/api/** chain,

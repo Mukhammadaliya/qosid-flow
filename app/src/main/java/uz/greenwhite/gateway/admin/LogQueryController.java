@@ -6,8 +6,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import uz.greenwhite.gateway.logs.LogQueryResult;
-import uz.greenwhite.gateway.logs.LogQueryService;
+import uz.greenwhite.qosid.observability.logs.LogQueryResult;
+import uz.greenwhite.qosid.observability.logs.LogQueryService;
 
 import java.util.Map;
 

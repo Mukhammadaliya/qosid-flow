@@ -3,9 +3,22 @@ import { Card, Row, Col, Statistic, Alert, Space, Select, Switch } from 'antd';
 import { Line, Column, Funnel } from '@ant-design/plots';
 import { useTranslation } from 'react-i18next';
 import { queryStats, StatsResult, StatSeries } from '../../api/stats';
-import { SMARTUP_COLORS } from './statChartTheme';
+import { BRAND_COLORS } from './statChartTheme';
 
-const RANGES: Record<string, number> = { '15m': 900_000, '1h': 3_600_000, '6h': 21_600_000, '24h': 86_400_000 };
+const RANGES: Record<string, number> = {
+  '15m': 900_000, '1h': 3_600_000, '6h': 21_600_000,
+  '24h': 86_400_000, '7d': 604_800_000, '30d': 2_592_000_000,
+};
+
+// The step has to follow the range, not sit at a constant. A fixed 30s over 7d asks
+// Prometheus for 20160 points per series — past its 11000 ceiling, so the query fails
+// outright — and paints twelve times more points than a 240px card can resolve.
+const TARGET_POINTS = 300;
+const stepFor = (rangeMs: number) => Math.max(15, Math.round(rangeMs / 1000 / TARGET_POINTS));
+
+// A month-wide chart does not move in 30 seconds. Refresh no faster than the resolution
+// the chart is drawn at, and never slower than 5 minutes.
+const refreshFor = (stepSec: number) => Math.min(300_000, Math.max(30_000, stepSec * 1000));
 
 // x-axis keeps the raw epoch millis (avoids key collisions across 24h); labels formatted on the axis.
 function toChartData(series: StatSeries[]) {
@@ -30,8 +43,9 @@ export function StatisticsPage() {
 
   const load = useCallback(() => {
     const to = Date.now();
-    const from = to - RANGES[rangeKey];
-    const params = { from, to, step: 30 };
+    const rangeMs = RANGES[rangeKey];
+    const from = to - rangeMs;
+    const params = { from, to, step: stepFor(rangeMs) };
     Promise.all([
       queryStats('kpi', params), queryStats('throughput', params),
       queryStats('funnel', params), queryStats('errors', params), queryStats('latency', params),
@@ -46,9 +60,9 @@ export function StatisticsPage() {
   useEffect(() => {
     load();
     if (!auto) return;
-    const id = setInterval(load, 30_000);
+    const id = setInterval(load, refreshFor(stepFor(RANGES[rangeKey])));
     return () => clearInterval(id);
-  }, [load, auto]);
+  }, [load, auto, rangeKey]);
 
   const funnelData = FUNNEL_STAGES.map((stage) => ({ stage, count: funnel.kpis[stage] ?? 0 }));
 
@@ -79,25 +93,25 @@ export function StatisticsPage() {
         <Col span={12}>
           <Card title={t('stats.throughputChart')} style={{ marginBottom: 16 }}>
             <Line data={toChartData(throughput.series)} xField="time" yField="value" seriesField="series"
-              colorField="series" scale={{ color: { range: SMARTUP_COLORS } }} axis={TIME_AXIS} height={240} />
+              colorField="series" scale={{ color: { range: BRAND_COLORS } }} axis={TIME_AXIS} height={240} />
           </Card>
         </Col>
         <Col span={12}>
           <Card title={t('stats.funnelChart')} style={{ marginBottom: 16 }}>
             <Funnel data={funnelData} xField="stage" yField="count" height={240}
-              scale={{ color: { range: SMARTUP_COLORS } }} />
+              scale={{ color: { range: BRAND_COLORS } }} />
           </Card>
         </Col>
         <Col span={12}>
           <Card title={t('stats.errorsChart')}>
             <Column data={toChartData(errors.series)} xField="time" yField="value" stack colorField="series"
-              scale={{ color: { range: SMARTUP_COLORS } }} axis={TIME_AXIS} height={240} />
+              scale={{ color: { range: BRAND_COLORS } }} axis={TIME_AXIS} height={240} />
           </Card>
         </Col>
         <Col span={12}>
           <Card title={t('stats.latencyChart')}>
             <Line data={toChartData(latency.series)} xField="time" yField="value" seriesField="series"
-              colorField="series" scale={{ color: { range: SMARTUP_COLORS } }} axis={TIME_AXIS} height={240} />
+              colorField="series" scale={{ color: { range: BRAND_COLORS } }} axis={TIME_AXIS} height={240} />
           </Card>
         </Col>
       </Row>

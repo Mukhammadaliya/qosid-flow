@@ -11,11 +11,14 @@
     </parent>
     <groupId>uz.greenwhite</groupId>
     <artifactId>qosid-settings-core</artifactId>
-    <version>2.3.1</version>
+    <version>2.3.2</version>
     <name>qosid-settings-core</name>
     <properties><java.version>21</java.version></properties>
     <dependencies>
         <dependency><groupId>org.springframework</groupId><artifactId>spring-jdbc</artifactId></dependency>
+        <dependency><groupId>org.springframework</groupId><artifactId>spring-web</artifactId></dependency>
+        <dependency><groupId>org.springframework</groupId><artifactId>spring-context</artifactId></dependency>
+        <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId></dependency>
         <dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><optional>true</optional></dependency>
         <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId></dependency>
         <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId><scope>test</scope></dependency>

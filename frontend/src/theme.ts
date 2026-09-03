@@ -1,6 +1,6 @@
 import type { ThemeConfig } from 'antd';
 
-export const smartupTheme: ThemeConfig = {
+export const qosidTheme: ThemeConfig = {
   token: {
     colorPrimary: '#0095D9',
     colorSuccess: '#2EC27E',

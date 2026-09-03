@@ -49,6 +49,7 @@ public class GatewayMetrics {
     private final Counter httpError4xx;
     private final Counter httpError5xx;
     private final Counter httpTimeout;
+    private final Counter httpDeferred;
     private final Counter httpRetry;
     private final Counter httpCircuitBreakerOpen;
     private final Counter cbRequeueExhausted;
@@ -187,6 +188,18 @@ public class GatewayMetrics {
                 .description("HTTP request timeouts")
                 .tag("stage", "http_request")
                 .tag("result", "timeout")
+                .register(registry);
+
+        // Back-pressure, not an upstream failure. An open circuit or a refused host permit
+        // returns a synthetic 503 (HttpRequestService#buildCbShapedResponse) and the message
+        // is parked and re-queued — it has not failed, it has not been sent yet. Counting
+        // those as error_5xx made the deferrals dominate the error rate: on production
+        // 2026-08-01 the counter read 740 174 "5xx" against 740 156 requeues, and the
+        // dashboard reported a 26.8% success rate for a pipeline actually running at 99.68%.
+        this.httpDeferred = Counter.builder("gateway.http.request.total")
+                .description("Requests deferred by back-pressure (open circuit or host limiter)")
+                .tag("stage", "http_request")
+                .tag("result", "deferred")
                 .register(registry);
 
         this.httpRetry = Counter.builder("gateway.http.request.retry")
@@ -341,6 +354,24 @@ public class GatewayMetrics {
         } else if (statusCode >= 500) {
             httpError5xx.increment();
         }
+    }
+
+    /**
+     * Record an HTTP result that may be a back-pressure deferral rather than a real answer.
+     *
+     * <p>A deferred request carries a synthetic 503 it never got from the upstream — the call
+     * was never made. It belongs in its own bucket, so that success and error rates describe
+     * requests that actually reached a server.
+     *
+     * @param deferred {@code true} for the CB-shaped response (open circuit or refused host
+     *                 permit), which the caller identifies by {@code errorSource=CIRCUIT_BREAKER}
+     */
+    public void recordHttpResult(int statusCode, boolean deferred) {
+        if (deferred) {
+            httpDeferred.increment();
+            return;
+        }
+        recordHttpResult(statusCode);
     }
 
     /**

@@ -1,7 +1,7 @@
 import { ReactNode, Suspense, lazy } from 'react';
 import { ConfigProvider, Spin } from 'antd';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { smartupTheme } from './theme';
+import { qosidTheme } from './theme';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { LoginPage } from './auth/LoginPage';
@@ -40,7 +40,7 @@ function ForcePasswordChange({ children }: { children: ReactNode }) {
 
 export default function App() {
   return (
-    <ConfigProvider theme={smartupTheme}>
+    <ConfigProvider theme={qosidTheme}>
       <BrowserRouter>
         <AuthProvider>
           <Routes>

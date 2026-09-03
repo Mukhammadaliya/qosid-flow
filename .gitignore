@@ -63,3 +63,16 @@ ops-local-stop.cmd
 # command. Until now it was only excluded by the developer's GLOBAL gitignore,
 # so a fresh clone on another machine would have committed it.
 .claude/settings.local.json
+# Everything the pitch deck loads from disk, for two independent reasons — narrowing this
+# rule to just one of them re-opens the other:
+#   img/*.jpg      captures of the live production console: real tenant ids, real request
+#                  ids and the upstream hostname.
+#   img/team/      photographs of five named team members — personal data, and consent to
+#                  put a face in a grant application is not consent to publish it in a repo.
+# The deck reads them from the working tree, so nothing here needs to be committed for it
+# to work. Keep this as a directory rule; do not replace it with a filename pattern.
+docs/pta-deck/img/
+# Deck'ning PDF eksporti — generatsiya qilinadigan artefakt (~3.5 MB × 3 til).
+# Manba `index.html`, qayta yaratish: docs/pta-deck/export-pdf.js. Binar fayllarni
+# git tarixiga solish deck har tahrirlanganda 10 MB qo'shadi va farqi ko'rinmaydi.
+docs/pta-deck/export/

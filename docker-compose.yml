@@ -13,6 +13,17 @@ version: '3.8'
 # (KAFKA_BOOTSTRAP_SERVERS=localhost:19092, REDIS_HOST=localhost), demak loopback yetarli.
 # Tashqaridan kirish kerak bo'lsa: SSH tunnel yoki nginx reverse-proxy + auth.
 
+# ============================================================
+# RESTART POLICY — HAR BIR servisda `restart: unless-stopped` bo'lishi SHART
+# ============================================================
+# 2026-08-12 da demo serveri o'chdi. `restart:` bo'lgan to'rt servis (loki, promtail,
+# alertmanager, redis-exporter) qaytdi; `redpanda`, `redis`, `prometheus`, `grafana`,
+# `redpanda-console`, `redis-commander` da bu satr YO'Q edi va keyingi UCHTA reboot'dan
+# keyin ham ko'tarilmadi. Gateway esa ishlab turdi — ya'ni olti kun davomida Kafka'siz va
+# Redis'siz: har bir REST so'rovi `KafkaException: Send failed` bilan 500 qaytardi,
+# NetworkClient sekundiga ~44 satr yozdi (12 soatda 1.9 mln satr, log fayli 4.7 GB gacha),
+# Statistika paneli esa Prometheus o'lgani uchun bo'sh turdi.
+# Yangi servis qo'shsangiz, bu satrni ham qo'shing.
 services:
   # ==========================================
   # REDPANDA (Kafka)
@@ -46,6 +57,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   # ==========================================
   # KAFKA CONSOLE (UI)
@@ -72,6 +84,7 @@ services:
             urls: ["http://redpanda:9644"]
     entrypoint: /bin/sh
     command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml && /app/console'
+    restart: unless-stopped
 
   # ==========================================
   # KAFKA TOPICS INIT
@@ -112,6 +125,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   # ==========================================
   # REDIS COMMANDER (UI)
@@ -126,6 +140,7 @@ services:
       - "127.0.0.1:8085:8081"
     environment:
       REDIS_HOSTS: local:redis:6379
+    restart: unless-stopped
 
   # ============================================================
   # REDIS EXPORTER (Prometheus Metrics)
@@ -148,6 +163,12 @@ services:
   prometheus:
     image: prom/prometheus:v2.50.1
     container_name: prometheus
+    # prometheus.yml scrapes the gateway at host.docker.internal:8091 because the JAR runs on
+    # the host, not in Docker. That name is a Docker Desktop convenience and does NOT exist on
+    # Linux without this mapping — every scrape then fails DNS, no gateway_* series is ever
+    # stored, and both the Statistics dashboard and gateway-alerts.yml go permanently silent.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:9090:9090"
     volumes:
@@ -158,6 +179,7 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.enable-lifecycle'
+    restart: unless-stopped
 
   # ============================================================
   # GRAFANA (Dashboards)
@@ -175,6 +197,7 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
+    restart: unless-stopped
 
   # ============================================================
   # ALERTMANAGER (Notifications)

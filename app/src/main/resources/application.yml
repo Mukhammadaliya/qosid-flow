@@ -21,15 +21,13 @@ spring:
 
   kafka:
     bootstrap-servers: ${gateway.kafka.bootstrap-servers}
-    consumer:
-      group-id: ${gateway.kafka.group-id}
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "*"
-        fetch.max.bytes: "20971520"
-        max.partition.fetch.bytes: "20971520"
+    # NOTE: there is deliberately no `consumer:` block here. KafkaConfig declares its own
+    # ConsumerFactory bean, so Spring Boot's auto-configured one backs off and every
+    # `spring.kafka.consumer.*` key is INERT — anything written here silently does nothing.
+    # That is how `spring.json.trusted.packages: "*"` sat here looking like an open RCE hole
+    # (the real, restricted value is set in KafkaConfig) and how two 20 MiB fetch settings were
+    # never applied. Consumer settings go in KafkaConfig.consumerFactory(). The producer block
+    # below IS live — no ProducerFactory bean is declared, so Boot's auto-config builds it.
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -333,6 +331,16 @@ logging:
     org.apache.kafka: WARN
     org.springframework.kafka.listener: INFO
     org.apache.kafka.clients.Metadata: INFO
+    # NetworkClient logs one WARN per reconnect attempt, per client. With 22 consumer clients
+    # plus the producer that is ~44 lines a SECOND while the broker is unreachable: a demo box
+    # measured 1.9 million such lines in twelve hours, and they were the bulk of a log file that
+    # reached 4.7 GB in three days. The same failure mode filled a 57 GB volume in May 2026 and
+    # took the service down for 34 hours, so log volume here is an availability concern, not
+    # tidiness. An unreachable broker stays loud through channels that report it ONCE rather
+    # than per retry: ConcurrencyMonitorService (first failure + recovery), the
+    # enqueue-failure logs in ProxyController / LoggingProducerListener, the actuator health
+    # indicator's per-consumer lag, and DLQ alerts on message expiry.
+    org.apache.kafka.clients.NetworkClient: ERROR
   pattern:
     console: "%d{HH:mm:ss.SSS} %-5level [%15.15thread] %-40.40logger{39} : %msg%n"
 
