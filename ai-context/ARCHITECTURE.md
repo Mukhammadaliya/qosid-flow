@@ -251,7 +251,7 @@ rules 23 and 40.
 | `http/` | E4 — HTTP client with CB + OAuth2 + per-host concurrency bound | `HttpRequestService`, `HostConcurrencyLimiter` |
 | `state/` | Redis state management + distributed locks | `RequestStateService` |
 | `oauth2/` | OAuth2 token caching + distributed locking | `OAuth2ProviderService`, `OAuth2TokenRedisCache`, `OAuth2ProviderFetcher` |
-| `oauth2/client/` | Pluggable OAuth2 client implementations | `OAuth2Client` (interface), `JsonBodyOAuth2Client` (`getName()="biruni"`, JSON body), `StandardOAuth2Client` (`type=standard`, RFC 6749 form-urlencoded, e.g. Regos) |
+| `oauth2/client/` | Pluggable OAuth2 client implementations | `OAuth2Client` (interface), `JsonBodyOAuth2Client` (`getName()="biruni"`, JSON body), `StandardOAuth2Client` (`type=standard`, RFC 6749 form-urlencoded, e.g. Regos), `MisonOAuth2Client` (`type=mison`, JSON `{"api_key"}` body, API key carried in `clientId`, no refresh token — MISON POS) |
 | `oauth2/model/` | OAuth2 data models | `Token`, `ProviderProperties`, `OAuth2TokenRequest` |
 | `concurrency/` | Dynamic consumer thread scaling | `DynamicConcurrencyManager`, `ConcurrencyMonitorService`, `ConcurrencyMetrics` |
 | `metrics/` | Centralized metrics (all metrics in one class) | `GatewayMetrics` |

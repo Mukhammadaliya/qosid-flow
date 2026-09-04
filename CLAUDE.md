@@ -1,6 +1,6 @@
 # Qosid Flow (qosid-flow)
 
-Java 21 + Spring Boot 3.3.0 microservice that pulls HTTP requests from a pluggable **source system** (Biruni is the reference implementation; see `ai-context/SOURCE-INTEGRATION-CONTRACT.md`) **or accepts them via REST** (`/qosid/api/v1/queue/**`), routes them through Kafka for load balancing, sends to external APIs with Circuit Breaker + OAuth2 + retry, stores response bodies in RocksDB (7-day retention), fires per-request callbacks, and saves source-originated responses back to the source. The source connector is `SourceClient` (`oracle/` package). Package: `uz.greenwhite.gateway`.
+Java 21 + Spring Boot 3.5.16 microservice that pulls HTTP requests from a pluggable **source system** (Biruni is the reference implementation; see `ai-context/SOURCE-INTEGRATION-CONTRACT.md`) **or accepts them via REST** (`/qosid/api/v1/queue/**`), routes them through Kafka for load balancing, sends to external APIs with Circuit Breaker + OAuth2 + retry, stores response bodies in RocksDB (7-day retention), fires per-request callbacks, and saves source-originated responses back to the source. The source connector is `SourceClient` (`oracle/` package). Package: `uz.greenwhite.gateway`.
 
 ## AI Context Documentation
 
