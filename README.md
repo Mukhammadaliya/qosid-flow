@@ -4,7 +4,7 @@
 directions.**
 
 Java 21 · Spring Boot 3.5 · Apache Kafka · Redis · RocksDB
-Version 2.3.1 · in production since April 2026
+Version 2.4.0 · in production since April 2026
 
 ---
 
@@ -121,7 +121,7 @@ and 1 358 reached the dead-letter queue, out of 424 134 in total.
 | Success rate | **99.68 %** — a request that reached the DLQ is counted as failed, even where a later retry carried it through |
 | Peak burst handled | **918 requests/second**, zero loss (380/s on an ordinary day) |
 | Automated tests | **527** — 390 backend (app 304, ops 56, settings-core 30), 137 frontend |
-| Documented safety rules | **41**, each pinned by a test |
+| Documented safety rules | **42**, each pinned by a test |
 | Codebase | 13 103 lines of Java, 2 761 of TypeScript |
 
 ---
@@ -237,7 +237,7 @@ project rule:
 | [OVERVIEW.md](ai-context/OVERVIEW.md) | Identity, stack, ports, repository layout |
 | [ARCHITECTURE.md](ai-context/ARCHITECTURE.md) | Pipeline stages, components, data flow |
 | [CONFIGURATION.md](ai-context/CONFIGURATION.md) | Every parameter, default and env var |
-| [SAFETY-RULES.md](ai-context/SAFETY-RULES.md) | 41 rules that must not be broken, and why |
+| [SAFETY-RULES.md](ai-context/SAFETY-RULES.md) | 42 rules that must not be broken, and why |
 | [CONVENTIONS.md](ai-context/CONVENTIONS.md) | Code style, DI, logging, metrics, anti-patterns |
 | [EXTENSION-GUIDE.md](ai-context/EXTENSION-GUIDE.md) | Recipes: new consumer, OAuth2 provider, metric |
 | [DOMAIN-GLOSSARY.md](ai-context/DOMAIN-GLOSSARY.md) | Terms used throughout the codebase |

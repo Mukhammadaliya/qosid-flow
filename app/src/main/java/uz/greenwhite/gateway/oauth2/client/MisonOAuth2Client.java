@@ -10,6 +10,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import uz.greenwhite.gateway.oauth2.model.ProviderProperties;
 import uz.greenwhite.gateway.oauth2.model.Token;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -77,9 +79,14 @@ public class MisonOAuth2Client implements OAuth2Client {
             JsonNode accessToken = json.get("access_token");
             JsonNode expiresIn = json.get("expires_in");
             if (accessToken == null || expiresIn == null) {
-                // Provider returned 2xx but an error/unexpected payload — log the raw body for diagnosis.
+                // Provider returned 2xx but an error/unexpected payload. Name the keys, not the
+                // body: a token fetch runs on a per-request retry path and an upstream error page
+                // can be kilobytes (SAFETY-RULES 42). Same shape as JsonBodyOAuth2Client.
+                List<String> keys = new ArrayList<>();
+                json.fieldNames().forEachRemaining(keys::add);
                 throw new IllegalStateException(
-                        "Token response missing access_token/expires_in: " + responseBody);
+                        "Token response missing access_token/expires_in. Keys present: "
+                                + String.join(",", keys));
             }
 
             JsonNode tokenType = json.get("token_type");
