@@ -111,9 +111,13 @@ services:
       redpanda:
         condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
-    command: >
-      rpk cluster config set kafka_batch_max_bytes 20971520 -X admin.hosts=redpanda:9644
-      && echo "kafka_batch_max_bytes=$$(rpk cluster config get kafka_batch_max_bytes -X admin.hosts=redpanda:9644)"
+    # Ro'yxat ko'rinishi SHART: compose satr-ko'rinishdagi `command:`ni so'zlarga bo'lib yuboradi,
+    # shunda `sh -c` skript sifatida faqat "rpk"ni oladi va help matni chiqib exit 0 bo'ladi
+    # (2026-09-05 prod'da aynan shu bo'ldi). Bitta elementli ro'yxat butun satrni skript qiladi.
+    command:
+      - >-
+        rpk cluster config set kafka_batch_max_bytes 20971520 -X admin.hosts=redpanda:9644
+        && echo "kafka_batch_max_bytes=$$(rpk cluster config get kafka_batch_max_bytes -X admin.hosts=redpanda:9644)"
     restart: on-failure
 
   # ==========================================
