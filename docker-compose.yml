@@ -44,6 +44,14 @@ services:
       - --smp 1
       - --memory 1G
       - --mode dev-container
+      # 20 MiB Kafka xabar shipi — gateway'ning max.request.size / fetch.max.bytes /
+      # gateway.proxy.max-body-size bilan bir xil raqam. `--set` faqat YANGI klaster
+      # bootstrap'ida qo'llanadi (.bootstrap.yaml); ishlab turgan klasterda cluster-property
+      # controller log'da yashaydi va uni pastdagi `redpanda-config` xizmati har `compose up`da
+      # qayta tasdiqlaydi. Ikkalasi ham kerak: 2026-09-04 da prod'da qiymat 1 MB (default)ga
+      # qaytib ketgani aniqlandi — 2026-04 dagi qo'lda `rpk cluster config set` konteyner qayta
+      # yaratilganda yo'qolgan, va buni bir necha hafta hech kim sezmagan.
+      - --set redpanda.kafka_batch_max_bytes=20971520
       - --default-log-level=info
     ports:
       - "127.0.0.1:18081:18081"
@@ -87,27 +95,26 @@ services:
     restart: unless-stopped
 
   # ==========================================
-  # KAFKA TOPICS INIT
+  # REDPANDA CLUSTER CONFIG (bir martalik, idempotent)
   # ==========================================
-#  kafka-init:
-#    image: redpandadata/redpanda:v24.1.1
-#    container_name: kafka-init
-#    depends_on:
-#      redpanda:
-#        condition: service_healthy
-#    entrypoint: ["/bin/bash", "-c"]
-#    command: |
-#      "
-#      echo 'Creating Kafka topics...'
-#
-#      rpk topic create bmb.request.new --brokers redpanda:9092 --partitions 10 --replicas 1
-#      rpk topic create bmb.request.response --brokers redpanda:9092 --partitions 10 --replicas 1
-#      rpk topic create bmb.request.callback --brokers redpanda:9092 --partitions 10 --replicas 1
-#      rpk topic create bmb.request.dlq --brokers redpanda:9092 --partitions 3 --replicas 1
-#
-#      echo 'Topics created:'
-#      rpk topic list --brokers redpanda:9092
-#      "
+  # Ishlab turgan klasterda cluster-property'ni `redpanda start --set` O'ZGARTIRMAYDI (u faqat
+  # bootstrap uchun). Bu xizmat redpanda healthy bo'lgach `rpk cluster config set` qiladi va
+  # chiqib ketadi — har `docker compose up -d`da qayta ishlaydi, qiymat bir xil bo'lsa
+  # Redpanda'da hech narsa o'zgarmaydi (restart talab qilinmaydi). Bu 20 MiB shipining yagona
+  # deklarativ kafolati; qo'lda `rpk cluster config set` qilib "saqlanib qoladi" deb ishonmang.
+  # (Topic'lar KafkaConfig'dagi NewTopic bean'lari orqali gateway'ning o'zi yaratadi —
+  # oldingi kafka-init bloki shu sababli olib tashlandi.)
+  redpanda-config:
+    image: redpandadata/redpanda:v24.1.1
+    container_name: redpanda-config
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      rpk cluster config set kafka_batch_max_bytes 20971520 -X admin.hosts=redpanda:9644
+      && echo "kafka_batch_max_bytes=$$(rpk cluster config get kafka_batch_max_bytes -X admin.hosts=redpanda:9644)"
+    restart: on-failure
 
   # ==========================================
   # REDIS

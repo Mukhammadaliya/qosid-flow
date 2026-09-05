@@ -601,3 +601,23 @@ Two hardening measures are shipped **off** because turning them on today would b
 Every published port is bound to `127.0.0.1`. This matters more than it looks: a bare `"6379:6379"` binds `0.0.0.0` **and bypasses the host firewall** — Docker writes its own `DOCKER-USER`/nat rules, so a `ufw deny` on the port does not apply. On the prod host that left unauthenticated Redis (6379), Redpanda (19092 + admin 19644 + pandaproxy 18082 + schema-registry 18081), Grafana (3000, `admin`/`admin123`), redis-commander (8085), redpanda-console (8082), alertmanager (9093) and redis-exporter (9121) reachable from the network. Prometheus (9090) and Loki (3100) were already loopback-bound.
 
 Container-to-container traffic is unaffected — services reach each other by compose DNS name on the internal network (`redpanda:9092`, `redis:6379`), which never goes through a published port. The gateway/ops JVMs run on the host and connect over loopback (`KAFKA_BOOTSTRAP_SERVERS=localhost:19092`, `REDIS_HOST=localhost`), so they are unaffected too. For remote access to a UI, use an SSH tunnel or an authenticated nginx reverse-proxy.
+
+### Redpanda `kafka_batch_max_bytes` — the broker half of the 20 MiB ceiling
+
+The gateway caps a message at 20 MiB on every leg it controls (`max.request.size`, `fetch.max.bytes`,
+`max.partition.fetch.bytes`, `gateway.proxy.max-body-size` — see rule 38), but the **broker's own
+ceiling is Redpanda's cluster property `kafka_batch_max_bytes`, default 1 MiB**. Below it, a body
+over 1 MiB is accepted by the proxy (`202`) and then rejected by the broker at produce time. It is
+pinned in `docker-compose.yml` twice, and both halves are needed:
+
+- `redpanda start --set redpanda.kafka_batch_max_bytes=20971520` — applied **only when a cluster is
+  bootstrapped for the first time** (`.bootstrap.yaml`); a running cluster ignores it.
+- the one-shot `redpanda-config` service — runs `rpk cluster config set kafka_batch_max_bytes 20971520`
+  after `redpanda` reports healthy, on **every** `docker compose up -d`, then exits. Idempotent, needs
+  no broker restart. Check it with `docker logs redpanda-config` (prints the effective value) or
+  `docker exec redpanda rpk cluster config get kafka_batch_max_bytes`.
+
+Why the belt and braces: the value was set by hand with `rpk cluster config set` in April 2026 and
+believed persistent. On 2026-09-04 it was found back at the 1 MiB default on production — lost at some
+container recreation in between, unnoticed for weeks because ordinary traffic is far below 1 MiB. A
+hand-set cluster property is not configuration; only the compose file is.
