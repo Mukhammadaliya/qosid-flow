@@ -204,7 +204,7 @@ public class ProxyController {
                 .method(request.getMethod())
                 .headers(headers)
                 .body(bodyStr)
-                .params(request.getQueryString())
+                .params(querySeparated(request))
                 .clientIp(clientIp)
                 .contentType(contentType)
                 .callbackUrl(callbackUrl)
@@ -252,6 +252,22 @@ public class ProxyController {
      * (larger) {@code spring.servlet.multipart.*} limits so real S3 uploads are unaffected —
      * see {@link ProxyProperties#getMaxBodySize()} for the sizing rationale.</p>
      */
+    /**
+     * The client's query string, carrying its own '?'.
+     *
+     * The servlet API hands it over without one, while the outbound URL is assembled by
+     * concatenating base + uri + params verbatim -- the documented BMB contract, which the Oracle
+     * senders rely on to place an object path in params ("Document_Foo", "Catalog_Bar?$select=..").
+     * Deciding at assembly time whether a separator is missing means guessing whether params is a
+     * path or a query, and the two are not distinguishable: "Document_Foo" and a valueless flag
+     * like "debug" look alike. Supplying the separator here removes the guess -- params either
+     * carries one or is a path.
+     */
+    static String querySeparated(HttpServletRequest request) {
+        String query = request.getQueryString();
+        return (query == null || query.isBlank()) ? null : "?" + query;
+    }
+
     private byte[] readBodyBounded(HttpServletRequest request) throws IOException {
         long max = proxyProperties.getMaxBodySize();
         if (max <= 0) {

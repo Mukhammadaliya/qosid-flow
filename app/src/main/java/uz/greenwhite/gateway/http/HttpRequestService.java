@@ -350,7 +350,7 @@ public class HttpRequestService {
 
     /**
      * Build full URL from base URL, URI path, and query parameters.
-     * Package-private for unit tests (query separator logic).
+     * Package-private for unit tests.
      */
     String buildFullUrl(RequestMessage request) {
         StringBuilder url = new StringBuilder(request.getBaseUrl());
@@ -359,37 +359,19 @@ public class HttpRequestService {
             url.append(request.getUri());
         }
 
+        // Appended verbatim: params carries its own separator. That is the documented BMB
+        // contract -- bmb_requests.params is "URL parameters including path and query string
+        // (ex: /John?year=2025)" -- and the Oracle senders depend on it: an object name may be
+        // non-ascii (rejected in uri by Bmb_Util.Is_Valid_Url) and may carry a per-request key,
+        // while uri belongs to the endpoint and is fixed.
+        //
+        // Inserting a separator here would have to guess whether params is a path or a query, and
+        // the two are not distinguishable -- "Document_Foo" (a create POST addressing a collection)
+        // and "debug" (a valueless query flag) are the same shape. Guessing by "does it contain a
+        // '?'" got the reads right and sent every create/update to the service root, which answers
+        // 405. The /queue proxy therefore supplies its own '?' (ProxyController.querySeparated).
         if (request.getParams() != null && !request.getParams().isEmpty()) {
-            String params = request.getParams();
-            // Query ajratkichi: params yalang'och "a=1&b=2" bo'lsa '?' (URL'da allaqachon '?'
-            // bo'lsa '&') qo'shiladi; params o'zi '?'/'&' bilan kelsa — hech narsa qo'shilmaydi.
-            // Busiz /queue GET so'rovlarida query path'ga yopishib ketardi (/smalla=1).
-            //
-            // params query string'dan oldin path bo'lagini ham olib kelishi mumkin -- BMB
-            // shartnomasi aynan shuni yozadi (bmb_requests.params: "URL parameters including path
-            // and query string (ex: /John?year=2025)"). OData jo'natuvchilari shunga tayanadi:
-            // ob'ekt nomi kirillcha bo'lgani uchun uri'da tura olmaydi, ba'zi amallarda esa u har
-            // so'rovda o'zgaradigan guid saqlaydi, uri esa endpoint'niki va o'zgarmas.
-            // Shuning uchun ajratkich faqat yalang'och query'ga qo'shiladi: '/' bilan boshlansa —
-            // path davom etyapti; ichida '?' bo'lsa-yu u birinchi '='dan OLDIN tursa — params
-            // "path?query" shaklida kelgan va o'z ajratkichini olib kelgan.
-            //
-            // "Birinchi '='dan oldin" sharti muhim: REST proxy (/queue) params sifatida klientning
-            // xom query-string'ini beradi, va query QIYMATI ichida yalang'och '?' bo'lishi RFC 3986
-            // bo'yicha mumkin ("filter=a?b", "redirect=https://x/y?z=1"). Faqat "'?' bor" deb
-            // ajratkichni tashlab yuborish bunday so'rovni "/xfilter=a?b" ga aylantirib buzardi.
-            // Yalang'och query'da esa '=' har doim birinchi '?'dan oldin keladi.
-            int firstQ = params.indexOf('?');
-            int firstEq = params.indexOf('=');
-            boolean pathThenQuery = firstQ >= 0 && (firstEq < 0 || firstQ < firstEq);
-            boolean carriesOwnSeparator = params.startsWith("?")
-                    || params.startsWith("&")
-                    || params.startsWith("/")
-                    || pathThenQuery;
-            if (!carriesOwnSeparator) {
-                url.append(url.indexOf("?") >= 0 ? '&' : '?');
-            }
-            url.append(params);
+            url.append(request.getParams());
         }
 
         return url.toString();
