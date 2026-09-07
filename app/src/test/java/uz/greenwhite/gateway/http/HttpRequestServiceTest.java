@@ -150,20 +150,20 @@ class HttpRequestServiceTest {
         url("https://example.com/api/items/42", "/api/items", "/42");
     }
 
-    // The REST proxy hands over the client's raw query string as params, and a query VALUE may
-    // legitimately contain a bare '?' (RFC 3986 allows it in the query part). That must still be
-    // recognised as a bare query and get its separator — only a '?' that comes BEFORE the first
-    // '=' marks a "path?query" params.
+    // A query VALUE may legitimately contain a bare '?' (RFC 3986 allows it in the query part).
+    // Under the verbatim contract that is harmless by construction: the /queue proxy already
+    // prefixed the '?' (ProxyController.querySeparated), so nothing here has to guess where the
+    // query starts — the case that broke the "does params contain '?'" heuristic of PR #31.
     @Test
-    void bareQueryWithQuestionMarkInsideAValueStillGetsSeparator() {
+    void proxyQueryWithQuestionMarkInsideAValueIsJoinedVerbatim() {
         assertEquals("https://example.com/search?filter=a?b&x=1",
-                service.buildFullUrl(req("/search", "filter=a?b&x=1")));
+                service.buildFullUrl(req("/search", "?filter=a?b&x=1")));
     }
 
     @Test
-    void bareQueryWithUrlValueContainingQueryStillGetsSeparator() {
+    void proxyQueryWithUrlValueContainingQueryIsJoinedVerbatim() {
         assertEquals("https://example.com/go?redirect=https://x/y?z=1",
-                service.buildFullUrl(req("/go", "redirect=https://x/y?z=1")));
+                service.buildFullUrl(req("/go", "?redirect=https://x/y?z=1")));
     }
 
     @Test

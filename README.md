@@ -4,7 +4,7 @@
 directions.**
 
 Java 21 · Spring Boot 3.5 · Apache Kafka · Redis · RocksDB
-Version 2.4.1 · in production since April 2026
+Version 2.4.2 · in production since April 2026
 
 ---
 
