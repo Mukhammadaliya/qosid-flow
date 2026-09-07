@@ -57,8 +57,11 @@ class HttpRequestServiceTest {
                 circuitBreakerRegistry, oAuth2ProviderService, webClient, hostLimiter, metrics);
     }
 
-    // buildFullUrl: bare query params must be joined with '?' (or '&' when the URI
-    // already carries one) — without the separator /queue GETs forwarded /pathx=1.
+    // buildFullUrl appends params verbatim: params carries its own separator (the documented
+    // BMB contract, bmb_requests.params = "URL parameters including path and query string,
+    // ex: /John?year=2025"). The /queue proxy prepends the '?' itself -- see
+    // ProxyController.querySeparated -- because a path segment and a valueless query flag are
+    // indistinguishable here.
     private RequestMessage req(String uri, String params) {
         return RequestMessage.builder()
                 .tenantId(1L).requestId(2L)
@@ -68,56 +71,83 @@ class HttpRequestServiceTest {
                 .build();
     }
 
+    private void url(String expected, String uri, String params) {
+        assertEquals(expected, service.buildFullUrl(req(uri, params)));
+    }
+
+    // --- /queue proxy: the separator arrives with the params ---------------------------------
+
     @Test
-    void bareParamsJoinedWithQuestionMark() {
-        assertEquals("https://example.com/small?a=1&b=2",
-                service.buildFullUrl(req("/small", "a=1&b=2")));
+    void proxyQueryCarriesItsOwnSeparator() {
+        url("https://example.com/small?a=1&b=2", "/small", "?a=1&b=2");
     }
 
     @Test
-    void paramsWithLeadingQuestionMarkNotDoubled() {
-        assertEquals("https://example.com/small?a=1",
-                service.buildFullUrl(req("/small", "?a=1")));
-    }
-
-    @Test
-    void uriAlreadyHasQueryParamsJoinedWithAmpersand() {
-        assertEquals("https://example.com/small?x=0&a=1",
-                service.buildFullUrl(req("/small?x=0", "a=1")));
+    void proxyValuelessFlagQueryIsNotMistakenForAPath() {
+        url("https://example.com/small?debug", "/small", "?debug");
     }
 
     @Test
     void noParamsLeavesUrlUntouched() {
-        assertEquals("https://example.com/small",
-                service.buildFullUrl(req("/small", null)));
+        url("https://example.com/small", "/small", null);
     }
 
-    // params may carry a path segment before its query string -- the documented BMB contract
-    // (bmb_requests.params: "URL parameters including path and query string, ex: /John?year=2025").
-    // Inserting a separator there pushes the segment into the query and the request hits the
-    // service root, which an OData service answers with 200 and its service document.
     @Test
-    void pathSegmentInParamsStaysOnThePath() {
-        assertEquals("https://example.com/Catalog_X?$select=Ref_Key,Code",
-                service.buildFullUrl(req("/", "Catalog_X?$select=Ref_Key,Code")));
+    void emptyParamsLeavesUrlUntouched() {
+        url("https://example.com/small", "/small", "");
     }
+
+    @Test
+    void nullUriAndParamsYieldTheBaseUrl() {
+        url("https://example.com", null, null);
+    }
+
+    // --- Oracle senders: every params form sbe_dalion builds ----------------------------------
+
+    @Test
+    void createPostAddressesTheCollection() {                       // Send_Order_Export
+        url("https://example.com/Document_Foo", "/", "Document_Foo");
+    }
+
+    @Test
+    void patchAddressesOneDocumentByKey() {                         // Send_Order_Update/Status/Cancel
+        url("https://example.com/Document_Foo(guid'abc')", "/", "Document_Foo(guid'abc')");
+    }
+
+    @Test
+    void readWithSelectAndFilter() {                                // Send_Product_Sync, partners, warehouses
+        url("https://example.com/Catalog_Foo?$select=Ref_Key,Code&$filter=IsFolder eq false",
+            "/", "Catalog_Foo?$select=Ref_Key,Code&$filter=IsFolder eq false");
+    }
+
+    @Test
+    void readWithExpand() {                                         // Send_Order_Sync
+        url("https://example.com/Document_Foo?$expand=Bar&$filter=Date ge datetime'2026-09-05'",
+            "/", "Document_Foo?$expand=Bar&$filter=Date ge datetime'2026-09-05'");
+    }
+
+    @Test
+    void virtualTableUnderAnAccumulationRegister() {                // Send_Balance_Sync
+        url("https://example.com/AccumulationRegister_Foo/Balance?$filter=Bar eq guid'abc'",
+            "/", "AccumulationRegister_Foo/Balance?$filter=Bar eq guid'abc'");
+    }
+
+    @Test
+    void sliceLastUnderAnInformationRegister() {                    // Send_Price_Sync
+        url("https://example.com/InformationRegister_Foo_RecordType/SliceLast?$filter=Bar/Code eq '1'",
+            "/", "InformationRegister_Foo_RecordType/SliceLast?$filter=Bar/Code eq '1'");
+    }
+
+    // --- the contract's own example ----------------------------------------------------------
 
     @Test
     void documentedParamsExampleIsJoinedVerbatim() {
-        assertEquals("https://example.com/John?year=2025",
-                service.buildFullUrl(req("", "/John?year=2025")));
+        url("https://example.com/John?year=2025", "", "/John?year=2025");
     }
 
     @Test
     void paramsContinuingThePathGetNoSeparator() {
-        assertEquals("https://example.com/api/items/42",
-                service.buildFullUrl(req("/api/items", "/42")));
-    }
-
-    @Test
-    void perRequestKeyInPathSegmentSurvives() {
-        assertEquals("https://example.com/Document_D(guid'abc')?$expand=S",
-                service.buildFullUrl(req("/", "Document_D(guid'abc')?$expand=S")));
+        url("https://example.com/api/items/42", "/api/items", "/42");
     }
 
     // The REST proxy hands over the client's raw query string as params, and a query VALUE may
