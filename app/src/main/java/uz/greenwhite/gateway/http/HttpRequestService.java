@@ -364,7 +364,19 @@ public class HttpRequestService {
             // Query ajratkichi: params yalang'och "a=1&b=2" bo'lsa '?' (URL'da allaqachon '?'
             // bo'lsa '&') qo'shiladi; params o'zi '?'/'&' bilan kelsa — hech narsa qo'shilmaydi.
             // Busiz /queue GET so'rovlarida query path'ga yopishib ketardi (/smalla=1).
-            if (!params.startsWith("?") && !params.startsWith("&")) {
+            //
+            // params query string'dan oldin path bo'lagini ham olib kelishi mumkin -- BMB
+            // shartnomasi aynan shuni yozadi (bmb_requests.params: "URL parameters including path
+            // and query string (ex: /John?year=2025)"). OData jo'natuvchilari shunga tayanadi:
+            // ob'ekt nomi kirillcha bo'lgani uchun uri'da tura olmaydi, ba'zi amallarda esa u har
+            // so'rovda o'zgaradigan guid saqlaydi, uri esa endpoint'niki va o'zgarmas.
+            // Shuning uchun ajratkich faqat yalang'och query'ga qo'shiladi: params ichida '?'
+            // bo'lsa u o'z ajratkichini olib kelgan, '/' bilan boshlansa — path davom etyapti.
+            boolean carriesOwnSeparator = params.startsWith("?")
+                    || params.startsWith("&")
+                    || params.startsWith("/")
+                    || params.indexOf('?') >= 0;
+            if (!carriesOwnSeparator) {
                 url.append(url.indexOf("?") >= 0 ? '&' : '?');
             }
             url.append(params);

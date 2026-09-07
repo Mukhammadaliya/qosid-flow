@@ -91,4 +91,32 @@ class HttpRequestServiceTest {
         assertEquals("https://example.com/small",
                 service.buildFullUrl(req("/small", null)));
     }
+
+    // params may carry a path segment before its query string -- the documented BMB contract
+    // (bmb_requests.params: "URL parameters including path and query string, ex: /John?year=2025").
+    // Inserting a separator there pushes the segment into the query and the request hits the
+    // service root, which an OData service answers with 200 and its service document.
+    @Test
+    void pathSegmentInParamsStaysOnThePath() {
+        assertEquals("https://example.com/Catalog_X?$select=Ref_Key,Code",
+                service.buildFullUrl(req("/", "Catalog_X?$select=Ref_Key,Code")));
+    }
+
+    @Test
+    void documentedParamsExampleIsJoinedVerbatim() {
+        assertEquals("https://example.com/John?year=2025",
+                service.buildFullUrl(req("", "/John?year=2025")));
+    }
+
+    @Test
+    void paramsContinuingThePathGetNoSeparator() {
+        assertEquals("https://example.com/api/items/42",
+                service.buildFullUrl(req("/api/items", "/42")));
+    }
+
+    @Test
+    void perRequestKeyInPathSegmentSurvives() {
+        assertEquals("https://example.com/Document_D(guid'abc')?$expand=S",
+                service.buildFullUrl(req("/", "Document_D(guid'abc')?$expand=S")));
+    }
 }
