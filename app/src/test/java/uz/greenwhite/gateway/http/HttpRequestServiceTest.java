@@ -119,4 +119,26 @@ class HttpRequestServiceTest {
         assertEquals("https://example.com/Document_D(guid'abc')?$expand=S",
                 service.buildFullUrl(req("/", "Document_D(guid'abc')?$expand=S")));
     }
+
+    // The REST proxy hands over the client's raw query string as params, and a query VALUE may
+    // legitimately contain a bare '?' (RFC 3986 allows it in the query part). That must still be
+    // recognised as a bare query and get its separator — only a '?' that comes BEFORE the first
+    // '=' marks a "path?query" params.
+    @Test
+    void bareQueryWithQuestionMarkInsideAValueStillGetsSeparator() {
+        assertEquals("https://example.com/search?filter=a?b&x=1",
+                service.buildFullUrl(req("/search", "filter=a?b&x=1")));
+    }
+
+    @Test
+    void bareQueryWithUrlValueContainingQueryStillGetsSeparator() {
+        assertEquals("https://example.com/go?redirect=https://x/y?z=1",
+                service.buildFullUrl(req("/go", "redirect=https://x/y?z=1")));
+    }
+
+    @Test
+    void pathThenQueryWithoutAnyEqualsIsJoinedVerbatim() {
+        assertEquals("https://example.com/Catalog_X?$top",
+                service.buildFullUrl(req("/", "Catalog_X?$top")));
+    }
 }

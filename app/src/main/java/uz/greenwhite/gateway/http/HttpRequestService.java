@@ -370,12 +370,22 @@ public class HttpRequestService {
             // and query string (ex: /John?year=2025)"). OData jo'natuvchilari shunga tayanadi:
             // ob'ekt nomi kirillcha bo'lgani uchun uri'da tura olmaydi, ba'zi amallarda esa u har
             // so'rovda o'zgaradigan guid saqlaydi, uri esa endpoint'niki va o'zgarmas.
-            // Shuning uchun ajratkich faqat yalang'och query'ga qo'shiladi: params ichida '?'
-            // bo'lsa u o'z ajratkichini olib kelgan, '/' bilan boshlansa — path davom etyapti.
+            // Shuning uchun ajratkich faqat yalang'och query'ga qo'shiladi: '/' bilan boshlansa —
+            // path davom etyapti; ichida '?' bo'lsa-yu u birinchi '='dan OLDIN tursa — params
+            // "path?query" shaklida kelgan va o'z ajratkichini olib kelgan.
+            //
+            // "Birinchi '='dan oldin" sharti muhim: REST proxy (/queue) params sifatida klientning
+            // xom query-string'ini beradi, va query QIYMATI ichida yalang'och '?' bo'lishi RFC 3986
+            // bo'yicha mumkin ("filter=a?b", "redirect=https://x/y?z=1"). Faqat "'?' bor" deb
+            // ajratkichni tashlab yuborish bunday so'rovni "/xfilter=a?b" ga aylantirib buzardi.
+            // Yalang'och query'da esa '=' har doim birinchi '?'dan oldin keladi.
+            int firstQ = params.indexOf('?');
+            int firstEq = params.indexOf('=');
+            boolean pathThenQuery = firstQ >= 0 && (firstEq < 0 || firstQ < firstEq);
             boolean carriesOwnSeparator = params.startsWith("?")
                     || params.startsWith("&")
                     || params.startsWith("/")
-                    || params.indexOf('?') >= 0;
+                    || pathThenQuery;
             if (!carriesOwnSeparator) {
                 url.append(url.indexOf("?") >= 0 ? '&' : '?');
             }
