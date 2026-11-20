@@ -77,9 +77,19 @@ public class OAuth2TokenRedisCache {
 
         if (lockToken == null) {
             log.debug("Another instance is refreshing token: {}, waiting...", providerName);
-            return waitForToken(providerName, cached);
+            return waitForToken(providerName, properties, client, cached);
         }
 
+        return mintUnderLock(providerName, properties, client, cached, lockToken);
+    }
+
+    /**
+     * The lock holder's work: double-check, mint, publish. Releases the lock on every path. On
+     * failure the client's exception stays as the cause — the send path reads it to tell an
+     * upstream outage (park) from a credential problem (DLQ).
+     */
+    private Token mintUnderLock(String providerName, ProviderProperties properties,
+                                OAuth2Client client, Token cached, String lockToken) {
         try {
             Token doubleCheck = getFromRedis(providerName);
             if (doubleCheck != null && !doubleCheck.isExpired()) {
@@ -228,19 +238,56 @@ public class OAuth2TokenRedisCache {
         }
     }
 
+    /** {@link #acquireLock} that reads a Redis error as "not acquired" (keep waiting). */
+    private String tryAcquireLock(String providerName) {
+        try {
+            return acquireLock(providerName);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * True when the mint lock is gone but no token was published — the holder failed (e.g. the
+     * token endpoint answered 503). Without this check every waiter slept out the full
+     * 30 × 500 ms budget for a token that was never coming; on 2026-11-20 that held all 20 Oracle
+     * HTTP threads and stalled every other host. A Redis error reads as "still held" so a Redis
+     * hiccup degrades to the old bounded wait, never to a stampede of mints.
+     */
+    private boolean lockReleasedWithoutToken(String providerName) {
+        try {
+            return !Boolean.TRUE.equals(redisTemplate.hasKey(LOCK_KEY_PREFIX + providerName));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     /**
      * Poll Redis up to WAIT_ITERATIONS × WAIT_SLEEP_MS for the lock holder to
      * publish a fresh token. Budget must comfortably exceed the OAuth2 endpoint's
      * worst-case response time so concurrent waiters don't all give up before the
-     * single in-flight refresh completes.
+     * single in-flight refresh completes. If the holder finishes WITHOUT publishing,
+     * the waiter takes the lock over and makes its own single attempt (still one
+     * minter at a time).
      */
-    private Token waitForToken(String providerName, Token fallback) {
+    private Token waitForToken(String providerName, ProviderProperties properties,
+                               OAuth2Client client, Token fallback) {
         for (int i = 0; i < WAIT_ITERATIONS; i++) {
             try {
                 Thread.sleep(WAIT_SLEEP_MS);
                 Token token = getFromRedis(providerName);
                 if (token != null) {
                     return token;
+                }
+                if (lockReleasedWithoutToken(providerName)) {
+                    // Holder failed — nothing will be published. Take the lock over and make our
+                    // own single attempt: fails fast with the REAL cause (or succeeds once the
+                    // endpoint is back). Still one minter at a time; if another waiter won the
+                    // lock, keep waiting for its result.
+                    String lockToken = tryAcquireLock(providerName);
+                    if (lockToken != null) {
+                        return mintUnderLock(providerName, properties, client, fallback, lockToken);
+                    }
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

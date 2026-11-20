@@ -162,12 +162,45 @@ public class HttpRequestService {
             return Mono.just(buildSystemErrorResponse(request, "HTTP method is missing on the request"));
         }
 
+        // 0b. An open circuit answers BEFORE any token work. The token endpoint usually lives on
+        //     the same (dead) host, and a token wait can hold an HTTP thread for up to 15 s —
+        //     on 2026-11-20 requests that were going to be refused anyway filled the whole pool
+        //     this way and every other host's traffic was rejected as "pool exhausted". Passive
+        //     state read only (no permission, no outcome); OPEN→HALF_OPEN is automatic
+        //     (application.yml), so this cannot pin the circuit open. Same CB-shaped response
+        //     as step 4 below, so the consumers park it exactly as before. DEBUG, not WARN:
+        //     a repeating per-request path (SAFETY 42) — step 4 already WARNs per rejection.
+        if (request.getOauth2Provider() != null) {
+            String earlyCbName = circuitBreakerName(request);
+            if (isCircuitOpen(earlyCbName)) {
+                log.debug("Circuit breaker [{}] OPEN — skipping OAuth2 token, request blocked: {}",
+                        earlyCbName, compositeId);
+                return Mono.just(buildCircuitBreakerResponse(request, earlyCbName));
+            }
+        }
+
         // 1. Resolve OAuth2 token BEFORE Circuit Breaker
         //    Token failure is an internal issue, not external API failure — CB should not track it
         Map<String, String> headers;
         try {
             headers = addAuthorizationHeader(request);
         } catch (OAuth2TokenException e) {
+            // Token endpoint DOWN on the API's own host (5xx / connection failure): that host is
+            // unusable, so this is an outage, not an auth problem. Count it on the host's circuit
+            // and answer CB-shaped — the consumer parks the message and it resumes by itself once
+            // the host is back (incident 2026-11-20: these went straight to DLQ instead). The
+            // circuit MUST learn, otherwise the park re-check sees CLOSED and the message spins
+            // against the token endpoint. Credential errors (4xx), a token endpoint on another
+            // host, or an unknown cause keep the old OAuth2 failure.
+            if (isSameHostOutage(e, request.getBaseUrl())) {
+                CircuitBreaker hostCircuit = getCircuitBreaker(request.getBaseUrl());
+                hostCircuit.onError(0, java.util.concurrent.TimeUnit.NANOSECONDS, e);
+                log.warn("OAuth2 token endpoint unavailable [{}], parking: {}",
+                        hostCircuit.getName(), compositeId);
+                return Mono.just(buildCbShapedResponse(request,
+                        "OAuth2 token endpoint unavailable for [" + hostCircuit.getName()
+                                + "]: request deferred"));
+            }
             log.error("OAuth2 token failed, skipping HTTP call: {}", compositeId);
             return Mono.just(buildOAuth2ErrorResponse(request, e.getMessage()));
         }
@@ -306,6 +339,39 @@ public class HttpRequestService {
         }
 
         return headers;
+    }
+
+    /**
+     * True when the token failure's root is an HTTP 5xx or a connection-level failure from a URL
+     * on the SAME host as the request's API. Walks the cause chain (cache wrapper → client
+     * wrapper → WebClient exception); the failed URI comes from the exception itself, so a
+     * provider-config fetch from Biruni or a token endpoint elsewhere never matches. No HTTP
+     * cause → false: unknown is never guessed into an outage.
+     */
+    static boolean isSameHostOutage(Throwable failure, String apiBaseUrl) {
+        String apiHost = hostOf(apiBaseUrl);
+        if (apiHost == null) {
+            return false;
+        }
+        for (Throwable t = failure; t != null && t.getCause() != t; t = t.getCause()) {
+            if (t instanceof WebClientResponseException wre) {
+                return wre.getStatusCode().is5xxServerError()
+                        && wre.getRequest() != null
+                        && apiHost.equalsIgnoreCase(wre.getRequest().getURI().getHost());
+            }
+            if (t instanceof org.springframework.web.reactive.function.client.WebClientRequestException wreq) {
+                return wreq.getUri() != null && apiHost.equalsIgnoreCase(wreq.getUri().getHost());
+            }
+        }
+        return false;
+    }
+
+    private static String hostOf(String url) {
+        try {
+            return url == null ? null : URI.create(url).getHost();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // ==================== HELPERS ====================

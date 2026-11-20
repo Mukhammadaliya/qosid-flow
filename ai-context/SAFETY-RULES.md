@@ -107,6 +107,19 @@ alert per blocked request — the v1.0.8 incident produced ~2200 Telegram alerts
 exact bug. OAuth2 stays non-retryable (real auth issue, immediate DLQ); only CIRCUIT_BREAKER
 changed.
 
+**v2.4.3 corollary — a CB-shaped token outage MUST be recorded on the circuit.** Since the
+2026-11-20 smartup.online maintenance, a token failure that is a 5xx/connection failure from the
+API's *own* host is answered CB-shaped (parked, not DLQ'd) — and `HttpRequestService` calls
+`onError` on that host's circuit before answering. Never return the CB shape for a token failure
+without that `onError`: the park re-check (`isCircuitOpen`) would see CLOSED, requeue after
+~500 ms, and every parked message would hammer the token endpoint until the runaway guard. And
+never widen `isSameHostOutage` to 4xx or to a token endpoint on another host — the first parks
+bad credentials for an hour, the second opens a shared API host's circuit for every provider on
+it. The open-circuit check that now runs *before* the token step is a passive read
+(`isCircuitOpen`); it relies on `automatic-transition-from-open-to-half-open-enabled: true` —
+turning that off would pin OPEN forever any host whose traffic is all OAuth2 (nothing would
+ever call `acquirePermission` to drive the transition).
+
 **How the hold works (v2.3.0): the message waits on the circuit, it does not spin through
 Kafka.** `handleFailedResponse` asks `HttpRequestService.circuitBreakerName(message)` which
 circuit blocked it and hands the message to that flow's `CbRequeueScheduler.schedule(...)`,
