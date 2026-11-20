@@ -8,7 +8,7 @@
     <!-- PROJECT INFO -->
     <groupId>uz.greenwhite</groupId>
     <artifactId>qosid-flow</artifactId>
-    <version>2.4.2</version>
+    <version>2.4.3</version>
     <packaging>jar</packaging>
     <name>Qosid Flow</name>
 
@@ -34,7 +34,7 @@
         <dependency>
             <groupId>uz.greenwhite</groupId>
             <artifactId>qosid-settings-core</artifactId>
-            <version>2.4.2</version>
+            <version>2.4.3</version>
         </dependency>
 
         <!-- Spring Boot Core -->

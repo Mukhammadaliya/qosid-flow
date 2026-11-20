@@ -557,8 +557,8 @@ Config for the `ops/` module (`ops/src/main/resources/application.yml`) — **no
 Recommended before exposing `/ops/api` through nginx: change the default admin password first, and put an nginx rate-limit and/or IP-allowlist on `/ops/api/login`. Since v1.14.0 the ops JVM also enforces the same application-level login rate-limit as the gateway (`LoginRateLimiter`: 5 failures / 60s per username, existing accounts only → `429 {"error":"rate-limited"}`), so the nginx layer is defense-in-depth, not the only guard.
 
 **v1.13.0 → v1.14.0 cutover checklist (Maven reactor + stop-to-edit):**
-1. `git pull` + root build (`mvn clean package -DskipTests`) — the reactor now builds `settings-core/target/qosid-settings-core-*.jar`, `app/target/qosid-flow-2.4.2.jar`, and `ops/target/qosid-ops.jar` in one pass.
-2. **`gateway-service` unit:** update `ExecStart` — the app JAR moved from `target/qosid-flow-2.4.2.jar` to `app/target/qosid-flow-2.4.2.jar`.
+1. `git pull` + root build (`mvn clean package -DskipTests`) — the reactor now builds `settings-core/target/qosid-settings-core-*.jar`, `app/target/qosid-flow-2.4.3.jar`, and `ops/target/qosid-ops.jar` in one pass.
+2. **`gateway-service` unit:** update `ExecStart` — the app JAR moved from `target/qosid-flow-2.4.3.jar` to `app/target/qosid-flow-2.4.3.jar`.
 3. **`qosid-ops` unit:** update `ExecStart` to `ops/target/qosid-ops.jar` (see `ops/qosid-ops.service`) and add `SETTINGS_ENCRYPTION_KEY` (same value as the gateway unit's) to the ops environment — without it secret settings can't be edited via stop-to-edit.
 4. `systemctl daemon-reload`, then restart both units; redeploy `frontend/dist` (nginx layout unchanged from v1.13).
 5. Behavior change to communicate: settings are now edited ONLY while the gateway is stopped (Ops page → stop → edit → start); all gateway-side settings PUTs answer `409 stop-required`; after an ops-driven start the SPA re-authenticates automatically (login-token handoff).
